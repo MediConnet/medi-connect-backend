@@ -1,0 +1,3 @@
+# Prisma Layer
+# Este directorio se llena automáticamente cuando se ejecuta npm run build:prisma
+# El Prisma Client se genera en nodejs/node_modules/.prisma/client según el schema.prisma

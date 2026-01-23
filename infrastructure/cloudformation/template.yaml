@@ -1,0 +1,612 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'MediConnect Backend - Serverless Infrastructure'
+
+Parameters:
+  Stage:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+    Description: Deployment stage
+
+  DatabaseUrl:
+    Type: String
+    NoEcho: true
+    Description: Neon PostgreSQL connection string with SSL
+
+  ArtifactBucket:
+    Type: String
+    Default: medi-connect-artifacts
+    Description: S3 bucket for Lambda artifacts
+
+  WebOrigin:
+    Type: String
+    Default: '*'
+    Description: CORS allowed origin for web app (e.g., https://yourdomain.com or '*' for dev)
+
+  MobileAppOrigin:
+    Type: String
+    Default: '*'
+    Description: CORS allowed origin for mobile app (can be '*' as mobile apps don't use CORS, but needed for web)
+
+Conditions:
+  IsProd: !Equals [!Ref Stage, 'prod']
+
+Resources:
+  # Cognito User Pool
+  CognitoUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub 'medi-connect-${Stage}-user-pool'
+      AutoVerifiedAttributes:
+        - email
+      UsernameAttributes:
+        - email
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+        - Name: given_name
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+        - Name: family_name
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+        - Name: phone_number
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+
+  CognitoUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref CognitoUserPool
+      ClientName: !Sub 'medi-connect-${Stage}-client'
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_SRP_AUTH
+
+  # S3 Bucket para artifacts
+  ArtifactBucketResource:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ArtifactBucket}-${Stage}-${AWS::AccountId}'
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldVersions
+            Status: Enabled
+            NoncurrentVersionExpirationInDays: 30
+
+  # IAM Role para Lambdas
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'medi-connect-${Stage}-lambda-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: CognitoAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cognito-idp:*
+                Resource: !GetAtt CognitoUserPool.Arn
+
+  # Lambda Layers
+  PrismaLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      LayerName: !Sub 'medi-connect-${Stage}-prisma-layer'
+      Description: Prisma Client layer
+      Content:
+        S3Bucket: !Ref ArtifactBucketResource
+        S3Key: !Sub 'layers/prisma-layer-${Stage}.zip'
+      CompatibleRuntimes:
+        - nodejs20.x
+
+  UtilsLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      LayerName: !Sub 'medi-connect-${Stage}-utils-layer'
+      Description: Shared utilities layer
+      Content:
+        S3Bucket: !Ref ArtifactBucketResource
+        S3Key: !Sub 'layers/utils-layer-${Stage}.zip'
+      CompatibleRuntimes:
+        - nodejs20.x
+
+  # Lambda Functions
+  AuthLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'medi-connect-${Stage}-auth'
+      Runtime: nodejs20.x
+      Handler: auth/handler.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        S3Bucket: !Ref ArtifactBucketResource
+        S3Key: !Sub 'lambdas/auth-${Stage}.zip'
+      Timeout: 30
+      MemorySize: 256
+      Layers:
+        - !Ref PrismaLayer
+        - !Ref UtilsLayer
+      Environment:
+        Variables:
+          STAGE: !Ref Stage
+          DATABASE_URL: !Ref DatabaseUrl
+          COGNITO_USER_POOL_ID: !Ref CognitoUserPool
+          COGNITO_USER_POOL_CLIENT_ID: !Ref CognitoUserPoolClient
+          AWS_REGION: !Ref AWS::Region
+
+  DoctorsLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'medi-connect-${Stage}-doctors'
+      Runtime: nodejs20.x
+      Handler: doctors/handler.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        S3Bucket: !Ref ArtifactBucketResource
+        S3Key: !Sub 'lambdas/doctors-${Stage}.zip'
+      Timeout: 30
+      MemorySize: 256
+      Layers:
+        - !Ref PrismaLayer
+        - !Ref UtilsLayer
+      Environment:
+        Variables:
+          STAGE: !Ref Stage
+          DATABASE_URL: !Ref DatabaseUrl
+          AWS_REGION: !Ref AWS::Region
+
+  AdminLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'medi-connect-${Stage}-admin'
+      Runtime: nodejs20.x
+      Handler: admin/handler.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        S3Bucket: !Ref ArtifactBucketResource
+        S3Key: !Sub 'lambdas/admin-${Stage}.zip'
+      Timeout: 30
+      MemorySize: 256
+      Layers:
+        - !Ref PrismaLayer
+        - !Ref UtilsLayer
+      Environment:
+        Variables:
+          STAGE: !Ref Stage
+          DATABASE_URL: !Ref DatabaseUrl
+          AWS_REGION: !Ref AWS::Region
+
+  SuppliesLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'medi-connect-${Stage}-supplies'
+      Runtime: nodejs20.x
+      Handler: supplies/handler.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        S3Bucket: !Ref ArtifactBucketResource
+        S3Key: !Sub 'lambdas/supplies-${Stage}.zip'
+      Timeout: 30
+      MemorySize: 256
+      Layers:
+        - !Ref PrismaLayer
+        - !Ref UtilsLayer
+      Environment:
+        Variables:
+          STAGE: !Ref Stage
+          DATABASE_URL: !Ref DatabaseUrl
+          AWS_REGION: !Ref AWS::Region
+
+  PharmaciesLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'medi-connect-${Stage}-pharmacies'
+      Runtime: nodejs20.x
+      Handler: pharmacies/handler.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        S3Bucket: !Ref ArtifactBucketResource
+        S3Key: !Sub 'lambdas/pharmacies-${Stage}.zip'
+      Timeout: 30
+      MemorySize: 256
+      Layers:
+        - !Ref PrismaLayer
+        - !Ref UtilsLayer
+      Environment:
+        Variables:
+          STAGE: !Ref Stage
+          DATABASE_URL: !Ref DatabaseUrl
+          AWS_REGION: !Ref AWS::Region
+
+  LaboratoriesLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'medi-connect-${Stage}-laboratories'
+      Runtime: nodejs20.x
+      Handler: laboratories/handler.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        S3Bucket: !Ref ArtifactBucketResource
+        S3Key: !Sub 'lambdas/laboratories-${Stage}.zip'
+      Timeout: 30
+      MemorySize: 256
+      Layers:
+        - !Ref PrismaLayer
+        - !Ref UtilsLayer
+      Environment:
+        Variables:
+          STAGE: !Ref Stage
+          DATABASE_URL: !Ref DatabaseUrl
+          AWS_REGION: !Ref AWS::Region
+
+  AmbulancesLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'medi-connect-${Stage}-ambulances'
+      Runtime: nodejs20.x
+      Handler: ambulances/handler.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        S3Bucket: !Ref ArtifactBucketResource
+        S3Key: !Sub 'lambdas/ambulances-${Stage}.zip'
+      Timeout: 30
+      MemorySize: 256
+      Layers:
+        - !Ref PrismaLayer
+        - !Ref UtilsLayer
+      Environment:
+        Variables:
+          STAGE: !Ref Stage
+          DATABASE_URL: !Ref DatabaseUrl
+          AWS_REGION: !Ref AWS::Region
+
+  # API Gateway HTTP API
+  HttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub 'medi-connect-${Stage}-api'
+      ProtocolType: HTTP
+      CorsConfiguration:
+        # Soporta múltiples orígenes: web app y mobile app
+        # Nota: Apps móviles no usan CORS, pero esto es necesario para web
+        AllowOrigins:
+          - !Ref WebOrigin
+          - !Ref MobileAppOrigin
+        AllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - PATCH
+          - OPTIONS
+        AllowHeaders:
+          - Content-Type
+          - Authorization
+          - X-Requested-With
+          - Accept
+        AllowCredentials: true
+        MaxAge: 86400
+
+  # JWT Authorizer
+  JwtAuthorizer:
+    Type: AWS::ApiGatewayV2::Authorizer
+    Properties:
+      ApiId: !Ref HttpApi
+      AuthorizerType: JWT
+      IdentitySource:
+        - $request.header.Authorization
+      JwtConfiguration:
+        Audience:
+          - !Ref CognitoUserPoolClient
+        Issuer: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${CognitoUserPool}'
+
+  # API Gateway Integrations
+  AuthIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AuthLambda.Arn}/invocations'
+      PayloadFormatVersion: '2.0'
+
+  DoctorsIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DoctorsLambda.Arn}/invocations'
+      PayloadFormatVersion: '2.0'
+
+  AdminIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AdminLambda.Arn}/invocations'
+      PayloadFormatVersion: '2.0'
+
+  SuppliesIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${SuppliesLambda.Arn}/invocations'
+      PayloadFormatVersion: '2.0'
+
+  PharmaciesIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${PharmaciesLambda.Arn}/invocations'
+      PayloadFormatVersion: '2.0'
+
+  LaboratoriesIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LaboratoriesLambda.Arn}/invocations'
+      PayloadFormatVersion: '2.0'
+
+  AmbulancesIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AmbulancesLambda.Arn}/invocations'
+      PayloadFormatVersion: '2.0'
+
+  # API Gateway Routes - Auth (públicas)
+  AuthRegisterRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'POST /api/auth/register'
+      Target: !Sub 'integrations/${AuthIntegration}'
+
+  AuthLoginRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'POST /api/auth/login'
+      Target: !Sub 'integrations/${AuthIntegration}'
+
+  AuthRefreshRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'POST /api/auth/refresh'
+      Target: !Sub 'integrations/${AuthIntegration}'
+
+  AuthForgotPasswordRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'POST /api/auth/forgot-password'
+      Target: !Sub 'integrations/${AuthIntegration}'
+
+  AuthResetPasswordRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'POST /api/auth/reset-password'
+      Target: !Sub 'integrations/${AuthIntegration}'
+
+  # Auth protegidas
+  AuthMeRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'GET /api/auth/me'
+      Target: !Sub 'integrations/${AuthIntegration}'
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+
+  AuthChangePasswordRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'POST /api/auth/change-password'
+      Target: !Sub 'integrations/${AuthIntegration}'
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+
+  # Doctors (protegidas)
+  DoctorsProfileGetRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'GET /api/doctors/profile'
+      Target: !Sub 'integrations/${DoctorsIntegration}'
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+
+  DoctorsProfilePutRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'PUT /api/doctors/profile'
+      Target: !Sub 'integrations/${DoctorsIntegration}'
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+
+  DoctorsAppointmentsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'GET /api/doctors/appointments'
+      Target: !Sub 'integrations/${DoctorsIntegration}'
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+
+  # Admin (protegidas)
+  AdminDashboardStatsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'GET /api/admin/dashboard/stats'
+      Target: !Sub 'integrations/${AdminIntegration}'
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+
+  AdminRequestsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'GET /api/admin/requests'
+      Target: !Sub 'integrations/${AdminIntegration}'
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+
+  AdminApproveRequestRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'PUT /api/admin/requests/{id}/approve'
+      Target: !Sub 'integrations/${AdminIntegration}'
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+
+  AdminRejectRequestRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'PUT /api/admin/requests/{id}/reject'
+      Target: !Sub 'integrations/${AdminIntegration}'
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+
+  # Supplies (públicas)
+  SuppliesStoresRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'GET /api/supplies/stores'
+      Target: !Sub 'integrations/${SuppliesIntegration}'
+
+  SuppliesStoreRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'GET /api/supplies/stores/{id}'
+      Target: !Sub 'integrations/${SuppliesIntegration}'
+
+  SuppliesProductsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'GET /api/supplies/products'
+      Target: !Sub 'integrations/${SuppliesIntegration}'
+
+  # Permisos Lambda Invoke desde API Gateway
+  AuthLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref AuthLambda
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*'
+
+  DoctorsLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref DoctorsLambda
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*'
+
+  AdminLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref AdminLambda
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*'
+
+  SuppliesLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref SuppliesLambda
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*'
+
+  PharmaciesLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref PharmaciesLambda
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*'
+
+  LaboratoriesLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref LaboratoriesLambda
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*'
+
+  AmbulancesLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref AmbulancesLambda
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*'
+
+Outputs:
+  ApiGatewayUrl:
+    Description: API Gateway HTTP API URL
+    Value: !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com'
+    Export:
+      Name: !Sub '${AWS::StackName}-ApiUrl'
+
+  CognitoUserPoolId:
+    Description: Cognito User Pool ID
+    Value: !Ref CognitoUserPool
+    Export:
+      Name: !Sub '${AWS::StackName}-UserPoolId'
+
+  CognitoUserPoolClientId:
+    Description: Cognito User Pool Client ID
+    Value: !Ref CognitoUserPoolClient
+    Export:
+      Name: !Sub '${AWS::StackName}-UserPoolClientId'
+
+  ArtifactBucketName:
+    Description: S3 Bucket for artifacts
+    Value: !Ref ArtifactBucketResource
+    Export:
+      Name: !Sub '${AWS::StackName}-ArtifactBucket'

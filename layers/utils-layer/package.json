@@ -1,0 +1,7 @@
+{
+  "name": "utils-layer",
+  "version": "1.0.0",
+  "description": "Shared utilities layer for MediConnect Lambdas",
+  "main": "index.js",
+  "dependencies": {}
+}

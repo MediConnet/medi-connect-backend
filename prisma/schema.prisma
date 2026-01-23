@@ -1,0 +1,142 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../layers/prisma-layer/nodejs/node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  DOCTOR
+  PATIENT
+  PHARMACY
+  LABORATORY
+  AMBULANCE
+}
+
+enum ServiceType {
+  PHARMACY
+  LABORATORY
+  AMBULANCE
+}
+
+enum RequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+}
+
+model User {
+  id            String   @id @default(uuid())
+  cognitoUserId String   @unique
+  email         String   @unique
+  phone         String?
+  firstName     String?
+  lastName      String?
+  role          UserRole @default(PATIENT)
+  serviceType   ServiceType?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  doctorProfile    DoctorProfile?
+  appointments     Appointment[]
+  providerRequests ProviderRequest[]
+  adRequests       AdRequest[]
+
+  @@index([cognitoUserId])
+  @@index([email])
+  @@index([role])
+}
+
+model DoctorProfile {
+  id            String   @id @default(uuid())
+  userId        String   @unique
+  licenseNumber String?
+  specialization String?
+  hospital      String?
+  bio           String?
+  rating        Float    @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appointments Appointment[]
+
+  @@index([userId])
+}
+
+model Appointment {
+  id        String            @id @default(uuid())
+  doctorId  String
+  patientId String
+  date      DateTime
+  time      String
+  status    AppointmentStatus @default(SCHEDULED)
+  notes     String?
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  doctor  DoctorProfile @relation(fields: [doctorId], references: [id])
+  patient User          @relation(fields: [patientId], references: [id])
+
+  @@index([doctorId])
+  @@index([patientId])
+  @@index([date])
+}
+
+model ProviderRequest {
+  id          String        @id @default(uuid())
+  userId      String
+  serviceType ServiceType
+  name        String
+  address     String
+  phone       String
+  email       String
+  license     String?
+  status      RequestStatus @default(PENDING)
+  notes       String?
+  reviewedBy  String?
+  reviewedAt  DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([status])
+  @@index([serviceType])
+}
+
+model AdRequest {
+  id         String        @id @default(uuid())
+  userId     String
+  title      String
+  content    String
+  imageUrl   String?
+  targetUrl  String?
+  status     RequestStatus @default(PENDING)
+  reviewedBy String?
+  reviewedAt DateTime?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([status])
+}

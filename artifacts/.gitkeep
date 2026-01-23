@@ -1,0 +1,2 @@
+# Artifacts directory
+# Aquí se generan los zips de Lambdas y Layers durante npm run package
