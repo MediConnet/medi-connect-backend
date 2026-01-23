@@ -2,9 +2,10 @@ generator client {
   provider      = "prisma-client-js"
   output        = "../src/generated/prisma"
   binaryTargets = ["native", "rhel-openssl-3.0.x"]
+  engineType    = "library" // <-- Cambia "adapter" por "library"
 }
 
-// 2. Configuración de la Base de Datos (Corregida)
+
 datasource db {
   provider = "postgresql"
 }

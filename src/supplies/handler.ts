@@ -21,27 +21,39 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
   try {
     // GET /api/supplies/stores
     if (method === 'GET' && path === '/api/supplies/stores') {
-      return await getStores(event);
+      console.log('✅ [SUPPLIES] GET /api/supplies/stores - Obteniendo tiendas');
+      const result = await getStores(event);
+      console.log(`✅ [SUPPLIES] GET /api/supplies/stores - Completado con status ${result.statusCode}`);
+      return result;
     }
 
     // GET /api/supplies/stores/{id}
     if (method === 'GET' && path.startsWith('/api/supplies/stores/')) {
-      return await getStore(event);
+      console.log('✅ [SUPPLIES] GET /api/supplies/stores/{id} - Obteniendo tienda');
+      const result = await getStore(event);
+      console.log(`✅ [SUPPLIES] GET /api/supplies/stores/{id} - Completado con status ${result.statusCode}`);
+      return result;
     }
 
     // GET /api/supplies/products
     if (method === 'GET' && path === '/api/supplies/products') {
-      return await getProducts(event);
+      console.log('✅ [SUPPLIES] GET /api/supplies/products - Obteniendo productos');
+      const result = await getProducts(event);
+      console.log(`✅ [SUPPLIES] GET /api/supplies/products - Completado con status ${result.statusCode}`);
+      return result;
     }
 
+    console.log(`❌ [SUPPLIES] ${method} ${path} - Ruta no encontrada (404)`);
     return errorResponse('Not found', 404);
   } catch (error: any) {
+    console.error(`❌ [SUPPLIES] ${method} ${path} - Error:`, error.message);
     logger.error('Error in supplies handler', error, { method, path });
     return internalErrorResponse(error.message || 'Internal server error');
   }
 }
 
 async function getStores(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  console.log('🏪 [GET_STORES] Obteniendo lista de tiendas');
   const queryParams = event.queryStringParameters || {};
   const limit = parseInt(queryParams.limit || '20', 10);
   const offset = parseInt(queryParams.offset || '0', 10);
@@ -68,6 +80,7 @@ async function getStores(event: APIGatewayProxyEventV2): Promise<APIGatewayProxy
     },
   ].slice(offset, offset + limit);
 
+  console.log(`✅ [GET_STORES] Se obtuvieron ${stores.length} tiendas`);
   return successResponse({
     stores,
     pagination: {
@@ -79,10 +92,12 @@ async function getStores(event: APIGatewayProxyEventV2): Promise<APIGatewayProxy
 }
 
 async function getStore(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  console.log('🏪 [GET_STORE] Obteniendo tienda por ID');
   const pathParts = event.requestContext.http.path.split('/');
   const storeId = pathParts[pathParts.length - 1];
 
   if (!storeId) {
+    console.error('❌ [GET_STORE] ID de tienda no proporcionado');
     return errorResponse('Store ID is required', 400);
   }
 
@@ -107,10 +122,12 @@ async function getStore(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyR
     },
   };
 
+  console.log(`✅ [GET_STORE] Tienda obtenida: ${store.name}`);
   return successResponse(store);
 }
 
 async function getProducts(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  console.log('📦 [GET_PRODUCTS] Obteniendo productos');
   const queryParams = event.queryStringParameters || {};
   const limit = parseInt(queryParams.limit || '50', 10);
   const offset = parseInt(queryParams.offset || '0', 10);
@@ -154,6 +171,7 @@ async function getProducts(event: APIGatewayProxyEventV2): Promise<APIGatewayPro
 
   const paginatedProducts = products.slice(offset, offset + limit);
 
+  console.log(`✅ [GET_PRODUCTS] Se obtuvieron ${paginatedProducts.length} productos${search ? ` (búsqueda: "${search}")` : ''}`);
   return successResponse({
     products: paginatedProducts,
     pagination: {
