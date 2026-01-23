@@ -12,6 +12,7 @@
     "upload": "node scripts/upload.js",
     "deploy": "npm run package && npm run upload && aws cloudformation deploy --template-file infrastructure/cloudformation/template.yaml --stack-name medi-connect-backend --capabilities CAPABILITY_IAM --parameter-overrides Stage=dev",
     "test": "ts-node test/main.ts",
+    "dev": "ts-node --watch test/main.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio"
