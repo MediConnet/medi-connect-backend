@@ -32,6 +32,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     return errorResponse('Not found', 404);
 
   } catch (error: any) {
+    console.error(`❌ [DOCTORS] ${method} ${path} - Error:`, error.message);
     logger.error('Error in doctors handler', error, { method, path });
     return internalErrorResponse(error.message || 'Internal server error');
   }
