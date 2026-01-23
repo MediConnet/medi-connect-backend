@@ -60,7 +60,7 @@ export function createMockEvent(
         },
       }),
     },
-    body: body ? JSON.stringify(body) : null,
+    body: body ? JSON.stringify(body) : undefined,
     isBase64Encoded: false,
     pathParameters,
     queryStringParameters,

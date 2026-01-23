@@ -1,8 +1,7 @@
-import { APIGatewayProxyEventV2 } from 'aws-lambda';
+import { APIGatewayProxyEventV2, APIGatewayProxyResult } from 'aws-lambda';
+import { enum_roles, users } from '../generated/prisma/client';
 import { getPrismaClient } from './prisma';
-import { users, enum_roles } from '../generated/prisma/client';
-import { unauthorizedResponse, forbiddenResponse } from './response';
-import { APIGatewayProxyResult } from 'aws-lambda';
+import { forbiddenResponse, unauthorizedResponse } from './response';
 
 export interface AuthContext {
   cognitoUserId: string;
@@ -32,8 +31,9 @@ export function extractJWT(event: APIGatewayProxyEventV2): string | null {
  * En producción, API Gateway JWT Authorizer valida el token antes de llegar a Lambda
  */
 export function getJWTClaims(event: APIGatewayProxyEventV2): JWTClaims | null {
-  // API Gateway HTTP API v2 pasa los claims en requestContext.authorizer.jwt.claims
-  const claims = event.requestContext?.authorizer?.jwt?.claims;
+  const authorizer = (event.requestContext as any).authorizer;
+  const claims = authorizer?.jwt?.claims;
+
   if (!claims) {
     return null;
   }
@@ -52,6 +52,8 @@ export async function getAuthContext(
   }
 
   const prisma = getPrismaClient();
+  
+  // Buscamos al usuario por email (que viene en el token)
   const user = await prisma.users.findFirst({
     where: { email: claims.email || undefined },
   });
@@ -88,12 +90,16 @@ export async function requireRole(
   allowedRoles: enum_roles[]
 ): Promise<AuthContext | APIGatewayProxyResult> {
   const authResult = await requireAuth(event);
+  
+  // Si requireAuth devolvió un error (APIGatewayProxyResult), lo retornamos
   if ('statusCode' in authResult) {
     return authResult;
   }
 
   const authContext = authResult as AuthContext;
-  if (!allowedRoles.includes(authContext.user.role)) {
+
+  // Verificamos que el rol no sea null antes de chequear si está permitido
+  if (!authContext.user.role || !allowedRoles.includes(authContext.user.role)) {
     return forbiddenResponse(`Access denied. Required roles: ${allowedRoles.join(', ')}`);
   }
 
