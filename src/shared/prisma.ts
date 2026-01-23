@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '../generated/prisma/client';
 
 // Singleton pattern para Prisma Client en Lambda
 // Evita crear múltiples conexiones por request

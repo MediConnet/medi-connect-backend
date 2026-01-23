@@ -48,7 +48,7 @@ export const rejectRequestSchema = z.object({
 });
 
 // Generic body parser helper
-export function parseBody<T extends z.ZodTypeAny>(body: string | null, schema: T): z.infer<T> {
+export function parseBody<T extends z.ZodTypeAny>(body: string | null | undefined, schema: T): z.infer<T> {
   if (!body) {
     throw new Error('Request body is required');
   }

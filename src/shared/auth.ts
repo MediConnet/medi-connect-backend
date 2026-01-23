@@ -1,12 +1,12 @@
 import { APIGatewayProxyEventV2 } from 'aws-lambda';
 import { getPrismaClient } from './prisma';
-import { User, UserRole } from '@prisma/client';
+import { users, enum_roles } from '../generated/prisma/client';
 import { unauthorizedResponse, forbiddenResponse } from './response';
 import { APIGatewayProxyResult } from 'aws-lambda';
 
 export interface AuthContext {
   cognitoUserId: string;
-  user: User;
+  user: users;
 }
 
 export interface JWTClaims {
@@ -52,11 +52,11 @@ export async function getAuthContext(
   }
 
   const prisma = getPrismaClient();
-  const user = await prisma.user.findUnique({
-    where: { cognitoUserId: claims.sub },
+  const user = await prisma.users.findFirst({
+    where: { email: claims.email || undefined },
   });
 
-  if (!user || !user.isActive) {
+  if (!user || !user.is_active) {
     return null;
   }
 
@@ -85,7 +85,7 @@ export async function requireAuth(
  */
 export async function requireRole(
   event: APIGatewayProxyEventV2,
-  allowedRoles: UserRole[]
+  allowedRoles: enum_roles[]
 ): Promise<AuthContext | APIGatewayProxyResult> {
   const authResult = await requireAuth(event);
   if ('statusCode' in authResult) {

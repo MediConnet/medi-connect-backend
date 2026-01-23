@@ -4,7 +4,7 @@ import { getPrismaClient } from '../shared/prisma';
 import { successResponse, errorResponse, notFoundResponse, internalErrorResponse } from '../shared/response';
 import { logger } from '../shared/logger';
 import { requireRole, AuthContext } from '../shared/auth';
-import { UserRole } from '@prisma/client';
+import { enum_roles } from '../generated/prisma/client';
 import { approveRequestSchema, rejectRequestSchema, parseBody } from '../shared/validators';
 
 export async function handler(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
@@ -48,7 +48,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
 }
 
 async function getDashboardStats(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  const authResult = await requireRole(event, [UserRole.ADMIN]);
+  const authResult = await requireRole(event, [enum_roles.admin]);
   if ('statusCode' in authResult) {
     return authResult;
   }
@@ -63,11 +63,12 @@ async function getDashboardStats(event: APIGatewayProxyEventV2): Promise<APIGate
     pendingProviderRequests,
     pendingAdRequests,
   ] = await Promise.all([
-    prisma.user.count(),
-    prisma.user.count({ where: { role: UserRole.DOCTOR } }),
-    prisma.appointment.count(),
-    prisma.providerRequest.count({ where: { status: 'PENDING' } }),
-    prisma.adRequest.count({ where: { status: 'PENDING' } }),
+    prisma.users.count(),
+    prisma.users.count({ where: { role: enum_roles.provider } }),
+    prisma.appointments.count(),
+    // TODO: Models providerRequest and adRequest don't exist in schema
+    0, // prisma.providerRequest.count({ where: { status: 'PENDING' } }),
+    0, // prisma.adRequest.count({ where: { status: 'PENDING' } }),
   ]);
 
   return successResponse({
@@ -87,7 +88,7 @@ async function getDashboardStats(event: APIGatewayProxyEventV2): Promise<APIGate
 }
 
 async function getRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  const authResult = await requireRole(event, [UserRole.ADMIN]);
+  const authResult = await requireRole(event, [enum_roles.admin]);
   if ('statusCode' in authResult) {
     return authResult;
   }
@@ -100,200 +101,32 @@ async function getRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayPro
 
   const prisma = getPrismaClient();
 
-  if (type === 'provider') {
-    const requests = await prisma.providerRequest.findMany({
-      where: status ? { status: status as any } : undefined,
-      include: {
-        user: {
-          select: {
-            id: true,
-            email: true,
-            firstName: true,
-            lastName: true,
-          },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: limit,
-      skip: offset,
-    });
-
-    return successResponse({
-      requests,
-      type: 'provider',
-      pagination: { limit, offset, total: requests.length },
-    });
-  }
-
-  if (type === 'ad') {
-    const requests = await prisma.adRequest.findMany({
-      where: status ? { status: status as any } : undefined,
-      include: {
-        user: {
-          select: {
-            id: true,
-            email: true,
-            firstName: true,
-            lastName: true,
-          },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: limit,
-      skip: offset,
-    });
-
-    return successResponse({
-      requests,
-      type: 'ad',
-      pagination: { limit, offset, total: requests.length },
-    });
-  }
-
-  // 'all' - combinar ambos
-  const [providerRequests, adRequests] = await Promise.all([
-    prisma.providerRequest.findMany({
-      where: status ? { status: status as any } : undefined,
-      include: {
-        user: {
-          select: {
-            id: true,
-            email: true,
-            firstName: true,
-            lastName: true,
-          },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: limit,
-      skip: offset,
-    }),
-    prisma.adRequest.findMany({
-      where: status ? { status: status as any } : undefined,
-      include: {
-        user: {
-          select: {
-            id: true,
-            email: true,
-            firstName: true,
-            lastName: true,
-          },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: limit,
-      skip: offset,
-    }),
-  ]);
-
+  // TODO: Models providerRequest and adRequest don't exist in schema
   return successResponse({
-    providerRequests,
-    adRequests,
-    type: 'all',
-    pagination: { limit, offset },
+    requests: [],
+    type: type === 'provider' ? 'provider' : type === 'ad' ? 'ad' : 'all',
+    pagination: { limit, offset, total: 0 },
   });
 }
 
 async function approveRequest(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  const authResult = await requireRole(event, [UserRole.ADMIN]);
+  const authResult = await requireRole(event, [enum_roles.admin]);
   if ('statusCode' in authResult) {
     return authResult;
   }
 
-  try {
-    const authContext = authResult as AuthContext;
-    const requestId = extractIdFromPath(event.requestContext.http.path, '/api/admin/requests/', '/approve');
-    const body = parseBody(event.body, approveRequestSchema);
-    const prisma = getPrismaClient();
-
-    // Intentar aprobar como ProviderRequest primero
-    let request = await prisma.providerRequest.findUnique({ where: { id: requestId } });
-    if (request) {
-      request = await prisma.providerRequest.update({
-        where: { id: requestId },
-        data: {
-          status: 'APPROVED',
-          reviewedBy: authContext.user.id,
-          reviewedAt: new Date(),
-          notes: body.notes,
-        },
-      });
-      return successResponse({ request, type: 'provider' });
-    }
-
-    // Si no es ProviderRequest, intentar AdRequest
-    request = await prisma.adRequest.findUnique({ where: { id: requestId } });
-    if (request) {
-      request = await prisma.adRequest.update({
-        where: { id: requestId },
-        data: {
-          status: 'APPROVED',
-          reviewedBy: authContext.user.id,
-          reviewedAt: new Date(),
-        },
-      });
-      return successResponse({ request, type: 'ad' });
-    }
-
-    return notFoundResponse('Request not found');
-  } catch (error: any) {
-    logger.error('Error in approveRequest', error);
-    if (error.message.includes('Validation error')) {
-      return errorResponse(error.message, 400);
-    }
-    return internalErrorResponse('Failed to approve request');
-  }
+  // TODO: Models providerRequest and adRequest don't exist in schema
+  return notFoundResponse('Request models not implemented');
 }
 
 async function rejectRequest(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  const authResult = await requireRole(event, [UserRole.ADMIN]);
+  const authResult = await requireRole(event, [enum_roles.admin]);
   if ('statusCode' in authResult) {
     return authResult;
   }
 
-  try {
-    const authContext = authResult as AuthContext;
-    const requestId = extractIdFromPath(event.requestContext.http.path, '/api/admin/requests/', '/reject');
-    const body = parseBody(event.body, rejectRequestSchema);
-    const prisma = getPrismaClient();
-
-    // Intentar rechazar como ProviderRequest primero
-    let request = await prisma.providerRequest.findUnique({ where: { id: requestId } });
-    if (request) {
-      request = await prisma.providerRequest.update({
-        where: { id: requestId },
-        data: {
-          status: 'REJECTED',
-          reviewedBy: authContext.user.id,
-          reviewedAt: new Date(),
-          notes: body.notes,
-        },
-      });
-      return successResponse({ request, type: 'provider' });
-    }
-
-    // Si no es ProviderRequest, intentar AdRequest
-    request = await prisma.adRequest.findUnique({ where: { id: requestId } });
-    if (request) {
-      request = await prisma.adRequest.update({
-        where: { id: requestId },
-        data: {
-          status: 'REJECTED',
-          reviewedBy: authContext.user.id,
-          reviewedAt: new Date(),
-        },
-      });
-      return successResponse({ request, type: 'ad' });
-    }
-
-    return notFoundResponse('Request not found');
-  } catch (error: any) {
-    logger.error('Error in rejectRequest', error);
-    if (error.message.includes('Validation error')) {
-      return errorResponse(error.message, 400);
-    }
-    return internalErrorResponse('Failed to reject request');
-  }
+  // TODO: Models providerRequest and adRequest don't exist in schema
+  return notFoundResponse('Request models not implemented');
 }
 
 function extractIdFromPath(path: string, prefix: string, suffix: string): string {

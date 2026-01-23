@@ -6,7 +6,7 @@ Backend serverless para MediConnect construido con AWS Lambda, API Gateway, Cogn
 
 ## 🏗️ Arquitectura
 
-- **Runtime**: Node.js 20 + TypeScript
+- **Runtime**: Node.js 22 + TypeScript
 - **Compute**: AWS Lambda (1 módulo = 1 handler)
 - **API**: API Gateway HTTP API v2
 - **Auth**: AWS Cognito User Pool (JWT)
@@ -124,6 +124,10 @@ aws cloudformation deploy \
 ## 🧪 Testing Local
 
 ```bash
+# Modo desarrollo con watch (recarga automática)
+npm run dev
+
+# Ejecutar tests una vez
 npm run test
 ```
 
@@ -242,6 +246,7 @@ Contiene utilidades compartidas:
 - `npm run package` - Crear zips de Lambdas y Layers
 - `npm run upload` - Subir artifacts a S3
 - `npm run deploy` - Package + Upload + Deploy CloudFormation
+- `npm run dev` - Ejecutar en modo desarrollo con watch
 - `npm run test` - Ejecutar tests locales
 - `npm run prisma:generate` - Generar Prisma Client
 - `npm run prisma:migrate` - Ejecutar migraciones

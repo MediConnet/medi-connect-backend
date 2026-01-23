@@ -26,6 +26,24 @@ import {
   parseBody,
 } from '../shared/validators';
 import { validatePayloadSize } from '../shared/security';
+import { enum_roles } from '../generated/prisma/client';
+import { randomUUID } from 'crypto';
+
+function mapRoleToEnum(role: string): enum_roles {
+  const roleMap: Record<string, enum_roles> = {
+    'PATIENT': enum_roles.patient,
+    'DOCTOR': enum_roles.provider,
+    'PHARMACY': enum_roles.provider,
+    'LABORATORY': enum_roles.provider,
+    'AMBULANCE': enum_roles.provider,
+    'patient': enum_roles.patient,
+    'doctor': enum_roles.provider,
+    'provider': enum_roles.provider,
+    'admin': enum_roles.admin,
+    'user': enum_roles.user,
+  };
+  return roleMap[role.toUpperCase()] || roleMap[role.toLowerCase()] || enum_roles.patient;
+}
 
 const cognitoClient = new CognitoIdentityProviderClient({ region: process.env.AWS_REGION || 'us-east-1' });
 const USER_POOL_ID = process.env.COGNITO_USER_POOL_ID || '';
@@ -109,14 +127,12 @@ async function register(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyR
     const cognitoResponse = await cognitoClient.send(signUpCommand);
 
     // Crear usuario en DB
-    const user = await prisma.user.create({
+    const user = await prisma.users.create({
       data: {
-        cognitoUserId: cognitoResponse.UserSub || '',
+        id: cognitoResponse.UserSub || randomUUID(),
         email: body.email,
-        phone: body.phone,
-        firstName: body.firstName,
-        lastName: body.lastName,
-        role: body.role || 'PATIENT',
+        password_hash: '', // Se maneja en Cognito
+        role: body.role ? mapRoleToEnum(body.role) : enum_roles.patient,
       },
     });
 
@@ -204,17 +220,15 @@ async function me(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult>
   }
 
   const prisma = getPrismaClient();
-  const user = await prisma.user.findUnique({
+  const user = await prisma.users.findUnique({
     where: { id: authResult.user.id },
     select: {
       id: true,
       email: true,
-      phone: true,
-      firstName: true,
-      lastName: true,
       role: true,
-      serviceType: true,
-      createdAt: true,
+      profile_picture_url: true,
+      is_active: true,
+      created_at: true,
     },
   });
 

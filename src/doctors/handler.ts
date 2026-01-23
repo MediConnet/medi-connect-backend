@@ -4,7 +4,8 @@ import { getPrismaClient } from '../shared/prisma';
 import { successResponse, errorResponse, notFoundResponse, internalErrorResponse } from '../shared/response';
 import { logger } from '../shared/logger';
 import { requireRole, AuthContext } from '../shared/auth';
-import { UserRole } from '@prisma/client';
+import { enum_roles } from '../generated/prisma/client';
+import { randomUUID } from 'crypto';
 import { updateDoctorProfileSchema, parseBody } from '../shared/validators';
 
 export async function handler(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
@@ -43,7 +44,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
 }
 
 async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  const authResult = await requireRole(event, [UserRole.DOCTOR]);
+  const authResult = await requireRole(event, [enum_roles.provider]);
   if ('statusCode' in authResult) {
     return authResult;
   }
@@ -51,16 +52,14 @@ async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGatewayProx
   const authContext = authResult as AuthContext;
   const prisma = getPrismaClient();
 
-  const profile = await prisma.doctorProfile.findUnique({
-    where: { userId: authContext.user.id },
+  const profile = await prisma.providers.findFirst({
+    where: { user_id: authContext.user.id },
     include: {
-      user: {
+      users: {
         select: {
           id: true,
           email: true,
-          phone: true,
-          firstName: true,
-          lastName: true,
+          profile_picture_url: true,
         },
       },
     },
@@ -74,44 +73,55 @@ async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGatewayProx
 }
 
 async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  const authResult = await requireRole(event, [UserRole.DOCTOR]);
+  const authResult = await requireRole(event, [enum_roles.provider]);
   if ('statusCode' in authResult) {
     return authResult;
   }
 
   try {
     const authContext = authResult as AuthContext;
-    const body = parseBody(event.body, updateDoctorProfileSchema);
+    const body = parseBody(event.body || null, updateDoctorProfileSchema);
     const prisma = getPrismaClient();
 
-    // Upsert profile (crear si no existe)
-    const profile = await prisma.doctorProfile.upsert({
-      where: { userId: authContext.user.id },
-      update: {
-        licenseNumber: body.licenseNumber,
-        specialization: body.specialization,
-        hospital: body.hospital,
-        bio: body.bio,
-      },
-      create: {
-        userId: authContext.user.id,
-        licenseNumber: body.licenseNumber,
-        specialization: body.specialization,
-        hospital: body.hospital,
-        bio: body.bio,
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            email: true,
-            phone: true,
-            firstName: true,
-            lastName: true,
+    // Buscar o crear provider
+    let profile = await prisma.providers.findFirst({
+      where: { user_id: authContext.user.id },
+    });
+
+    if (profile) {
+      profile = await prisma.providers.update({
+        where: { id: profile.id },
+        data: {
+          description: body.bio || profile.description,
+        },
+        include: {
+          users: {
+            select: {
+              id: true,
+              email: true,
+              profile_picture_url: true,
+            },
           },
         },
-      },
-    });
+      });
+    } else {
+      profile = await prisma.providers.create({
+        data: {
+          id: randomUUID(),
+          user_id: authContext.user.id,
+          description: body.bio,
+        },
+        include: {
+          users: {
+            select: {
+              id: true,
+              email: true,
+              profile_picture_url: true,
+            },
+          },
+        },
+      });
+    }
 
     return successResponse(profile);
   } catch (error: any) {
@@ -124,7 +134,7 @@ async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIGatewayP
 }
 
 async function getAppointments(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  const authResult = await requireRole(event, [UserRole.DOCTOR]);
+  const authResult = await requireRole(event, [enum_roles.provider]);
   if ('statusCode' in authResult) {
     return authResult;
   }
@@ -132,12 +142,12 @@ async function getAppointments(event: APIGatewayProxyEventV2): Promise<APIGatewa
   const authContext = authResult as AuthContext;
   const prisma = getPrismaClient();
 
-  // Buscar doctor profile
-  const doctorProfile = await prisma.doctorProfile.findUnique({
-    where: { userId: authContext.user.id },
+  // Buscar provider
+  const provider = await prisma.providers.findFirst({
+    where: { user_id: authContext.user.id },
   });
 
-  if (!doctorProfile) {
+  if (!provider) {
     return notFoundResponse('Doctor profile not found');
   }
 
@@ -147,23 +157,21 @@ async function getAppointments(event: APIGatewayProxyEventV2): Promise<APIGatewa
   const limit = parseInt(queryParams.limit || '50', 10);
   const offset = parseInt(queryParams.offset || '0', 10);
 
-  const appointments = await prisma.appointment.findMany({
+  const appointments = await prisma.appointments.findMany({
     where: {
-      doctorId: doctorProfile.id,
+      provider_id: provider.id,
       ...(status && { status: status as any }),
     },
     include: {
-      patient: {
+      patients: {
         select: {
           id: true,
-          email: true,
+          full_name: true,
           phone: true,
-          firstName: true,
-          lastName: true,
         },
       },
     },
-    orderBy: { date: 'asc' },
+    orderBy: { scheduled_for: 'asc' },
     take: limit,
     skip: offset,
   });
