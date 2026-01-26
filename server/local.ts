@@ -250,6 +250,9 @@ app.listen(PORT, async () => {
   console.log(`   - GET    /api/doctors/profile`);
   console.log(`   - GET    /api/doctors/dashboard`);
   console.log(`   - GET    /api/doctors/appointments`);
+  console.log(`   - GET    /api/doctors/patients`);
+  console.log(`   - GET    /api/doctors/reviews`);
+  console.log(`   - GET    /api/doctors/payments`);
   console.log(`   - POST   /api/providers/register`);
   console.log(`   - GET    /api/admin/dashboard/stats`);
   console.log(`   - GET    /api/admin/requests`);

@@ -13,13 +13,24 @@ export async function getAppointments(event: APIGatewayProxyEventV2): Promise<AP
   const authContext = authResult as AuthContext;
   const prisma = getPrismaClient();
 
+  console.log('✅ [DOCTORS] GET /api/doctors/appointments - Obteniendo citas');
+  
   // 1. Identificar al proveedor
   const provider = await prisma.providers.findFirst({
     where: { user_id: authContext.user.id },
   });
 
   if (!provider) {
-    return notFoundResponse('Doctor profile not found. Please complete your profile first.');
+    console.log('⚠️ [DOCTORS] Provider no encontrado, retornando array vacío');
+    // Retornar estructura completa con array vacío para usuarios nuevos
+    return successResponse({
+      appointments: [],
+      pagination: {
+        limit: 50,
+        offset: 0,
+        total: 0,
+      },
+    });
   }
 
   // 2. Query Params

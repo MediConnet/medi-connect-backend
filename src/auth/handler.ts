@@ -14,6 +14,7 @@ import {
   errorResponse,
   unauthorizedResponse,
   internalErrorResponse,
+  notFoundResponse,
 } from '../shared/response';
 import { logger } from '../shared/logger';
 import { requireAuth } from '../shared/auth';
@@ -367,10 +368,13 @@ async function login(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResu
         responseData.user.provider = providerInfo;
       }
 
-      // Agregar serviceType normalizado si es provider
+      // Agregar serviceType y tipo normalizados si es provider
+      // ⚠️ CRÍTICO: El frontend espera 'tipo' porque los guards verifican user?.tipo
       if (normalizedServiceType) {
         responseData.user.serviceType = normalizedServiceType;
-        console.log('🏷️ [LOGIN] ServiceType normalizado:', normalizedServiceType);
+        // El frontend también necesita 'tipo' para los guards (DoctorRoute, LaboratoryRoute, etc.)
+        responseData.user.tipo = normalizedServiceType;
+        console.log('🏷️ [LOGIN] ServiceType y tipo normalizados:', normalizedServiceType);
       } else if (user.role === enum_roles.provider) {
         console.warn('⚠️ [LOGIN] Provider sin serviceType. Verificar categoría asignada.');
       }
@@ -382,6 +386,7 @@ async function login(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResu
           ...responseData.user,
           role: responseData.user.role,
           serviceType: responseData.user.serviceType || 'NO DEFINIDO',
+          tipo: responseData.user.tipo || 'NO DEFINIDO',
         },
       }, null, 2));
 
@@ -498,10 +503,13 @@ async function login(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResu
             responseData.user.provider = providerInfo;
           }
 
-          // Agregar serviceType normalizado si es provider
+          // Agregar serviceType y tipo normalizados si es provider
+          // ⚠️ CRÍTICO: El frontend espera 'tipo' porque los guards verifican user?.tipo
           if (normalizedServiceType) {
             responseData.user.serviceType = normalizedServiceType;
-            console.log('🏷️ [LOGIN] ServiceType normalizado:', normalizedServiceType);
+            // El frontend también necesita 'tipo' para los guards (DoctorRoute, LaboratoryRoute, etc.)
+            responseData.user.tipo = normalizedServiceType;
+            console.log('🏷️ [LOGIN] ServiceType y tipo normalizados (fallback):', normalizedServiceType);
           } else if (user.role === enum_roles.provider) {
             console.warn('⚠️ [LOGIN] Provider sin serviceType. Verificar categoría asignada.');
           }
@@ -549,8 +557,10 @@ async function refresh(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyRe
 }
 
 async function me(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  console.log('👤 [ME] Obteniendo información del usuario actual');
   const authResult = await requireAuth(event);
   if ('statusCode' in authResult) {
+    console.error('❌ [ME] Error de autenticación');
     return authResult;
   }
 
@@ -567,7 +577,67 @@ async function me(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult>
     },
   });
 
-  return successResponse(user);
+  if (!user) {
+    console.error('❌ [ME] Usuario no encontrado');
+    return notFoundResponse('User not found');
+  }
+
+  // Normalizar role a minúsculas
+  const normalizedRole = user.role ? String(user.role).toLowerCase() : 'patient';
+
+  // Construir respuesta con estructura similar al login
+  const responseData: any = {
+    id: user.id,
+    userId: user.id,
+    email: user.email,
+    role: normalizedRole,
+    profilePictureUrl: user.profile_picture_url,
+    isActive: user.is_active,
+    createdAt: user.created_at,
+  };
+
+  // Si es provider, obtener serviceType y tipo
+  if (user.role === enum_roles.provider) {
+    const provider = await prisma.providers.findFirst({
+      where: { user_id: user.id },
+      include: {
+        service_categories: {
+          select: {
+            slug: true,
+            name: true,
+          },
+        },
+      },
+    });
+
+    if (provider) {
+      const serviceType = provider.service_categories?.slug || null;
+      const normalizedServiceType = serviceType ? String(serviceType).toLowerCase() : null;
+
+      if (normalizedServiceType) {
+        responseData.serviceType = normalizedServiceType;
+        responseData.tipo = normalizedServiceType; // ⚠️ CRÍTICO: Frontend espera 'tipo'
+      }
+
+      // Agregar información del provider
+      responseData.name = provider.commercial_name;
+      responseData.provider = {
+        id: provider.id,
+        commercialName: provider.commercial_name,
+        logoUrl: provider.logo_url,
+      };
+    }
+  }
+
+  console.log('✅ [ME] Información del usuario obtenida:', {
+    id: responseData.id,
+    email: responseData.email,
+    role: responseData.role,
+    serviceType: responseData.serviceType || 'NO DEFINIDO',
+    tipo: responseData.tipo || 'NO DEFINIDO',
+  });
+
+  return successResponse(responseData);
 }
 
 async function changePassword(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
