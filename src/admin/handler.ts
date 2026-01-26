@@ -259,6 +259,7 @@ async function registerProviderRequest(event: APIGatewayProxyEventV2): Promise<A
     const registerProviderSchema = z.object({
       name: z.string().min(1, 'Name is required'),
       email: z.string().email('Invalid email format'),
+      password: z.string().min(8, 'Password must be at least 8 characters'),
       phone: z.string().optional(),
       whatsapp: z.string().optional(),
       serviceName: z.string().min(1, 'Service name is required'),
@@ -267,7 +268,20 @@ async function registerProviderRequest(event: APIGatewayProxyEventV2): Promise<A
       address: z.string().optional(),
       description: z.string().optional(),
       price: z.string().optional(),
-      chainId: z.string().optional(),
+      chainId: z.string().optional().nullable(),
+      // Campos adicionales para mejor información
+      latitude: z.number().optional(),
+      longitude: z.number().optional(),
+      openingHours: z.string().optional(),
+      is24h: z.boolean().optional(),
+      hasDelivery: z.boolean().optional(),
+      logoUrl: z.string().url().optional().or(z.literal('')),
+      // Documentos PDF
+      documents: z.array(z.object({
+        name: z.string().min(1, 'Document name is required'),
+        type: z.enum(['license', 'certificate', 'degree']), // licencia, certificado, titulo
+        url: z.string().url('Document URL must be a valid URL'),
+      })).optional(),
     });
 
     const body = parseBody(event.body, registerProviderSchema);
@@ -278,6 +292,11 @@ async function registerProviderRequest(event: APIGatewayProxyEventV2): Promise<A
       email: body.email,
       type: body.type,
       city: body.city,
+      address: body.address || 'No proporcionada',
+      hasCoordinates: !!(body.latitude && body.longitude),
+      hasLogo: !!body.logoUrl,
+      hasOpeningHours: !!body.openingHours,
+      documentsCount: body.documents?.length || 0,
     });
 
     // 1. Buscar o crear ciudad
@@ -325,9 +344,8 @@ async function registerProviderRequest(event: APIGatewayProxyEventV2): Promise<A
 
     if (!user) {
       console.log(`👤 [REGISTER_PROVIDER_REQUEST] Creando usuario: ${body.email}`);
-      // Generar contraseña temporal (el usuario deberá cambiarla)
-      const tempPassword = randomUUID();
-      const passwordHash = await bcrypt.hash(tempPassword, 10);
+      // Usar la contraseña enviada por el usuario
+      const passwordHash = await bcrypt.hash(body.password, 10);
 
       user = await prisma.users.create({
         data: {
@@ -373,7 +391,22 @@ async function registerProviderRequest(event: APIGatewayProxyEventV2): Promise<A
       return errorResponse('Ya existe una solicitud para este usuario', 409);
     }
 
-    // 5. Crear provider con estado PENDING
+    // 5. Procesar documentos si existen
+    let documentsInfo = null;
+    if (body.documents && body.documents.length > 0) {
+      console.log(`📄 [REGISTER_PROVIDER_REQUEST] Procesando ${body.documents.length} documento(s)`);
+      documentsInfo = body.documents.map((doc, index) => ({
+        id: index + 1,
+        name: doc.name,
+        type: doc.type,
+        url: doc.url,
+      }));
+      // Loggear tipos de documentos recibidos
+      const docTypes = body.documents.map(d => d.type).join(', ');
+      console.log(`📄 [REGISTER_PROVIDER_REQUEST] Tipos de documentos: ${docTypes}`);
+    }
+
+    // 6. Crear provider con estado PENDING
     console.log(`🏥 [REGISTER_PROVIDER_REQUEST] Creando provider con estado PENDING`);
     const provider = await prisma.providers.create({
       data: {
@@ -382,34 +415,40 @@ async function registerProviderRequest(event: APIGatewayProxyEventV2): Promise<A
         category_id: category.id,
         commercial_name: body.serviceName,
         description: body.description || null,
+        logo_url: body.logoUrl && body.logoUrl !== '' ? body.logoUrl : null,
         verification_status: enum_verification.PENDING,
         commission_percentage: 15.0,
       },
     });
 
-    // 6. Crear sucursal principal si hay dirección
-    if (body.address) {
-      console.log(`🏪 [REGISTER_PROVIDER_REQUEST] Creando sucursal principal`);
-      await prisma.provider_branches.create({
-        data: {
-          id: randomUUID(),
-          provider_id: provider.id,
-          city_id: city.id,
-          name: body.serviceName,
-          address_text: body.address,
-          phone_contact: body.phone || body.whatsapp || null,
-          email_contact: body.email,
-          is_main: true,
-          is_active: false, // Inactiva hasta aprobación
-        },
-      });
-    }
+    // 7. Crear sucursal principal (siempre se crea, con o sin dirección)
+    console.log(`🏪 [REGISTER_PROVIDER_REQUEST] Creando sucursal principal`);
+    await prisma.provider_branches.create({
+      data: {
+        id: randomUUID(),
+        provider_id: provider.id,
+        city_id: city.id,
+        name: body.serviceName,
+        address_text: body.address || null,
+        phone_contact: body.phone || body.whatsapp || null,
+        email_contact: body.email,
+        latitude: body.latitude || null,
+        longitude: body.longitude || null,
+        opening_hours_text: body.openingHours || null,
+        is_24h: body.is24h || false,
+        has_delivery: body.hasDelivery || false,
+        is_main: true,
+        is_active: false, // Inactiva hasta aprobación
+      },
+    });
 
     console.log(`✅ [REGISTER_PROVIDER_REQUEST] Solicitud creada exitosamente. Provider ID: ${provider.id}`);
     return successResponse({
       success: true,
       message: 'Solicitud de registro enviada exitosamente',
       providerId: provider.id,
+      documentsReceived: documentsInfo ? documentsInfo.length : 0,
+      documents: documentsInfo || [],
     }, 201);
   } catch (error: any) {
     console.error('❌ [REGISTER_PROVIDER_REQUEST] Error:', error.message);

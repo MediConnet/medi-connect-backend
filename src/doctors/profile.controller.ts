@@ -16,6 +16,8 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
   const authContext = authResult as AuthContext;
   const prisma = getPrismaClient();
 
+  console.log('✅ [DOCTORS] GET /api/doctors/profile - Obteniendo perfil');
+  
   const profile = await prisma.providers.findFirst({
     where: { user_id: authContext.user.id },
     include: {
@@ -26,13 +28,57 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
           profile_picture_url: true,
         },
       },
+      service_categories: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+        },
+      },
+      provider_branches: {
+        select: {
+          id: true,
+          name: true,
+          address_text: true,
+          phone_contact: true,
+          email_contact: true,
+        },
+      },
     },
   });
 
   if (!profile) {
-    return notFoundResponse('Doctor profile not found');
+    console.log('⚠️ [DOCTORS] Provider no encontrado, retornando estructura vacía');
+    // Retornar estructura completa con valores vacíos para usuarios nuevos
+    const user = await prisma.users.findUnique({
+      where: { id: authContext.user.id },
+      select: {
+        id: true,
+        email: true,
+        profile_picture_url: true,
+      },
+    });
+    
+    return successResponse({
+      id: null,
+      user_id: authContext.user.id,
+      category_id: null,
+      commercial_name: null,
+      logo_url: null,
+      description: null,
+      verification_status: null,
+      commission_percentage: null,
+      users: user || {
+        id: authContext.user.id,
+        email: authContext.user.email || '',
+        profile_picture_url: null,
+      },
+      service_categories: null,
+      provider_branches: [],
+    });
   }
 
+  console.log('✅ [DOCTORS] GET /api/doctors/profile - Perfil obtenido exitosamente');
   return successResponse(profile);
 }
 
