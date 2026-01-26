@@ -332,6 +332,19 @@ async function login(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResu
       console.log('✅ [LOGIN] Inicio de sesión exitoso (local):', body.email);
       console.log('🔑 [LOGIN] JWT generado (primeros 50 chars):', jwtToken.substring(0, 50) + '...');
       
+      // Normalizar role a string en minúsculas para compatibilidad con frontend
+      const normalizedRole = user.role ? String(user.role).toLowerCase() : 'patient';
+      
+      // Normalizar serviceType a minúsculas si existe
+      const normalizedServiceType = serviceType ? String(serviceType).toLowerCase() : null;
+      
+      console.log('🔍 [LOGIN] Valores normalizados:', {
+        roleOriginal: user.role,
+        roleNormalizado: normalizedRole,
+        serviceTypeOriginal: serviceType,
+        serviceTypeNormalizado: normalizedServiceType,
+      });
+      
       // Construir respuesta con información completa
       const responseData: any = {
         token: jwtToken, // Campo 'token' para compatibilidad con frontend
@@ -343,7 +356,7 @@ async function login(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResu
           id: user.id,
           userId: user.id, // También incluir userId para compatibilidad
           email: user.email,
-          role: user.role,
+          role: normalizedRole, // Role normalizado a minúsculas
           profilePictureUrl: user.profile_picture_url,
         },
       };
@@ -354,15 +367,22 @@ async function login(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResu
         responseData.user.provider = providerInfo;
       }
 
-      // Agregar serviceType si es provider
-      if (serviceType) {
-        responseData.user.serviceType = serviceType;
+      // Agregar serviceType normalizado si es provider
+      if (normalizedServiceType) {
+        responseData.user.serviceType = normalizedServiceType;
+        console.log('🏷️ [LOGIN] ServiceType normalizado:', normalizedServiceType);
+      } else if (user.role === enum_roles.provider) {
+        console.warn('⚠️ [LOGIN] Provider sin serviceType. Verificar categoría asignada.');
       }
 
       console.log('📤 [LOGIN] Respuesta completa del login:', JSON.stringify({
         token: responseData.token.substring(0, 30) + '...',
         accessToken: responseData.accessToken.substring(0, 30) + '...',
-        user: responseData.user,
+        user: {
+          ...responseData.user,
+          role: responseData.user.role,
+          serviceType: responseData.user.serviceType || 'NO DEFINIDO',
+        },
       }, null, 2));
 
       return successResponse(responseData);
@@ -443,6 +463,19 @@ async function login(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResu
           console.log('✅ [LOGIN] Inicio de sesión exitoso (fallback local):', body.email);
           console.log('🔑 [LOGIN] JWT generado (primeros 50 chars):', jwtToken.substring(0, 50) + '...');
           
+          // Normalizar role a string en minúsculas para compatibilidad con frontend
+          const normalizedRole = user.role ? String(user.role).toLowerCase() : 'patient';
+          
+          // Normalizar serviceType a minúsculas si existe
+          const normalizedServiceType = serviceType ? String(serviceType).toLowerCase() : null;
+          
+          console.log('🔍 [LOGIN] Valores normalizados (fallback):', {
+            roleOriginal: user.role,
+            roleNormalizado: normalizedRole,
+            serviceTypeOriginal: serviceType,
+            serviceTypeNormalizado: normalizedServiceType,
+          });
+          
           // Construir respuesta con información completa
           const responseData: any = {
             token: jwtToken, // Campo 'token' para compatibilidad con frontend
@@ -454,7 +487,7 @@ async function login(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResu
               id: user.id,
               userId: user.id, // También incluir userId para compatibilidad
               email: user.email,
-              role: user.role,
+              role: normalizedRole, // Role normalizado a minúsculas
               profilePictureUrl: user.profile_picture_url,
             },
           };
@@ -465,9 +498,12 @@ async function login(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResu
             responseData.user.provider = providerInfo;
           }
 
-          // Agregar serviceType si es provider
-          if (serviceType) {
-            responseData.user.serviceType = serviceType;
+          // Agregar serviceType normalizado si es provider
+          if (normalizedServiceType) {
+            responseData.user.serviceType = normalizedServiceType;
+            console.log('🏷️ [LOGIN] ServiceType normalizado:', normalizedServiceType);
+          } else if (user.role === enum_roles.provider) {
+            console.warn('⚠️ [LOGIN] Provider sin serviceType. Verificar categoría asignada.');
           }
 
           return successResponse(responseData);
