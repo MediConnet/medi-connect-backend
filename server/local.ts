@@ -180,6 +180,12 @@ app.use('/api/admin', async (req, res) => {
   await handleLambdaResponse(adminHandler, req, res, path);
 });
 
+// Routes - Providers (registro de proveedores)
+app.use('/api/providers', async (req, res) => {
+  const path = req.originalUrl.split('?')[0];
+  await handleLambdaResponse(adminHandler, req, res, path);
+});
+
 // Routes - Supplies
 app.use('/api/supplies', async (req, res) => {
   const path = req.originalUrl.split('?')[0];
@@ -239,6 +245,7 @@ app.listen(PORT, async () => {
   console.log(`   - GET    /api/doctors/profile`);
   console.log(`   - GET    /api/doctors/dashboard`);
   console.log(`   - GET    /api/doctors/appointments`);
+  console.log(`   - POST   /api/providers/register`);
   console.log(`   - GET    /api/admin/dashboard/stats`);
   console.log(`   - GET    /api/admin/requests`);
   console.log(`   - GET    /api/admin/ad-requests`);

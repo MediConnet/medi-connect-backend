@@ -4,8 +4,10 @@ import { getPrismaClient } from '../shared/prisma';
 import { successResponse, errorResponse, notFoundResponse, internalErrorResponse } from '../shared/response';
 import { logger } from '../shared/logger';
 import { requireRole, AuthContext } from '../shared/auth';
-import { enum_roles } from '../generated/prisma/client';
+import { enum_roles, enum_verification } from '../generated/prisma/client';
 import { approveRequestSchema, rejectRequestSchema, parseBody } from '../shared/validators';
+import { randomUUID } from 'crypto';
+import * as bcrypt from 'bcrypt';
 
 export async function handler(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   const method = event.requestContext.http.method;
@@ -25,6 +27,14 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       console.log('✅ [ADMIN] GET /api/admin/dashboard/stats - Obteniendo estadísticas');
       const result = await getDashboardStats(event);
       console.log(`✅ [ADMIN] GET /api/admin/dashboard/stats - Completado con status ${result.statusCode}`);
+      return result;
+    }
+
+    // POST /api/providers/register - Recibir solicitud de registro de proveedor
+    if (method === 'POST' && path === '/api/providers/register') {
+      console.log('✅ [ADMIN] POST /api/providers/register - Recibiendo solicitud de registro');
+      const result = await registerProviderRequest(event);
+      console.log(`✅ [ADMIN] POST /api/providers/register - Completado con status ${result.statusCode}`);
       return result;
     }
 
@@ -242,8 +252,177 @@ async function getDashboardStats(event: APIGatewayProxyEventV2): Promise<APIGate
   return successResponse(responseData);
 }
 
+async function registerProviderRequest(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  console.log('📝 [REGISTER_PROVIDER_REQUEST] Recibiendo solicitud de registro de proveedor');
+  try {
+    // Schema para validar los datos de registro
+    const registerProviderSchema = z.object({
+      name: z.string().min(1, 'Name is required'),
+      email: z.string().email('Invalid email format'),
+      phone: z.string().optional(),
+      whatsapp: z.string().optional(),
+      serviceName: z.string().min(1, 'Service name is required'),
+      type: z.enum(['doctor', 'pharmacy', 'laboratory', 'ambulance', 'supplies']),
+      city: z.string().min(1, 'City is required'),
+      address: z.string().optional(),
+      description: z.string().optional(),
+      price: z.string().optional(),
+      chainId: z.string().optional(),
+    });
+
+    const body = parseBody(event.body, registerProviderSchema);
+    const prisma = getPrismaClient();
+
+    console.log('📝 [REGISTER_PROVIDER_REQUEST] Datos recibidos:', {
+      name: body.name,
+      email: body.email,
+      type: body.type,
+      city: body.city,
+    });
+
+    // 1. Buscar o crear ciudad
+    let city = await prisma.cities.findFirst({
+      where: {
+        name: {
+          equals: body.city,
+          mode: 'insensitive',
+        },
+      },
+    });
+
+    if (!city) {
+      console.log(`📍 [REGISTER_PROVIDER_REQUEST] Creando ciudad: ${body.city}`);
+      city = await prisma.cities.create({
+        data: {
+          id: randomUUID(),
+          name: body.city,
+          country: 'Ecuador',
+        },
+      });
+    }
+
+    // 2. Buscar categoría de servicio por slug
+    const categorySlug = body.type.toLowerCase();
+    let category = await prisma.service_categories.findFirst({
+      where: { slug: categorySlug },
+    });
+
+    if (!category) {
+      console.log(`🏷️ [REGISTER_PROVIDER_REQUEST] Creando categoría: ${categorySlug}`);
+      category = await prisma.service_categories.create({
+        data: {
+          name: body.type.charAt(0).toUpperCase() + body.type.slice(1),
+          slug: categorySlug,
+          allows_booking: body.type === 'doctor' || body.type === 'ambulance',
+        },
+      });
+    }
+
+    // 3. Buscar o crear usuario
+    let user = await prisma.users.findFirst({
+      where: { email: body.email },
+    });
+
+    if (!user) {
+      console.log(`👤 [REGISTER_PROVIDER_REQUEST] Creando usuario: ${body.email}`);
+      // Generar contraseña temporal (el usuario deberá cambiarla)
+      const tempPassword = randomUUID();
+      const passwordHash = await bcrypt.hash(tempPassword, 10);
+
+      user = await prisma.users.create({
+        data: {
+          id: randomUUID(),
+          email: body.email,
+          password_hash: passwordHash,
+          role: enum_roles.provider,
+          is_active: false, // Inactivo hasta que se apruebe
+        },
+      });
+    } else if (user.role !== enum_roles.provider) {
+      // Si el usuario existe pero no es provider, actualizar su rol
+      user = await prisma.users.update({
+        where: { id: user.id },
+        data: { role: enum_roles.provider },
+      });
+    }
+
+    // 4. Verificar si ya existe un provider para este usuario
+    const existingProvider = await prisma.providers.findFirst({
+      where: { user_id: user.id },
+    });
+
+    if (existingProvider) {
+      console.log(`⚠️ [REGISTER_PROVIDER_REQUEST] Ya existe un provider para este usuario`);
+      // Si ya existe pero está rechazado, actualizar a PENDING
+      if (existingProvider.verification_status === 'REJECTED') {
+        await prisma.providers.update({
+          where: { id: existingProvider.id },
+          data: {
+            verification_status: enum_verification.PENDING,
+            commercial_name: body.serviceName,
+            description: body.description || null,
+          },
+        });
+        console.log(`✅ [REGISTER_PROVIDER_REQUEST] Provider actualizado a PENDING`);
+        return successResponse({ 
+          success: true, 
+          message: 'Solicitud de registro enviada exitosamente',
+          providerId: existingProvider.id,
+        });
+      }
+      return errorResponse('Ya existe una solicitud para este usuario', 409);
+    }
+
+    // 5. Crear provider con estado PENDING
+    console.log(`🏥 [REGISTER_PROVIDER_REQUEST] Creando provider con estado PENDING`);
+    const provider = await prisma.providers.create({
+      data: {
+        id: randomUUID(),
+        user_id: user.id,
+        category_id: category.id,
+        commercial_name: body.serviceName,
+        description: body.description || null,
+        verification_status: enum_verification.PENDING,
+        commission_percentage: 15.0,
+      },
+    });
+
+    // 6. Crear sucursal principal si hay dirección
+    if (body.address) {
+      console.log(`🏪 [REGISTER_PROVIDER_REQUEST] Creando sucursal principal`);
+      await prisma.provider_branches.create({
+        data: {
+          id: randomUUID(),
+          provider_id: provider.id,
+          city_id: city.id,
+          name: body.serviceName,
+          address_text: body.address,
+          phone_contact: body.phone || body.whatsapp || null,
+          email_contact: body.email,
+          is_main: true,
+          is_active: false, // Inactiva hasta aprobación
+        },
+      });
+    }
+
+    console.log(`✅ [REGISTER_PROVIDER_REQUEST] Solicitud creada exitosamente. Provider ID: ${provider.id}`);
+    return successResponse({
+      success: true,
+      message: 'Solicitud de registro enviada exitosamente',
+      providerId: provider.id,
+    }, 201);
+  } catch (error: any) {
+    console.error('❌ [REGISTER_PROVIDER_REQUEST] Error:', error.message);
+    logger.error('Error registering provider request', error);
+    if (error.message.includes('Validation error')) {
+      return errorResponse(error.message, 400);
+    }
+    return internalErrorResponse('Failed to register provider request');
+  }
+}
+
 async function getRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('📋 [GET_REQUESTS] Obteniendo solicitudes');
+  console.log('📋 [GET_REQUESTS] Obteniendo solicitudes de proveedores');
   const authResult = await requireRole(event, [enum_roles.admin]);
   if ('statusCode' in authResult) {
     console.error('❌ [GET_REQUESTS] Error de autenticación');
@@ -251,21 +430,98 @@ async function getRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayPro
   }
 
   const queryParams = event.queryStringParameters || {};
-  const type = queryParams.type || 'all'; // 'provider', 'ad', 'all'
-  const status = queryParams.status;
+  const status = queryParams.status; // 'PENDING', 'APPROVED', 'REJECTED'
   const limit = parseInt(queryParams.limit || '50', 10);
   const offset = parseInt(queryParams.offset || '0', 10);
 
   const prisma = getPrismaClient();
 
-  // TODO: Models providerRequest and adRequest don't exist in schema
-  // Retornar array vacío para evitar errores en el frontend
-  console.log(`✅ [GET_REQUESTS] Retornando array vacío (modelos no implementados)`);
-  return successResponse({
-    requests: [],
-    type: type === 'provider' ? 'provider' : type === 'ad' ? 'ad' : 'all',
-    pagination: { limit, offset, total: 0 },
+  // Obtener providers con estado PENDING (o el estado especificado)
+  const verificationStatus = status === 'APPROVED' ? enum_verification.APPROVED :
+                            status === 'REJECTED' ? enum_verification.REJECTED :
+                            enum_verification.PENDING;
+
+  const providers = await prisma.providers.findMany({
+    where: {
+      verification_status: verificationStatus,
+    },
+    include: {
+      users: {
+        select: {
+          id: true,
+          email: true,
+          profile_picture_url: true,
+          created_at: true,
+        },
+      },
+      service_categories: {
+        select: {
+          slug: true,
+          name: true,
+        },
+      },
+      provider_branches: {
+        select: {
+          id: true,
+          city_id: true,
+          address_text: true,
+          phone_contact: true,
+        },
+        take: 1, // Solo la primera sucursal
+      },
+    },
+    // Ordenar por ID (más recientes primero, asumiendo que IDs más grandes son más recientes)
+    // En el futuro, cuando se agregue created_at a providers, usar ese campo
+    orderBy: {
+      id: 'desc',
+    },
+    take: limit,
+    skip: offset,
   });
+
+  // Obtener ciudades para mapear
+  const cityIds = providers
+    .flatMap(p => p.provider_branches.map(b => b.city_id))
+    .filter((id): id is string => id !== null);
+  
+  const cities = await prisma.cities.findMany({
+    where: {
+      id: { in: cityIds },
+    },
+  });
+
+  const cityMap = new Map(cities.map(c => [c.id, c]));
+
+  // Mapear a la estructura esperada por el frontend
+  const requests = providers.map((provider) => {
+    const branch = provider.provider_branches[0];
+    const city = branch?.city_id ? cityMap.get(branch.city_id) : null;
+
+    return {
+      id: provider.id,
+      providerName: provider.commercial_name || 'Sin nombre',
+      email: provider.users?.email || '',
+      avatarUrl: provider.users?.profile_picture_url || undefined,
+      serviceType: provider.service_categories?.slug || provider.service_categories?.name?.toLowerCase() || 'doctor',
+      submissionDate: provider.users?.created_at 
+        ? new Date(provider.users.created_at).toISOString().split('T')[0]
+        : new Date().toISOString().split('T')[0],
+      documentsCount: 0, // TODO: Implementar cuando exista modelo de documentos
+      status: provider.verification_status === enum_verification.APPROVED ? 'APPROVED' :
+              provider.verification_status === enum_verification.REJECTED ? 'REJECTED' :
+              'PENDING',
+      rejectionReason: null, // TODO: Agregar campo de razón de rechazo
+      phone: branch?.phone_contact || '',
+      whatsapp: branch?.phone_contact || '',
+      city: city?.name || 'Sin ciudad',
+      address: branch?.address_text || '',
+      description: provider.description || '',
+      documents: [], // TODO: Implementar cuando exista modelo de documentos
+    };
+  });
+
+  console.log(`✅ [GET_REQUESTS] Retornando ${requests.length} solicitudes`);
+  return successResponse(requests);
 }
 
 async function getAdRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
@@ -408,9 +664,42 @@ async function approveRequest(event: APIGatewayProxyEventV2): Promise<APIGateway
   }
 
   const requestId = extractIdFromPath(event.requestContext.http.path, '/api/admin/requests/', '/approve');
+  const prisma = getPrismaClient();
   
-  // TODO: Implementar aprobación real cuando exista el modelo
-  console.log(`✅ [APPROVE_REQUEST] Solicitud ${requestId} aprobada (mock)`);
+  // Buscar el provider
+  const provider = await prisma.providers.findUnique({
+    where: { id: requestId },
+    include: { users: true },
+  });
+
+  if (!provider) {
+    console.error(`❌ [APPROVE_REQUEST] Provider no encontrado: ${requestId}`);
+    return notFoundResponse('Provider request not found');
+  }
+
+  // Actualizar estado a APPROVED
+  await prisma.providers.update({
+    where: { id: requestId },
+    data: {
+      verification_status: enum_verification.APPROVED,
+    },
+  });
+
+  // Activar el usuario y las sucursales
+  if (provider.users) {
+    await prisma.users.update({
+      where: { id: provider.users.id },
+      data: { is_active: true },
+    });
+  }
+
+  // Activar las sucursales del provider
+  await prisma.provider_branches.updateMany({
+    where: { provider_id: requestId },
+    data: { is_active: true },
+  });
+
+  console.log(`✅ [APPROVE_REQUEST] Solicitud ${requestId} aprobada exitosamente`);
   return successResponse({ success: true });
 }
 
@@ -423,6 +712,8 @@ async function rejectRequest(event: APIGatewayProxyEventV2): Promise<APIGatewayP
   }
 
   const requestId = extractIdFromPath(event.requestContext.http.path, '/api/admin/requests/', '/reject');
+  const prisma = getPrismaClient();
+  
   let reason: string | undefined = undefined;
   if (event.body) {
     try {
@@ -432,8 +723,28 @@ async function rejectRequest(event: APIGatewayProxyEventV2): Promise<APIGatewayP
       // Si el body no tiene reason, está bien, es opcional
     }
   }
-  
-  // TODO: Implementar rechazo real cuando exista el modelo
+
+  // Buscar el provider
+  const provider = await prisma.providers.findUnique({
+    where: { id: requestId },
+  });
+
+  if (!provider) {
+    console.error(`❌ [REJECT_REQUEST] Provider no encontrado: ${requestId}`);
+    return notFoundResponse('Provider request not found');
+  }
+
+  // Actualizar estado a REJECTED
+  await prisma.providers.update({
+    where: { id: requestId },
+    data: {
+      verification_status: enum_verification.REJECTED,
+    },
+  });
+
+  // Mantener el usuario inactivo
+  // (No activamos el usuario si se rechaza)
+
   console.log(`❌ [REJECT_REQUEST] Solicitud ${requestId} rechazada. Razón: ${reason || 'No especificada'}`);
   return successResponse({ success: true });
 }
