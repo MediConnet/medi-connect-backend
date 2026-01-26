@@ -10,5 +10,7 @@ coverage/
 *.swp
 *.swo
 *~
+.esbuild
+.serverless
 
 /src/generated/prisma

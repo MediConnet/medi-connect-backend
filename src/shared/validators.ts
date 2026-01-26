@@ -36,6 +36,14 @@ export const updateDoctorProfileSchema = z.object({
   specialization: z.string().optional(),
   hospital: z.string().optional(),
   bio: z.string().optional(),
+  full_name: z.string().min(3, "El nombre es muy corto").optional(),
+  address: z.string().optional(),
+  phone: z.string().optional(),
+  whatsapp: z.string().optional(),
+  years_of_experience: z.number().int().min(0).optional(),
+  consultation_fee: z.number().min(0).optional(),
+  payment_methods: z.array(z.string()).optional(), // Array de strings
+  is_published: z.boolean().optional(),
 });
 
 // Admin validators

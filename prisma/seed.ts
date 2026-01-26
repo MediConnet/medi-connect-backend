@@ -1,9 +1,18 @@
-import { PrismaClient, users, providers, cities, service_categories, provider_branches } from '../src/generated/prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 import * as bcrypt from 'bcrypt';
 import { randomUUID } from 'crypto';
 import * as dotenv from 'dotenv';
 import { Pool } from 'pg';
-import { PrismaPg } from '@prisma/adapter-pg';
+import {
+  appointments,
+  cities,
+  patients,
+  PrismaClient,
+  provider_branches,
+  providers,
+  service_categories,
+  users
+} from '../src/generated/prisma/client';
 
 // Cargar variables de entorno
 dotenv.config();
@@ -737,6 +746,68 @@ async function main() {
   );
 
   console.log('✅ Insumos médicos creados');
+
+  // ==========================================
+  // 9. Pacientes y Citas para pruebas
+  // ==========================================
+  console.log('👤 Creando pacientes y citas de prueba...');
+
+  // A. Crear un Paciente de prueba
+  const patientPassword = await bcrypt.hash('paciente123', 10);
+  const patientUser = await findOrCreate<users>(
+    prisma.users,
+    { email: 'paciente@test.com' },
+    {
+      id: randomUUID(),
+      email: 'paciente@test.com',
+      password_hash: patientPassword,
+      role: 'patient',
+      is_active: true,
+      profile_picture_url: 'https://i.pravatar.cc/300',
+    }
+  );
+
+  const patientProfile = await findOrCreate<patients>(
+    prisma.patients,
+    { user_id: patientUser.id },
+    {
+      id: randomUUID(),
+      user_id: patientUser.id,
+      full_name: 'Pepito Pérez Test',
+      phone: '0991234567',
+    }
+  );
+
+  // B. Buscar al Dr. Juan Pérez
+  const drJuan = await prisma.providers.findFirst({
+    where: { commercial_name: 'Dr. Juan Pérez' }
+  });
+
+  if (drJuan) {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(10, 0, 0, 0);
+
+    await findOrCreate<appointments>(
+      prisma.appointments,
+      { 
+        patient_id: patientProfile.id,
+        provider_id: drJuan.id,
+        scheduled_for: tomorrow
+      }, 
+      {
+        id: randomUUID(),
+        patient_id: patientProfile.id, 
+        provider_id: drJuan.id,
+        branch_id: (await prisma.provider_branches.findFirst({ where: { provider_id: drJuan.id } }))?.id,
+        scheduled_for: tomorrow,
+        status: 'CONFIRMED',
+        reason: 'Chequeo general y dolor de cabeza',
+        is_paid: false
+      }
+    );
+    console.log(`✅ Cita creada para el Dr. Juan Pérez con el paciente ${patientProfile.full_name}`);
+  }
 
   console.log('🎉 Seed completado exitosamente!');
   console.log('\n📊 Resumen:');
