@@ -5,7 +5,6 @@ generator client {
   engineType    = "library" // <-- Cambia "adapter" por "library"
 }
 
-
 datasource db {
   provider = "postgresql"
 }
@@ -167,7 +166,9 @@ model provider_branches {
   has_delivery       Boolean?             @default(false)
   rating_cache       Float?               @default(0)
   is_main            Boolean?             @default(false)
-  is_active          Boolean?             @default(true)
+  is_active          Boolean?             @default(false)
+  consultation_fee   Decimal?             @db.Decimal(10, 2)
+  payment_methods    String[]
   appointments       appointments[]
   patient_favorites  patient_favorites[]
   cities             cities?              @relation(fields: [city_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -204,6 +205,7 @@ model providers {
   commercial_name       String?                 @db.VarChar(255)
   logo_url              String?                 @db.VarChar(255)
   description           String?
+  years_of_experience   Int?                    @default(0)
   verification_status   String?                 @db.VarChar(255)
   commission_percentage Decimal?                @db.Decimal
   appointments          appointments[]
