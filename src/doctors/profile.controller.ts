@@ -14,7 +14,8 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
   const authContext = authResult as AuthContext;
   const prisma = getPrismaClient();
 
-  // 1. Buscamos el Provider con todas las relaciones
+  console.log('✅ [DOCTORS] GET /api/doctors/profile - Obteniendo perfil');
+  
   const profile = await prisma.providers.findFirst({
     where: { user_id: authContext.user.id },
     include: {
@@ -25,82 +26,58 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
           // full_name: true, // Descomenta si tu tabla users tiene full_name
         },
       },
-      specialties: true,
-      service_categories: true,
+      service_categories: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+        },
+      },
       provider_branches: {
-        where: { is_main: true },
-        take: 1,
-        include: {
-          provider_schedules: {
-            orderBy: { day_of_week: 'asc' }
-          }
-        }
+        select: {
+          id: true,
+          name: true,
+          address_text: true,
+          phone_contact: true,
+          email_contact: true,
+        },
       },
     },
   });
 
   if (!profile) {
-    return notFoundResponse('Doctor profile not found');
+    console.log('⚠️ [DOCTORS] Provider no encontrado, retornando estructura vacía');
+    // Retornar estructura completa con valores vacíos para usuarios nuevos
+    const user = await prisma.users.findUnique({
+      where: { id: authContext.user.id },
+      select: {
+        id: true,
+        email: true,
+        profile_picture_url: true,
+      },
+    });
+    
+    return successResponse({
+      id: null,
+      user_id: authContext.user.id,
+      category_id: null,
+      commercial_name: null,
+      logo_url: null,
+      description: null,
+      verification_status: null,
+      commission_percentage: null,
+      users: user || {
+        id: authContext.user.id,
+        email: authContext.user.email || '',
+        profile_picture_url: null,
+      },
+      service_categories: null,
+      provider_branches: [],
+    });
   }
 
-  // 2. Procesamiento de datos
-  const mainBranch = profile.provider_branches[0] || null;
-  const user = profile.users;
-
-  // Formateo de especialidades
-  const specialtyName = profile.specialties.length > 0 
-    ? profile.specialties.map((s: any) => s.name).join(', ') 
-    : 'General';
-
-  // 3. Respuesta formateada incluyendo los NUEVOS CAMPOS
-  const formattedResponse = {
-    id: profile.id,
-    full_name: profile.commercial_name || user?.email,
-    email: user?.email,
-    profile_picture_url: user?.profile_picture_url || profile.logo_url,
-    
-    // Información Profesional
-    specialty: specialtyName,
-    category: profile.service_categories?.name || 'Salud',
-    years_of_experience: profile.years_of_experience ?? 0, // Nuevo campo
-    
-    // Tarifas y Pagos (Desde la sucursal principal)
-    consultation_fee: mainBranch?.consultation_fee 
-        ? parseFloat(mainBranch.consultation_fee.toString()) 
-        : 0.00,
-    payment_methods: mainBranch?.payment_methods || [], // Array de strings
-    
-    // Bio
-    description: profile.description || '',
-    
-    // Contacto
-    address: mainBranch?.address_text || '',
-    phone: mainBranch?.phone_contact || '',
-    whatsapp: mainBranch?.phone_contact || '',
-    latitude: mainBranch?.latitude || null,
-    longitude: mainBranch?.longitude || null,
-    
-    // Estado (Verificación y Publicación)
-    status: profile.verification_status,
-    is_published: mainBranch?.is_active ?? false, // Mapeamos is_active a "is_published" para el front
-    commission_percentage: profile.commission_percentage,
-    
-    // Horarios
-    schedules: mainBranch?.provider_schedules.map(sch => ({
-      day_id: sch.day_of_week,
-      day: dayNumberToString(sch.day_of_week ?? 0),
-      start: sch.start_time,
-      end: sch.end_time,
-      is_active: true
-    })) || []
-  };
-
-  return successResponse(formattedResponse);
-}
-
-function dayNumberToString(day: number): string {
-  const days = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
-  return days[day] || 'Desconocido';
+  console.log('✅ [DOCTORS] GET /api/doctors/profile - Perfil obtenido exitosamente');
+  return successResponse(profile);
 }
 
 // --- UPDATE PROFILE ---
