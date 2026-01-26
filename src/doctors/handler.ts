@@ -1,39 +1,42 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResult } from 'aws-lambda';
-import { logger } from '../shared/logger';
-import { errorResponse, internalErrorResponse, optionsResponse } from '../shared/response';
-import { getAppointments } from './appointments.controller';
-import { getProfile, updateProfile } from './profile.controller';
+import { getDashboard, getProfile, updateProfile, updateSchedule } from './profile.controller';
+import { getSpecialties } from './specialties.controller';
 
-
-export async function handler(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> => {
   const method = event.requestContext.http.method;
   const path = event.requestContext.http.path;
 
-  logger.info('Doctors handler invoked', { method, path });
+  console.log(`Doctors handler invoked: ${method} ${path}`);
 
-  // Manejar preflight OPTIONS requests (CORS)
-  if (method === 'OPTIONS') {
-    return optionsResponse(event);
+  // --- RUTAS DE PERFIL ---
+  if (path === '/api/doctors/profile' && method === 'GET') {
+    return getProfile(event);
+  }
+  if (path === '/api/doctors/profile' && method === 'PUT') {
+    return updateProfile(event);
   }
 
-  try {
-    // --- Rutas de Perfil ---
-    if (path === '/api/doctors/profile') {
-      if (method === 'GET') return await getProfile(event);
-      if (method === 'PUT') return await updateProfile(event);
-    }
-
-    // --- Rutas de Citas ---
-    if (path === '/api/doctors/appointments') {
-      if (method === 'GET') return await getAppointments(event);
-    }
-
-    // Si no coincide ninguna ruta
-    return errorResponse('Not found', 404);
-
-  } catch (error: any) {
-    console.error(`❌ [DOCTORS] ${method} ${path} - Error:`, error.message);
-    logger.error('Error in doctors handler', error, { method, path });
-    return internalErrorResponse(error.message || 'Internal server error');
+  // --- RUTA: DASHBOARD ---
+  if (path === '/api/doctors/dashboard' && method === 'GET') {
+    return getDashboard(event);
   }
-}
+
+  // --- RUTA: HORARIOS ---
+  if (path === '/api/doctors/schedule' && (method === 'PUT' || method === 'POST')) {
+    return updateSchedule(event);
+  }
+
+  // --- ESPECIALIDADES ---
+  if (path === '/api/specialties' && method === 'GET') {
+    return getSpecialties(event);
+  }
+
+  if (path === '/api/doctors/appointments' && method === 'GET') {
+    return { statusCode: 200, body: JSON.stringify({ success: true, data: [] }) }; 
+  }
+
+  return {
+    statusCode: 404,
+    body: JSON.stringify({ message: `Route ${method} ${path} not found` }),
+  };
+};
