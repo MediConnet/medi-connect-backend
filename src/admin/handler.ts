@@ -347,15 +347,26 @@ async function registerProviderRequest(event: APIGatewayProxyEventV2): Promise<A
       // Usar la contraseña enviada por el usuario
       const passwordHash = await bcrypt.hash(body.password, 10);
 
+      // En desarrollo, crear usuarios activos para poder probar inmediatamente
+      // En producción, crear inactivos hasta aprobación del admin
+      const isDevelopment = process.env.STAGE === 'dev' || process.env.NODE_ENV === 'development';
+      const isActive = isDevelopment;
+
       user = await prisma.users.create({
         data: {
           id: randomUUID(),
           email: body.email,
           password_hash: passwordHash,
           role: enum_roles.provider,
-          is_active: false, // Inactivo hasta que se apruebe
+          is_active: isActive, // Activo en desarrollo, inactivo en producción
         },
       });
+      
+      if (isActive) {
+        console.log(`✅ [REGISTER_PROVIDER_REQUEST] Usuario creado como ACTIVO (modo desarrollo)`);
+      } else {
+        console.log(`⚠️ [REGISTER_PROVIDER_REQUEST] Usuario creado como INACTIVO (modo producción - requiere aprobación)`);
+      }
     } else if (user.role !== enum_roles.provider) {
       // Si el usuario existe pero no es provider, actualizar su rol
       user = await prisma.users.update({
@@ -376,7 +387,7 @@ async function registerProviderRequest(event: APIGatewayProxyEventV2): Promise<A
         await prisma.providers.update({
           where: { id: existingProvider.id },
           data: {
-            verification_status: enum_verification.PENDING,
+            verification_status: 'PENDING', // Usar string directamente
             commercial_name: body.serviceName,
             description: body.description || null,
           },
@@ -416,9 +427,21 @@ async function registerProviderRequest(event: APIGatewayProxyEventV2): Promise<A
         commercial_name: body.serviceName,
         description: body.description || null,
         logo_url: body.logoUrl && body.logoUrl !== '' ? body.logoUrl : null,
-        verification_status: enum_verification.PENDING,
+        verification_status: 'PENDING', // Usar string directamente (el campo es String? en el schema)
         commission_percentage: 15.0,
       },
+    });
+    
+    // Verificar que se guardó correctamente
+    const savedProvider = await prisma.providers.findUnique({
+      where: { id: provider.id },
+      select: { id: true, verification_status: true, commercial_name: true },
+    });
+    console.log(`✅ [REGISTER_PROVIDER_REQUEST] Provider creado y verificado:`, {
+      id: savedProvider?.id,
+      name: savedProvider?.commercial_name,
+      status: savedProvider?.verification_status,
+      statusType: typeof savedProvider?.verification_status,
     });
 
     // 7. Crear sucursal principal (siempre se crea, con o sin dirección)
@@ -476,10 +499,31 @@ async function getRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayPro
   const prisma = getPrismaClient();
 
   // Obtener providers con estado PENDING (o el estado especificado)
-  const verificationStatus = status === 'APPROVED' ? enum_verification.APPROVED :
-                            status === 'REJECTED' ? enum_verification.REJECTED :
-                            enum_verification.PENDING;
+  // IMPORTANTE: Como verification_status es String? en el schema, usar strings directamente
+  const verificationStatus = status === 'APPROVED' ? 'APPROVED' :
+                            status === 'REJECTED' ? 'REJECTED' :
+                            'PENDING';
 
+  console.log(`🔍 [GET_REQUESTS] Buscando providers con status: ${verificationStatus}`);
+
+  // Primero, verificar cuántos providers hay en total y cuántos con cada estado
+  const allProviders = await prisma.providers.findMany({
+    select: {
+      id: true,
+      verification_status: true,
+      commercial_name: true,
+    },
+  });
+  
+  console.log(`📊 [GET_REQUESTS] Total de providers en BD: ${allProviders.length}`);
+  const statusCounts = allProviders.reduce((acc, p) => {
+    const status = p.verification_status || 'NULL';
+    acc[status] = (acc[status] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+  console.log(`📊 [GET_REQUESTS] Distribución de estados:`, statusCounts);
+
+  // Buscar usando el string directamente
   const providers = await prisma.providers.findMany({
     where: {
       verification_status: verificationStatus,
@@ -546,8 +590,8 @@ async function getRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayPro
         ? new Date(provider.users.created_at).toISOString().split('T')[0]
         : new Date().toISOString().split('T')[0],
       documentsCount: 0, // TODO: Implementar cuando exista modelo de documentos
-      status: provider.verification_status === enum_verification.APPROVED ? 'APPROVED' :
-              provider.verification_status === enum_verification.REJECTED ? 'REJECTED' :
+      status: provider.verification_status === 'APPROVED' ? 'APPROVED' :
+              provider.verification_status === 'REJECTED' ? 'REJECTED' :
               'PENDING',
       rejectionReason: null, // TODO: Agregar campo de razón de rechazo
       phone: branch?.phone_contact || '',
@@ -559,7 +603,8 @@ async function getRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayPro
     };
   });
 
-  console.log(`✅ [GET_REQUESTS] Retornando ${requests.length} solicitudes`);
+    console.log(`✅ [GET_REQUESTS] Retornando ${requests.length} solicitudes`);
+    console.log(`🔍 [GET_REQUESTS] IDs de providers encontrados:`, providers.map(p => ({ id: p.id, name: p.commercial_name, status: p.verification_status })));
   return successResponse(requests);
 }
 
@@ -720,7 +765,7 @@ async function approveRequest(event: APIGatewayProxyEventV2): Promise<APIGateway
   await prisma.providers.update({
     where: { id: requestId },
     data: {
-      verification_status: enum_verification.APPROVED,
+      verification_status: 'APPROVED', // Usar string directamente
     },
   });
 
@@ -777,7 +822,7 @@ async function rejectRequest(event: APIGatewayProxyEventV2): Promise<APIGatewayP
   await prisma.providers.update({
     where: { id: requestId },
     data: {
-      verification_status: enum_verification.REJECTED,
+      verification_status: 'REJECTED', // Usar string directamente
     },
   });
 

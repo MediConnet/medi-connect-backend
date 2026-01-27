@@ -1,11 +1,11 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResult } from 'aws-lambda';
-import { randomUUID } from 'crypto';
 import { enum_roles } from '../generated/prisma/client';
 import { AuthContext, requireRole } from '../shared/auth';
 import { logger } from '../shared/logger';
 import { getPrismaClient } from '../shared/prisma';
 import { errorResponse, internalErrorResponse, notFoundResponse, successResponse } from '../shared/response';
-import { parseBody, updateDoctorProfileSchema } from '../shared/validators';
+import { parseBody, updatePharmacyProfileSchema } from '../shared/validators';
+import { randomUUID } from 'crypto';
 
 // --- HELPER FUNCTIONS ---
 function dayNumberToString(day: number): string {
@@ -29,12 +29,11 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
   const authContext = authResult as AuthContext;
   const prisma = getPrismaClient();
 
-  //  Buscamos el Provider con todas las relaciones
+  // Buscar provider con todas las relaciones
   const profile = await prisma.providers.findFirst({
     where: { user_id: authContext.user.id },
     include: {
       users: { select: { email: true, profile_picture_url: true } },
-      specialties: true,
       service_categories: true,
       provider_branches: {
         where: { is_main: true },
@@ -48,14 +47,10 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
     },
   });
 
-  if (!profile) return notFoundResponse('Doctor profile not found');
+  if (!profile) return notFoundResponse('Pharmacy profile not found');
 
   const mainBranch = profile.provider_branches[0] || null;
   const user = profile.users;
-  
-  const specialtyName = profile.specialties.length > 0 
-    ? profile.specialties.map((s: any) => s.name).join(', ') 
-    : 'General';
 
   const formattedResponse = {
     id: profile.id,
@@ -63,19 +58,7 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
     email: user?.email,
     profile_picture_url: user?.profile_picture_url || profile.logo_url,
     
-    specialty: specialtyName,
-    specialties_list: profile.specialties.map(s => s.name),
-    specialties: profile.specialties.map(s => ({
-      id: s.id,
-      name: s.name,
-      color_hex: s.color_hex,
-      description: s.description
-    })),
-    
-    category: profile.service_categories?.name || 'Salud',
-    years_of_experience: profile.years_of_experience ?? 0,
-    consultation_fee: mainBranch?.consultation_fee ? parseFloat(mainBranch.consultation_fee.toString()) : 0.00,
-    payment_methods: mainBranch?.payment_methods || [],
+    category: profile.service_categories?.name || 'Farmacia',
     description: profile.description || '',
     address: mainBranch?.address_text || '',
     phone: mainBranch?.phone_contact || '',
@@ -83,8 +66,12 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
     latitude: mainBranch?.latitude || null,
     longitude: mainBranch?.longitude || null,
     status: profile.verification_status,
-    is_published: mainBranch?.is_active ?? false, 
+    is_published: mainBranch?.is_active ?? false,
     commission_percentage: profile.commission_percentage,
+    
+    // Información específica de farmacia
+    has_delivery: mainBranch?.has_delivery ?? false,
+    is_24h: mainBranch?.is_24h ?? false,
     
     // Mapeo de horarios para el frontend
     schedules: mainBranch?.provider_schedules.map(sch => ({
@@ -92,7 +79,7 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
       day: dayNumberToString(sch.day_of_week ?? 0),
       start: sch.start_time,
       end: sch.end_time,
-      is_active: true // Los horarios existentes están activos por defecto
+      is_active: true
     })) || []
   };
 
@@ -106,7 +93,7 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
 
   try {
     const authContext = authResult as AuthContext;
-    const body = parseBody(event.body || null, updateDoctorProfileSchema);
+    const body = parseBody(event.body || null, updatePharmacyProfileSchema);
     const prisma = getPrismaClient();
 
     let profile = await prisma.providers.findFirst({
@@ -114,16 +101,7 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
       include: { provider_branches: { where: { is_main: true } } }
     });
 
-    if (!profile) return notFoundResponse('Doctor profile not found for updates');
-
-    let specialtyUpdateOps: any = undefined;
-    if (body.specialties) {
-      const foundSpecialties = await prisma.specialties.findMany({
-        where: { name: { in: body.specialties } },
-        select: { id: true }
-      });
-      specialtyUpdateOps = { set: foundSpecialties.map(s => ({ id: s.id })) };
-    }
+    if (!profile) return notFoundResponse('Pharmacy profile not found for updates');
 
     // --- TRANSACCIÓN UNIFICADA ---
     await prisma.$transaction(async (tx) => {
@@ -131,14 +109,11 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
       // A. Actualizar Provider
       const providerUpdateData: any = {
         commercial_name: body.full_name,
-        description: body.bio,
-        years_of_experience: body.years_of_experience,
+        description: body.bio || body.description,
       };
       
       // Limpieza de undefined
       Object.keys(providerUpdateData).forEach(key => providerUpdateData[key] === undefined && delete providerUpdateData[key]);
-      
-      if (specialtyUpdateOps) providerUpdateData.specialties = specialtyUpdateOps;
 
       if (Object.keys(providerUpdateData).length > 0) {
         await tx.providers.update({
@@ -153,9 +128,9 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
         const branchData: any = {
             address_text: body.address,
             phone_contact: body.whatsapp || body.phone, 
-            consultation_fee: body.consultation_fee,
-            payment_methods: body.payment_methods,
-            is_active: body.is_published
+            is_active: body.is_published,
+            has_delivery: body.has_delivery,
+            is_24h: body.is_24h,
         };
         
         Object.keys(branchData).forEach(key => branchData[key] === undefined && delete branchData[key]);
@@ -199,7 +174,6 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
       where: { id: profile.id },
       include: {
         users: { select: { email: true, profile_picture_url: true } },
-        specialties: true,
         service_categories: true,
         provider_branches: {
           where: { is_main: true },
@@ -211,10 +185,6 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
 
     const updatedMainBranch = updatedProfile?.provider_branches[0] || null;
     const updatedUser = updatedProfile?.users;
-    
-    const specialtyName = updatedProfile?.specialties.length 
-      ? updatedProfile.specialties.map((s: any) => s.name).join(', ') 
-      : 'General';
 
     const formattedResponse = {
       id: updatedProfile?.id,
@@ -222,15 +192,7 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
       email: updatedUser?.email, 
       profile_picture_url: updatedUser?.profile_picture_url || updatedProfile?.logo_url,
       
-      specialty: specialtyName,
-      specialties_list: updatedProfile?.specialties.map(s => s.name) || [],
-      
-      category: updatedProfile?.service_categories?.name || 'Salud',
-      years_of_experience: updatedProfile?.years_of_experience ?? 0,
-      consultation_fee: updatedMainBranch?.consultation_fee 
-          ? parseFloat(updatedMainBranch.consultation_fee.toString()) 
-          : 0.00,
-      payment_methods: updatedMainBranch?.payment_methods || [],
+      category: updatedProfile?.service_categories?.name || 'Farmacia',
       description: updatedProfile?.description || '',
       address: updatedMainBranch?.address_text || '',
       phone: updatedMainBranch?.phone_contact || '',
@@ -241,12 +203,15 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
       is_published: updatedMainBranch?.is_active ?? false,
       commission_percentage: updatedProfile?.commission_percentage,
       
+      has_delivery: updatedMainBranch?.has_delivery ?? false,
+      is_24h: updatedMainBranch?.is_24h ?? false,
+      
       schedules: updatedMainBranch?.provider_schedules.map(sch => ({
         day_id: sch.day_of_week,
         day: dayNumberToString(sch.day_of_week ?? 0),
         start: sch.start_time,
         end: sch.end_time,
-        is_active: true // Los horarios existentes están activos por defecto
+        is_active: true
       })) || []
     };
 
@@ -259,33 +224,4 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
     }
     return internalErrorResponse('Failed to update profile');
   }
-}
-
-// --- GET DASHBOARD ---
-export async function getDashboard(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  const result = await getProfile(event);
-  if (result.statusCode !== 200) return result;
-
-  const body = JSON.parse(result.body);
-  const profileData = body.data;
-
-  return successResponse({
-    totalAppointments: 0,
-    pendingAppointments: 0,
-    completedAppointments: 0,
-    totalRevenue: 0,
-    averageRating: 0,
-    totalReviews: 0,
-    provider: {
-      ...profileData,
-      commercial_name: profileData.full_name,
-      address_text: profileData.address,
-      phone_contact: profileData.phone
-    }
-  });
-}
-
-// --- UPDATE SCHEDULE (Opcional, se mantiene por compatibilidad) ---
-export async function updateSchedule(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-    return successResponse({ message: "Schedule updated via Profile update" });
 }

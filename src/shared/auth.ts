@@ -156,7 +156,12 @@ export async function getAuthContext(
         where: { email: email as string },
       });
       
-      if (user && user.is_active) {
+      // En desarrollo, permitir usuarios inactivos
+      const isDevelopment = !(process.env.STAGE === 'prod' || process.env.NODE_ENV === 'production');
+      if (user && (user.is_active || isDevelopment)) {
+        if (!user.is_active && isDevelopment) {
+          console.log(`⚠️ [AUTH] Usuario inactivo pero permitido en desarrollo: ${user.email}`);
+        }
         console.log(`✅ [AUTH] Usuario autenticado por header: ${user.email} (${user.role})`);
         return {
           cognitoUserId: user.id,
@@ -175,7 +180,12 @@ export async function getAuthContext(
         where: { email: token },
       });
       
-      if (user && user.is_active) {
+      // En desarrollo, permitir usuarios inactivos
+      const isDevelopment = !(process.env.STAGE === 'prod' || process.env.NODE_ENV === 'production');
+      if (user && (user.is_active || isDevelopment)) {
+        if (!user.is_active && isDevelopment) {
+          console.log(`⚠️ [AUTH] Usuario inactivo pero permitido en desarrollo: ${user.email}`);
+        }
         console.log(`✅ [AUTH] Usuario autenticado por token-email: ${user.email} (${user.role})`);
         return {
           cognitoUserId: user.id,
@@ -230,9 +240,15 @@ export async function getAuthContext(
     return null;
   }
 
-  if (!user.is_active) {
-    console.log(`❌ [AUTH] Usuario inactivo: ${userEmail}`);
+  // En desarrollo, permitir usuarios inactivos
+  const isDevelopment = !(process.env.STAGE === 'prod' || process.env.NODE_ENV === 'production');
+  if (!user.is_active && !isDevelopment) {
+    console.log(`❌ [AUTH] Usuario inactivo (modo producción): ${userEmail}`);
     return null;
+  }
+  
+  if (!user.is_active && isDevelopment) {
+    console.log(`⚠️ [AUTH] Usuario inactivo pero permitido en desarrollo: ${userEmail}`);
   }
 
   console.log(`✅ [AUTH] Usuario autenticado: ${user.email} (${user.role})`);
