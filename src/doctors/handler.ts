@@ -18,6 +18,9 @@ import {
   extractIdFromPath 
 } from '../shared/validators';
 import { randomUUID } from 'crypto';
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 
 export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> => {
@@ -771,4 +774,7 @@ async function updateSchedule(event: APIGatewayProxyEventV2): Promise<APIGateway
     return internalErrorResponse('Failed to update schedule');
   }
 }
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
