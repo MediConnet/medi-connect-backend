@@ -96,6 +96,17 @@ export const approveRequestSchema = z.object({
 
 export const rejectRequestSchema = z.object({
   notes: z.string().optional(),
+  reason: z.string().optional(),
+});
+
+// Patient validators
+export const updatePatientProfileSchema = z.object({
+  full_name: z.string().min(1, 'Full name is required').optional(),
+  phone: z.string().optional(),
+  identification: z.string().optional(),
+  birth_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Birth date must be in YYYY-MM-DD format').optional(),
+  address: z.string().optional(),
+  profile_picture_url: z.string().url('Profile picture URL must be a valid URL').optional().or(z.literal('')),
 });
 
 // Generic body parser helper
@@ -115,10 +126,54 @@ export function parseBody<T extends z.ZodTypeAny>(body: string | null | undefine
   }
 }
 
+// Pharmacy validators
+const pharmacyScheduleItemSchema = z.object({
+  day: z.string(),
+  enabled: z.boolean(),
+  startTime: z.string(),
+  endTime: z.string(),
+});
+
+export const updatePharmacyProfileSchema = z.object({
+  full_name: z.string().min(3, "El nombre es muy corto").optional(),
+  bio: z.string().optional(),
+  description: z.string().optional(),
+  address: z.string().optional(),
+  phone: z.string().optional(),
+  whatsapp: z.string().optional(),
+  is_published: z.boolean().optional(),
+  has_delivery: z.boolean().optional(),
+  is_24h: z.boolean().optional(),
+  workSchedule: z.array(pharmacyScheduleItemSchema).optional(),
+});
+
+export const createProductSchema = z.object({
+  name: z.string().min(1, 'Product name is required'),
+  description: z.string().optional(),
+  price: z.number().min(0, 'Price must be positive'),
+  is_available: z.boolean().optional().default(true),
+  image_url: z.string().url('Image URL must be a valid URL').optional().or(z.literal('')),
+  type: z.string().optional().default('product'),
+});
+
+export const updateProductSchema = z.object({
+  name: z.string().min(1, 'Product name is required').optional(),
+  description: z.string().optional(),
+  price: z.number().min(0, 'Price must be positive').optional(),
+  is_available: z.boolean().optional(),
+  image_url: z.string().url('Image URL must be a valid URL').optional().or(z.literal('')),
+});
+
+export const updateOrderStatusSchema = z.object({
+  status: z.enum(['pending', 'confirmed', 'preparing', 'ready', 'delivered', 'cancelled'], {
+    errorMap: () => ({ message: 'Status must be one of: pending, confirmed, preparing, ready, delivered, cancelled' }),
+  }),
+});
+
 // Helper para extraer ID de la URL
-export function extractIdFromPath(path: string, prefix: string, suffix: string): string {
+export function extractIdFromPath(path: string, prefix: string, suffix: string = ''): string {
   const start = prefix.length;
-  const end = path.indexOf(suffix);
+  const end = suffix ? path.indexOf(suffix) : path.length;
   if (end === -1 || start >= end) {
     throw new Error('Invalid path format');
   }
