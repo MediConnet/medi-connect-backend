@@ -19,6 +19,9 @@ import {
 } from '../shared/validators';
 import { randomUUID } from 'crypto';
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
@@ -775,6 +778,9 @@ async function updateSchedule(event: APIGatewayProxyEventV2): Promise<APIGateway
   }
 }
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
