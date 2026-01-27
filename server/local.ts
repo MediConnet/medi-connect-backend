@@ -1,7 +1,7 @@
-import express from 'express';
+import { APIGatewayProxyEventV2 } from 'aws-lambda';
 import cors from 'cors';
 import * as dotenv from 'dotenv';
-import { APIGatewayProxyEventV2 } from 'aws-lambda';
+import express from 'express';
 
 // Cargar variables de entorno
 dotenv.config();
@@ -133,9 +133,9 @@ async function handleLambdaResponse(
 }
 
 // Importar handlers
+import { handler as adminHandler } from '../src/admin/handler';
 import { handler as authHandler } from '../src/auth/handler';
 import { handler as doctorsHandler } from '../src/doctors/handler';
-import { handler as adminHandler } from '../src/admin/handler';
 import { handler as suppliesHandler } from '../src/supplies/handler';
 
 // Importar otros handlers si existen
@@ -171,6 +171,11 @@ app.use('/api/auth', async (req, res) => {
 // Routes - Doctors
 app.use('/api/doctors', async (req, res) => {
   const path = req.originalUrl.split('?')[0];
+  await handleLambdaResponse(doctorsHandler, req, res, path);
+});
+
+app.use('/api/specialties', async (req, res) => {
+  const path = req.originalUrl.split('?')[0]; 
   await handleLambdaResponse(doctorsHandler, req, res, path);
 });
 

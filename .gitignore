@@ -14,3 +14,4 @@ coverage/
 .serverless
 
 /src/generated/prisma
+layers/prisma-layer/nodejs/src/generated/prisma/

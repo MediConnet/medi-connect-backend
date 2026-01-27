@@ -30,6 +30,13 @@ export const resetPasswordSchema = z.object({
   newPassword: z.string().min(8, 'New password must be at least 8 characters'),
 });
 
+const scheduleItemSchema = z.object({
+  day: z.string(),
+  enabled: z.boolean(),
+  startTime: z.string(),
+  endTime: z.string(),
+});
+
 // Doctor validators
 export const updateDoctorProfileSchema = z.object({
   licenseNumber: z.string().optional(),
@@ -42,8 +49,10 @@ export const updateDoctorProfileSchema = z.object({
   whatsapp: z.string().optional(),
   years_of_experience: z.number().int().min(0).optional(),
   consultation_fee: z.number().min(0).optional(),
+  specialties: z.array(z.string()).optional(),
   payment_methods: z.array(z.string()).optional(), // Array de strings
   is_published: z.boolean().optional(),
+  workSchedule: z.array(scheduleItemSchema).optional(),
 });
 
 // Admin validators
