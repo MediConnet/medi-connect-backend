@@ -10,17 +10,19 @@ datasource db {
 }
 
 model appointments {
-  id                String             @id @db.Uuid
-  patient_id        String?            @db.Uuid
-  branch_id         String?            @db.Uuid
-  provider_id       String?            @db.Uuid
-  scheduled_for     DateTime?          @db.Timestamp(6)
-  status            String?            @db.VarChar(255)
+  id                String              @id @db.Uuid
+  patient_id        String?             @db.Uuid
+  branch_id         String?             @db.Uuid
+  provider_id       String?             @db.Uuid
+  scheduled_for     DateTime?           @db.Timestamp(6)
+  status            String?             @db.VarChar(255)
   reason            String?
-  is_paid           Boolean?           @default(false)
-  provider_branches provider_branches? @relation(fields: [branch_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  patients          patients?          @relation(fields: [patient_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  providers         providers?         @relation(fields: [provider_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  payment_method    enum_payment_method @default(CASH)
+  cost              Decimal             @default(0) @db.Decimal(10, 2)
+  is_paid           Boolean?            @default(false)
+  provider_branches provider_branches?  @relation(fields: [branch_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  patients          patients?           @relation(fields: [patient_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  providers         providers?          @relation(fields: [provider_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   payments          payments[]
   reviews           reviews[]
 }
@@ -306,4 +308,9 @@ enum enum_verification {
   PENDING
   APPROVED
   REJECTED
+}
+
+enum enum_payment_method {
+  CASH
+  CARD
 }
