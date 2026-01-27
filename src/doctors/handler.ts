@@ -5,6 +5,7 @@ import { errorResponse, internalErrorResponse, optionsResponse, successResponse 
 // Importar Controllers (Separación de Responsabilidades)
 import { getAppointments, updateAppointmentStatus } from './appointments.controller';
 import { getDashboard } from './dashboard.controller';
+import { createDiagnosis, getDiagnosis } from './diagnoses.controller';
 import { getPatients } from './patients.controller';
 import { getProfile, updateProfile } from './profile.controller';
 import { getSpecialties } from './specialties.controller';
@@ -35,9 +36,20 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     if (path === '/api/doctors/appointments') {
       if (method === 'GET') return await getAppointments(event);
     }
-    // Update status (con o sin ID en path, el controller maneja fallback)
+    
+    // Update status (PUT /status)
     if (path.startsWith('/api/doctors/appointments/') && path.endsWith('/status')) {
       if (method === 'PUT') return await updateAppointmentStatus(event);
+    }
+
+    // --- NUEVA RUTA: Create Diagnosis (POST /diagnosis) ---
+    if (path.startsWith('/api/doctors/appointments/') && path.endsWith('/diagnosis')) {
+      if (method === 'POST') return await createDiagnosis(event);
+    }
+
+    if (path.startsWith('/api/doctors/appointments/') && path.endsWith('/diagnosis')) {
+      if (method === 'POST') return await createDiagnosis(event);
+      if (method === 'GET') return await getDiagnosis(event); 
     }
 
     // --- Patients ---
@@ -45,7 +57,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       if (method === 'GET') return await getPatients(event);
     }
 
-    // --- Reviews & Payments (Placeholders por ahora) ---
+    // --- Reviews & Payments (Placeholders) ---
     if (path === '/api/doctors/reviews' && method === 'GET') {
         return successResponse({ reviews: [] });
     }

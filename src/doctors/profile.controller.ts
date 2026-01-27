@@ -92,7 +92,7 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
       day: dayNumberToString(sch.day_of_week ?? 0),
       start: sch.start_time,
       end: sch.end_time,
-      is_active: true // Los horarios existentes están activos por defecto
+      is_active: true
     })) || []
   };
 
@@ -246,7 +246,7 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
         day: dayNumberToString(sch.day_of_week ?? 0),
         start: sch.start_time,
         end: sch.end_time,
-        is_active: true // Los horarios existentes están activos por defecto
+        is_active: true
       })) || []
     };
 
@@ -259,33 +259,4 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
     }
     return internalErrorResponse('Failed to update profile');
   }
-}
-
-// --- GET DASHBOARD ---
-export async function getDashboard(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  const result = await getProfile(event);
-  if (result.statusCode !== 200) return result;
-
-  const body = JSON.parse(result.body);
-  const profileData = body.data;
-
-  return successResponse({
-    totalAppointments: 0,
-    pendingAppointments: 0,
-    completedAppointments: 0,
-    totalRevenue: 0,
-    averageRating: 0,
-    totalReviews: 0,
-    provider: {
-      ...profileData,
-      commercial_name: profileData.full_name,
-      address_text: profileData.address,
-      phone_contact: profileData.phone
-    }
-  });
-}
-
-// --- UPDATE SCHEDULE (Opcional, se mantiene por compatibilidad) ---
-export async function updateSchedule(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-    return successResponse({ message: "Schedule updated via Profile update" });
 }
