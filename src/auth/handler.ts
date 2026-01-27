@@ -24,6 +24,7 @@ import {
   changePasswordSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
+  refreshTokenSchema,
   parseBody,
 } from '../shared/validators';
 import { validatePayloadSize } from '../shared/security';
@@ -271,9 +272,27 @@ async function login(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResu
         password_hash_length: user.password_hash ? user.password_hash.length : 0,
       });
 
-      if (!user.is_active) {
-        console.error('❌ [LOGIN] Usuario inactivo:', body.email);
+      // En desarrollo, permitir login aunque el usuario esté inactivo
+      // En producción, requerir que el usuario esté activo
+      // Por defecto, asumir desarrollo si no está explícitamente en producción
+      const isProduction = process.env.STAGE === 'prod' || process.env.NODE_ENV === 'production';
+      const isDevelopment = !isProduction; // Si no es producción, es desarrollo
+      
+      console.log(`🔍 [LOGIN] Verificando estado de usuario:`, {
+        is_active: user.is_active,
+        STAGE: process.env.STAGE || 'no configurado',
+        NODE_ENV: process.env.NODE_ENV || 'no configurado',
+        isProduction: isProduction,
+        isDevelopment: isDevelopment,
+      });
+      
+      if (!user.is_active && !isDevelopment) {
+        console.error('❌ [LOGIN] Usuario inactivo (modo producción):', body.email);
         return unauthorizedResponse('User account is inactive');
+      }
+      
+      if (!user.is_active && isDevelopment) {
+        console.log('⚠️ [LOGIN] Usuario inactivo pero permitido en desarrollo:', body.email);
       }
 
       // Verificar contraseña
@@ -528,13 +547,148 @@ async function login(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResu
 
 async function refresh(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   try {
-    const body = event.body ? JSON.parse(event.body) : {};
+    console.log('🔄 [REFRESH] Procesando refresh token');
+    const body = parseBody(event.body, refreshTokenSchema);
     const refreshToken = body.refreshToken;
+    const isLocalDev = process.env.STAGE === 'dev' || process.env.NODE_ENV === 'development' || !CLIENT_ID || !USER_POOL_ID;
 
-    if (!refreshToken) {
-      return errorResponse('Refresh token is required', 400);
+    // Si estamos en desarrollo local, decodificar el refresh token y generar uno nuevo
+    if (isLocalDev) {
+      console.log('🔧 [REFRESH] Modo desarrollo local - Generando nuevo token desde refresh token');
+      
+      try {
+        // Decodificar el refresh token (que en local es igual al access token)
+        const parts = refreshToken.split('.');
+        if (parts.length !== 3) {
+          console.error('❌ [REFRESH] Token no tiene formato JWT válido');
+          return unauthorizedResponse('Invalid refresh token format');
+        }
+
+        // Decodificar payload
+        const base64Url = parts[1];
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const padding = base64.length % 4;
+        const paddedBase64 = padding ? base64 + '='.repeat(4 - padding) : base64;
+        const jsonPayload = Buffer.from(paddedBase64, 'base64').toString('utf-8');
+        const decoded = JSON.parse(jsonPayload);
+
+        console.log('✅ [REFRESH] Token decodificado. Email:', decoded.email || decoded.sub);
+
+        // Verificar que el token no haya expirado (si tiene exp)
+        if (decoded.exp) {
+          const now = Math.floor(Date.now() / 1000);
+          if (decoded.exp < now) {
+            console.error('❌ [REFRESH] Token expirado');
+            return unauthorizedResponse('Refresh token expired');
+          }
+        }
+
+        // Buscar el usuario en la base de datos
+        const prisma = getPrismaClient();
+        const user = await prisma.users.findFirst({
+          where: {
+            OR: [
+              { id: decoded.sub || decoded.userId },
+              { email: decoded.email },
+            ],
+          },
+        });
+
+        if (!user) {
+          console.error('❌ [REFRESH] Usuario no encontrado');
+          return unauthorizedResponse('User not found');
+        }
+
+        // Verificar que el usuario esté activo (en desarrollo permitimos inactivos)
+        const isProduction = process.env.STAGE === 'prod' || process.env.NODE_ENV === 'production';
+        if (!user.is_active && isProduction) {
+          console.error('❌ [REFRESH] Usuario inactivo');
+          return unauthorizedResponse('User account is inactive');
+        }
+
+        // Obtener información adicional del provider si es un provider
+        let providerInfo = null;
+        let serviceType = null;
+        
+        if (user.role === enum_roles.provider) {
+          const provider = await prisma.providers.findFirst({
+            where: { user_id: user.id },
+            include: {
+              service_categories: {
+                select: {
+                  slug: true,
+                  name: true,
+                },
+              },
+            },
+          });
+          
+          if (provider) {
+            providerInfo = {
+              id: provider.id,
+              commercialName: provider.commercial_name,
+              logoUrl: provider.logo_url,
+            };
+            serviceType = provider.service_categories?.slug || null;
+          }
+        }
+
+        // Normalizar role y serviceType
+        const normalizedRole = user.role ? String(user.role).toLowerCase() : 'patient';
+        const normalizedServiceType = serviceType ? String(serviceType).toLowerCase() : null;
+
+        // Generar nuevos tokens
+        const newAccessToken = generateLocalJWT({
+          sub: user.id,
+          email: user.email,
+          role: normalizedRole,
+        });
+
+        const newRefreshToken = generateLocalJWT({
+          sub: user.id,
+          email: user.email,
+          role: normalizedRole,
+        });
+
+        console.log('✅ [REFRESH] Nuevos tokens generados exitosamente');
+
+        // Construir respuesta con la misma estructura que el login
+        const responseData: any = {
+          token: newAccessToken,
+          accessToken: newAccessToken,
+          refreshToken: newRefreshToken,
+          idToken: newAccessToken,
+          expiresIn: 3600, // 1 hora
+          user: {
+            id: user.id,
+            userId: user.id,
+            email: user.email,
+            role: normalizedRole,
+            profilePictureUrl: user.profile_picture_url,
+          },
+        };
+
+        // Agregar información del provider si existe
+        if (providerInfo) {
+          responseData.user.name = providerInfo.commercialName;
+          responseData.user.provider = providerInfo;
+        }
+
+        // Agregar serviceType y tipo normalizados si es provider
+        if (normalizedServiceType) {
+          responseData.user.serviceType = normalizedServiceType;
+          responseData.user.tipo = normalizedServiceType;
+        }
+
+        return successResponse(responseData);
+      } catch (decodeError: any) {
+        console.error('❌ [REFRESH] Error decodificando token:', decodeError.message);
+        return unauthorizedResponse('Invalid refresh token');
+      }
     }
 
+    // Autenticación con Cognito (producción)
+    console.log('🔐 [REFRESH] Refrescando token con Cognito');
     const authCommand = new InitiateAuthCommand({
       ClientId: CLIENT_ID,
       AuthFlow: 'REFRESH_TOKEN_AUTH',
@@ -545,14 +699,23 @@ async function refresh(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyRe
 
     const response = await cognitoClient.send(authCommand);
 
+    console.log('✅ [REFRESH] Token refrescado exitosamente con Cognito');
     return successResponse({
+      token: response.AuthenticationResult?.AccessToken,
       accessToken: response.AuthenticationResult?.AccessToken,
+      refreshToken: refreshToken, // Cognito no devuelve un nuevo refresh token, se reutiliza
       idToken: response.AuthenticationResult?.IdToken,
       expiresIn: response.AuthenticationResult?.ExpiresIn,
     });
   } catch (error: any) {
+    console.error('❌ [REFRESH] Error al refrescar token:', error.message);
     logger.error('Error in refresh', error);
-    return unauthorizedResponse('Invalid refresh token');
+    
+    if (error.name === 'NotAuthorizedException' || error.name === 'InvalidParameterException') {
+      return unauthorizedResponse('Invalid refresh token');
+    }
+    
+    return internalErrorResponse('Failed to refresh token');
   }
 }
 
