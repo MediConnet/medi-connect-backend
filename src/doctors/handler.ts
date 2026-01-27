@@ -3,6 +3,7 @@ import { logger } from '../shared/logger';
 import { errorResponse, internalErrorResponse, optionsResponse, successResponse, notFoundResponse } from '../shared/response';
 import { getAppointments } from './appointments.controller';
 import { getProfile, updateProfile } from './profile.controller';
+import { getSpecialties } from './specialties.controller';
 import { requireRole, AuthContext } from '../shared/auth';
 import { getPrismaClient } from '../shared/prisma';
 import { enum_roles } from '../generated/prisma/client';
@@ -72,6 +73,11 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     // --- Rutas de Pagos ---
     if (path === '/api/doctors/payments' || path === '/api/doctors/payments/income') {
       if (method === 'GET') return await getPayments(event);
+    }
+
+    // --- Rutas de Especialidades ---
+    if (path === '/api/specialties') {
+      if (method === 'GET') return await getSpecialties(event);
     }
 
     // Si no coincide ninguna ruta

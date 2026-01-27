@@ -4,6 +4,7 @@ import { getPrismaClient } from '../shared/prisma';
 import { internalErrorResponse, successResponse } from '../shared/response';
 
 export async function getSpecialties(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  console.log('✅ [SPECIALTIES] GET /api/specialties - Obteniendo especialidades');
   try {
     const prisma = getPrismaClient();
     
@@ -17,8 +18,10 @@ export async function getSpecialties(event: APIGatewayProxyEventV2): Promise<API
       }
     });
 
+    console.log(`✅ [SPECIALTIES] Se encontraron ${specialties.length} especialidades`);
     return successResponse(specialties);
   } catch (error: any) {
+    console.error('❌ [SPECIALTIES] Error al obtener especialidades:', error.message);
     logger.error('Error fetching specialties', error);
     return internalErrorResponse('Failed to fetch specialties');
   }

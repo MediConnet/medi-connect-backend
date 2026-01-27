@@ -65,6 +65,12 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
     
     specialty: specialtyName,
     specialties_list: profile.specialties.map(s => s.name),
+    specialties: profile.specialties.map(s => ({
+      id: s.id,
+      name: s.name,
+      color_hex: s.color_hex,
+      description: s.description
+    })),
     
     category: profile.service_categories?.name || 'Salud',
     years_of_experience: profile.years_of_experience ?? 0,

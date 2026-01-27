@@ -259,6 +259,7 @@ app.listen(PORT, async () => {
   console.log(`   - GET    /api/doctors/payments`);
   console.log(`   - GET    /api/doctors/schedule`);
   console.log(`   - PUT    /api/doctors/schedule`);
+  console.log(`   - GET    /api/specialties`);
   console.log(`   - POST   /api/providers/register`);
   console.log(`   - GET    /api/admin/dashboard/stats`);
   console.log(`   - GET    /api/admin/requests`);
