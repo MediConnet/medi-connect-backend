@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { enum_appt_status } from '../generated/prisma/client';
 // Auth validators
 export const registerSchema = z.object({
   email: z.string().email('Invalid email format'),
@@ -53,6 +54,13 @@ export const updateDoctorProfileSchema = z.object({
   payment_methods: z.array(z.string()).optional(), // Array de strings
   is_published: z.boolean().optional(),
   workSchedule: z.array(scheduleItemSchema).optional(),
+});
+
+// --- Validador para actualizar estado de cita ---
+export const updateAppointmentStatusSchema = z.object({
+  status: z.nativeEnum(enum_appt_status, {
+    errorMap: () => ({ message: "Estado inválido. Valores permitidos: CONFIRMED, CANCELLED, COMPLETED" })
+  }),
 });
 
 // Admin validators

@@ -1,6 +1,8 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResult } from 'aws-lambda';
 import { getDashboard, getProfile, updateProfile, updateSchedule } from './profile.controller';
 import { getSpecialties } from './specialties.controller';
+// 1. Importamos el nuevo controller
+import { getAppointments, updateAppointmentStatus } from './appointments.controller';
 
 export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> => {
   const method = event.requestContext.http.method;
@@ -31,8 +33,14 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
     return getSpecialties(event);
   }
 
+  // --- CITAS (APPOINTMENTS) ---
   if (path === '/api/doctors/appointments' && method === 'GET') {
-    return { statusCode: 200, body: JSON.stringify({ success: true, data: [] }) }; 
+    return getAppointments(event);
+  }
+
+  // --- CITAS: ACTUALIZAR ESTADO ---
+  if (path.match(/^\/api\/doctors\/appointments\/[a-zA-Z0-9-]+\/status$/) && method === 'PUT') {
+    return updateAppointmentStatus(event);
   }
 
   return {
