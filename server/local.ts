@@ -161,6 +161,13 @@ try {
   // Handler no existe o tiene errores
 }
 
+let patientsHandler: any;
+try {
+  patientsHandler = require('../src/patients/handler').handler;
+} catch (e) {
+  // Handler no existe o tiene errores
+}
+
 // Routes - Auth
 app.use('/api/auth', async (req, res) => {
   // Usar originalUrl para obtener el path completo
@@ -195,6 +202,12 @@ app.use('/api/providers', async (req, res) => {
 app.use('/api/supplies', async (req, res) => {
   const path = req.originalUrl.split('?')[0];
   await handleLambdaResponse(suppliesHandler, req, res, path);
+});
+
+// Routes - Patients
+app.use('/api/patients', async (req, res) => {
+  const path = req.originalUrl.split('?')[0];
+  await handleLambdaResponse(patientsHandler, req, res, path);
 });
 
 // Routes - Pharmacies (si existe)
@@ -260,6 +273,19 @@ app.listen(PORT, async () => {
   console.log(`   - GET    /api/doctors/schedule`);
   console.log(`   - PUT    /api/doctors/schedule`);
   console.log(`   - GET    /api/specialties`);
+  console.log(`   - GET    /api/patients/profile`);
+  console.log(`   - PUT    /api/patients/profile`);
+  console.log(`   - GET    /api/patients/appointments`);
+  console.log(`   - GET    /api/patients/appointments/:id`);
+  console.log(`   - DELETE /api/patients/appointments/:id`);
+  console.log(`   - GET    /api/patients/medical-history`);
+  console.log(`   - GET    /api/patients/favorites`);
+  console.log(`   - POST   /api/patients/favorites`);
+  console.log(`   - DELETE /api/patients/favorites/:id`);
+  console.log(`   - GET    /api/patients/notifications`);
+  console.log(`   - GET    /api/patients/notifications/unread`);
+  console.log(`   - PUT    /api/patients/notifications/:id/read`);
+  console.log(`   - PUT    /api/patients/notifications/read-all`);
   console.log(`   - POST   /api/providers/register`);
   console.log(`   - GET    /api/admin/dashboard/stats`);
   console.log(`   - GET    /api/admin/requests`);
