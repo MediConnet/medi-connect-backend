@@ -30,29 +30,18 @@ export const resetPasswordSchema = z.object({
   newPassword: z.string().min(8, 'New password must be at least 8 characters'),
 });
 
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
+export const refreshTokenSchema = z.object({
+  refreshToken: z.string().min(1, 'Refresh token is required'),
+});
+
+// Doctor validators
 const scheduleItemSchema = z.object({
   day: z.string(),
   enabled: z.boolean(),
   startTime: z.string(),
   endTime: z.string(),
-=======
-export const refreshTokenSchema = z.object({
-  refreshToken: z.string().min(1, 'Refresh token is required'),
->>>>>>> Stashed changes
-=======
-export const refreshTokenSchema = z.object({
-  refreshToken: z.string().min(1, 'Refresh token is required'),
->>>>>>> Stashed changes
-=======
-export const refreshTokenSchema = z.object({
-  refreshToken: z.string().min(1, 'Refresh token is required'),
->>>>>>> Stashed changes
 });
 
-// Doctor validators
 export const updateDoctorProfileSchema = z.object({
   licenseNumber: z.string().optional(),
   specialization: z.string().optional(),
@@ -68,66 +57,6 @@ export const updateDoctorProfileSchema = z.object({
   payment_methods: z.array(z.string()).optional(), // Array de strings
   is_published: z.boolean().optional(),
   workSchedule: z.array(scheduleItemSchema).optional(),
-});
-
-export const updateAppointmentStatusSchema = z.object({
-  status: z.enum(['pending', 'paid', 'completed', 'cancelled', 'no-show'], {
-    errorMap: () => ({ message: 'Status must be one of: pending, paid, completed, cancelled, no-show' }),
-  }),
-});
-
-export const createDiagnosisSchema = z.object({
-  diagnosis: z.string().min(1, 'Diagnosis is required'),
-  treatment: z.string().optional(),
-  indications: z.string().optional(),
-  observations: z.string().optional(),
-});
-
-export const scheduleDaySchema = z.object({
-  day: z.enum(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']),
-  enabled: z.boolean(),
-  startTime: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, 'Start time must be in HH:mm format'),
-  endTime: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, 'End time must be in HH:mm format'),
-  timeSlots: z.array(z.object({
-    startTime: z.string(),
-    endTime: z.string(),
-    available: z.boolean(),
-  })).optional(),
-  blockedHours: z.array(z.string()).optional(),
-});
-
-export const updateScheduleSchema = z.object({
-  schedule: z.array(scheduleDaySchema),
-});
-
-export const updateAppointmentStatusSchema = z.object({
-  status: z.enum(['pending', 'paid', 'completed', 'cancelled', 'no-show'], {
-    errorMap: () => ({ message: 'Status must be one of: pending, paid, completed, cancelled, no-show' }),
-  }),
-});
-
-export const createDiagnosisSchema = z.object({
-  diagnosis: z.string().min(1, 'Diagnosis is required'),
-  treatment: z.string().optional(),
-  indications: z.string().optional(),
-  observations: z.string().optional(),
-});
-
-export const scheduleDaySchema = z.object({
-  day: z.enum(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']),
-  enabled: z.boolean(),
-  startTime: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, 'Start time must be in HH:mm format'),
-  endTime: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, 'End time must be in HH:mm format'),
-  timeSlots: z.array(z.object({
-    startTime: z.string(),
-    endTime: z.string(),
-    available: z.boolean(),
-  })).optional(),
-  blockedHours: z.array(z.string()).optional(),
-});
-
-export const updateScheduleSchema = z.object({
-  schedule: z.array(scheduleDaySchema),
 });
 
 export const updateAppointmentStatusSchema = z.object({

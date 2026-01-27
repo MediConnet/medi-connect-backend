@@ -1,8 +1,4 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResult } from 'aws-lambda';
-<<<<<<< Updated upstream
-import { getDashboard, getProfile, updateProfile, updateSchedule } from './profile.controller';
-import { getSpecialties } from './specialties.controller';
-=======
 import { logger } from '../shared/logger';
 import { errorResponse, internalErrorResponse, optionsResponse, successResponse, notFoundResponse } from '../shared/response';
 import { getAppointments } from './appointments.controller';
@@ -18,33 +14,18 @@ import {
   extractIdFromPath 
 } from '../shared/validators';
 import { randomUUID } from 'crypto';
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
 
-export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> => {
+export async function handler(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   const method = event.requestContext.http.method;
   const path = event.requestContext.http.path;
 
-  console.log(`Doctors handler invoked: ${method} ${path}`);
+  logger.info('Doctors handler invoked', { method, path });
 
-  // --- RUTAS DE PERFIL ---
-  if (path === '/api/doctors/profile' && method === 'GET') {
-    return getProfile(event);
-  }
-  if (path === '/api/doctors/profile' && method === 'PUT') {
-    return updateProfile(event);
+  // Manejar preflight OPTIONS requests (CORS)
+  if (method === 'OPTIONS') {
+    return optionsResponse(event);
   }
 
-<<<<<<< Updated upstream
-  // --- RUTA: DASHBOARD ---
-  if (path === '/api/doctors/dashboard' && method === 'GET') {
-    return getDashboard(event);
-=======
   try {
     // --- Rutas de Perfil ---
     if (path === '/api/doctors/profile') {
@@ -110,30 +91,227 @@ async function getDashboard(event: APIGatewayProxyEventV2): Promise<APIGatewayPr
   if ('statusCode' in authResult) {
     console.error('❌ [DOCTORS] GET /api/doctors/dashboard - Error de autenticación/autorización');
     return authResult;
->>>>>>> Stashed changes
   }
 
-  // --- RUTA: HORARIOS ---
-  if (path === '/api/doctors/schedule' && (method === 'PUT' || method === 'POST')) {
-    return updateSchedule(event);
+  const authContext = authResult as AuthContext;
+  const prisma = getPrismaClient();
+  const queryParams = event.queryStringParameters || {};
+  const userId = queryParams.userId || authContext.user.id;
+
+  console.log(`🔍 [DOCTORS] Obteniendo dashboard para userId: ${userId}`);
+
+  // Buscar provider con información completa
+  const provider = await prisma.providers.findFirst({
+    where: { user_id: userId },
+    include: {
+      provider_branches: {
+        select: {
+          id: true,
+          name: true,
+          address_text: true,
+          phone_contact: true,
+          email_contact: true,
+        },
+      },
+      service_categories: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+        },
+      },
+    },
+  });
+
+  if (!provider) {
+    console.log(`⚠️ [DOCTORS] Provider no encontrado para userId: ${userId}, retornando valores en 0`);
+    // Retornar valores en 0 para usuarios nuevos sin provider aún
+    // IMPORTANTE: Retornar estructura completa con todos los campos esperados por el frontend
+    return successResponse({
+      totalAppointments: 0,
+      pendingAppointments: 0,
+      completedAppointments: 0,
+      totalRevenue: 0,
+      averageRating: 0,
+      totalReviews: 0,
+      upcomingAppointments: [],
+      provider: {
+        id: null,
+        commercial_name: null,
+        description: null,
+        specialty: null,
+        logoUrl: null,
+        category: null,
+        branches: [],
+      },
+    });
   }
 
-  // --- ESPECIALIDADES ---
-  if (path === '/api/specialties' && method === 'GET') {
-    return getSpecialties(event);
+  // Obtener appointment_ids del provider primero para calcular revenue
+  const providerAppointments = await prisma.appointments.findMany({
+    where: { provider_id: provider.id },
+    select: { id: true },
+  });
+  const appointmentIds = providerAppointments.map(a => a.id);
+
+  // Obtener estadísticas
+  const [
+    totalAppointments,
+    pendingAppointments,
+    completedAppointments,
+    totalRevenue,
+    averageRating,
+    totalReviews,
+  ] = await Promise.all([
+    prisma.appointments.count({
+      where: { provider_id: provider.id },
+    }),
+    prisma.appointments.count({
+      where: {
+        provider_id: provider.id,
+        status: 'CONFIRMED',
+      },
+    }),
+    prisma.appointments.count({
+      where: {
+        provider_id: provider.id,
+        status: 'COMPLETED',
+      },
+    }),
+    // Agregar los pagos usando appointment_ids
+    appointmentIds.length > 0
+      ? prisma.payments.aggregate({
+          where: {
+            appointment_id: { in: appointmentIds },
+            status: 'completed',
+          },
+          _sum: {
+            provider_amount: true,
+          },
+        })
+      : Promise.resolve({ _sum: { provider_amount: null } } as { _sum: { provider_amount: number | null } }),
+    prisma.reviews.aggregate({
+      where: {
+        provider_branches: {
+          provider_id: provider.id,
+        },
+      },
+      _avg: {
+        rating: true,
+      },
+    }),
+    prisma.reviews.count({
+      where: {
+        provider_branches: {
+          provider_id: provider.id,
+        },
+      },
+    }),
+  ]);
+
+  // Obtener próximas citas
+  const upcomingAppointments = await prisma.appointments.findMany({
+    where: {
+      provider_id: provider.id,
+      status: 'CONFIRMED',
+      scheduled_for: {
+        gte: new Date(),
+      },
+    },
+    include: {
+      patients: {
+        select: {
+          id: true,
+          full_name: true,
+          phone: true,
+        },
+      },
+      provider_branches: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+    },
+    orderBy: {
+      scheduled_for: 'asc',
+    },
+    take: 5,
+  });
+
+  console.log('✅ [DOCTORS] GET /api/doctors/dashboard - Dashboard obtenido exitosamente');
+  return successResponse({
+    totalAppointments,
+    pendingAppointments,
+    completedAppointments,
+    totalRevenue: Number(totalRevenue._sum?.provider_amount || 0),
+    averageRating: Number(averageRating._avg?.rating || 0),
+    totalReviews,
+    upcomingAppointments: upcomingAppointments.map(apt => ({
+      id: apt.id,
+      scheduledFor: apt.scheduled_for,
+      status: apt.status,
+      reason: apt.reason,
+      patient: apt.patients ? {
+        id: apt.patients.id,
+        fullName: apt.patients.full_name,
+        phone: apt.patients.phone,
+      } : null,
+      branch: apt.provider_branches ? {
+        id: apt.provider_branches.id,
+        name: apt.provider_branches.name,
+      } : null,
+    })),
+    provider: {
+      id: provider.id,
+      commercial_name: provider.commercial_name,
+      description: provider.description || null,
+      specialty: null, // TODO: Implementar cuando se necesite specialties
+      logoUrl: provider.logo_url || null,
+      category: provider.service_categories ? {
+        id: provider.service_categories.id,
+        name: provider.service_categories.name,
+        slug: provider.service_categories.slug,
+      } : null,
+      branches: (provider.provider_branches || []).map((branch: any) => ({
+        id: branch.id,
+        name: branch.name,
+        address: branch.address_text || null,
+        phone: branch.phone_contact || null,
+        email: branch.email_contact || null,
+      })),
+    },
+  });
+}
+
+// Obtener pacientes del doctor
+async function getPatients(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  console.log('✅ [DOCTORS] GET /api/doctors/patients - Obteniendo pacientes');
+  
+  const authResult = await requireRole(event, [enum_roles.provider]);
+  if ('statusCode' in authResult) {
+    console.error('❌ [DOCTORS] GET /api/doctors/patients - Error de autenticación/autorización');
+    return authResult;
   }
 
-  if (path === '/api/doctors/appointments' && method === 'GET') {
-    return { statusCode: 200, body: JSON.stringify({ success: true, data: [] }) }; 
+  const authContext = authResult as AuthContext;
+  const prisma = getPrismaClient();
+  const queryParams = event.queryStringParameters || {};
+  const userId = queryParams.userId || authContext.user.id;
+
+  // Buscar provider
+  const provider = await prisma.providers.findFirst({
+    where: { user_id: userId },
+  });
+
+  if (!provider) {
+    console.log('⚠️ [DOCTORS] Provider no encontrado, retornando array vacío de pacientes');
+    return successResponse({
+      patients: [],
+      total: 0,
+    });
   }
 
-<<<<<<< Updated upstream
-  return {
-    statusCode: 404,
-    body: JSON.stringify({ message: `Route ${method} ${path} not found` }),
-  };
-};
-=======
   // Obtener pacientes únicos que tienen citas con este provider
   const appointments = await prisma.appointments.findMany({
     where: { provider_id: provider.id },
@@ -488,8 +666,8 @@ async function createDiagnosis(event: APIGatewayProxyEventV2): Promise<APIGatewa
     return authResult;
   }
 
-    const authContext = authResult as AuthContext;
-    const prisma = getPrismaClient();
+  const authContext = authResult as AuthContext;
+  const prisma = getPrismaClient();
 
   try {
     // Extraer ID de la URL
@@ -758,8 +936,8 @@ async function updateSchedule(event: APIGatewayProxyEventV2): Promise<APIGateway
               day_of_week: dayOfWeek,
               start_time: startTime,
               end_time: endTime,
-    },
-  });
+            },
+          });
         }
       }
     }
@@ -777,10 +955,3 @@ async function updateSchedule(event: APIGatewayProxyEventV2): Promise<APIGateway
     return internalErrorResponse('Failed to update schedule');
   }
 }
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes

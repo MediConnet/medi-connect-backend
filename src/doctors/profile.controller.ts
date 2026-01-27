@@ -86,7 +86,7 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
       day: dayNumberToString(sch.day_of_week ?? 0),
       start: sch.start_time,
       end: sch.end_time,
-      is_active: sch.is_active ?? true
+      is_active: true // Los horarios existentes están activos por defecto
     })) || []
   };
 
@@ -180,7 +180,6 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
                             day_of_week: getDayIdFromString(item.day), 
                             start_time: startTime,
                             end_time: endTime,
-                            is_active: true
                         }
                     });
                 }
@@ -241,7 +240,7 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
         day: dayNumberToString(sch.day_of_week ?? 0),
         start: sch.start_time,
         end: sch.end_time,
-        is_active: sch.is_active ?? true
+        is_active: true // Los horarios existentes están activos por defecto
       })) || []
     };
 
