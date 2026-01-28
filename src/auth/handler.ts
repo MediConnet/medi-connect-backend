@@ -175,6 +175,29 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       return result;
     }
 
+    // POST /api/auth/register-professional
+    if (method === 'POST' && path === '/api/auth/register-professional') {
+      console.log('✅ [AUTH] POST /api/auth/register-professional - Registrando profesional');
+      // Reusar la lógica existente de /api/providers/register
+      const { handler: adminHandler } = await import('../admin/handler');
+      
+      // Crear evento proxy cambiando el path
+      const proxiedEvent = {
+        ...event,
+        requestContext: {
+          ...event.requestContext,
+          http: {
+            ...event.requestContext.http,
+            path: '/api/providers/register',
+          },
+        },
+      } as APIGatewayProxyEventV2;
+      
+      const result = await adminHandler(proxiedEvent);
+      console.log(`✅ [AUTH] POST /api/auth/register-professional - Completado con status ${result.statusCode}`);
+      return result;
+    }
+
     console.log(`❌ [AUTH] ${method} ${path} - Ruta no encontrada (404)`);
     return errorResponse('Not found', 404);
   } catch (error: any) {
