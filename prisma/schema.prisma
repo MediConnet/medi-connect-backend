@@ -14,15 +14,19 @@ model appointments {
   patient_id        String?             @db.Uuid
   branch_id         String?             @db.Uuid
   provider_id       String?             @db.Uuid
+  clinic_id         String?             @db.Uuid
   scheduled_for     DateTime?           @db.Timestamp(6)
   status            String?             @db.VarChar(255)
   reason            String?
   payment_method    enum_payment_method @default(CASH)
   cost              Decimal             @default(0) @db.Decimal(10, 2)
   is_paid           Boolean?            @default(false)
+  reception_status  String?             @db.VarChar(50)
+  reception_notes   String?
   provider_branches provider_branches?  @relation(fields: [branch_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   patients          patients?           @relation(fields: [patient_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   providers         providers?          @relation(fields: [provider_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  clinics            clinics?            @relation(fields: [clinic_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   payments          payments[]
   reviews           reviews[]
   medical_history   medical_history[]
@@ -37,6 +41,24 @@ model cities {
 }
 
 model medical_history {
+<<<<<<< HEAD
+  id                   String        @id @db.Uuid
+  patient_id           String?       @db.Uuid
+  provider_id          String?       @db.Uuid
+  appointment_id       String?       @db.Uuid
+  doctor_name_snapshot String?       @db.VarChar(255)
+  specialty_snapshot   String?       @db.VarChar(255)
+  diagnosis            String?
+  date                 DateTime?     @db.Timestamp(6)
+  treatment            String?
+  indications          String?
+  observations         String?
+  created_at           DateTime?     @default(now()) @db.Timestamp(6)
+  updated_at           DateTime?     @default(now()) @db.Timestamp(6)
+  patients             patients?     @relation(fields: [patient_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  providers            providers?    @relation(fields: [provider_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  appointments         appointments? @relation(fields: [appointment_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+=======
   id                   String    @id @db.Uuid
   patient_id           String?   @db.Uuid
   provider_id          String?   @db.Uuid
@@ -55,6 +77,7 @@ model medical_history {
   providers providers? @relation(fields: [provider_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   appointments appointments? @relation(fields: [appointment_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+>>>>>>> 341a0765a7a40727ccbdf139cc763e30e5a78cf4
 }
 
 model notifications {
@@ -272,16 +295,18 @@ model specialties {
 }
 
 model users {
-  id                  String      @id @db.Uuid
-  email               String      @db.VarChar(255)
-  password_hash       String      @db.VarChar(255)
+  id                  String           @id @db.Uuid
+  email               String           @db.VarChar(255)
+  password_hash       String           @db.VarChar(255)
   role                enum_roles?
-  profile_picture_url String?     @db.VarChar(255)
-  is_active           Boolean?    @default(true)
-  created_at          DateTime?   @default(now()) @db.Timestamp(6)
+  profile_picture_url String?          @db.VarChar(255)
+  is_active           Boolean?         @default(true)
+  created_at          DateTime?        @default(now()) @db.Timestamp(6)
   patients            patients[]
   providers           providers[]
   sessions            sessions[]
+  clinics             clinics[]
+  clinic_doctors      clinic_doctors[]
 }
 
 enum enum_appt_status {
@@ -318,4 +343,111 @@ enum enum_verification {
 enum enum_payment_method {
   CASH
   CARD
+}
+
+// ============================================
+// CLINICS MODELS
+// ============================================
+
+model clinics {
+  id                  String              @id @db.Uuid
+  user_id             String?             @db.Uuid
+  name                String              @db.VarChar(255)
+  logo_url            String?             @db.VarChar(500)
+  address             String
+  phone               String              @db.VarChar(20)
+  whatsapp            String              @db.VarChar(20)
+  description         String?
+  is_active           Boolean?           @default(true)
+  created_at          DateTime?          @default(now()) @db.Timestamp(6)
+  updated_at          DateTime?          @default(now()) @db.Timestamp(6)
+  users               users?              @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  clinic_specialties  clinic_specialties[]
+  clinic_schedules    clinic_schedules[]
+  clinic_doctors      clinic_doctors[]
+  doctor_invitations  doctor_invitations[]
+  doctor_schedules    doctor_schedules[]
+  appointments        appointments[]
+  
+  @@unique([user_id])
+}
+
+model clinic_specialties {
+  id         String    @id @db.Uuid
+  clinic_id String?   @db.Uuid
+  specialty  String    @db.VarChar(255)
+  created_at DateTime? @default(now()) @db.Timestamp(6)
+  clinics    clinics?  @relation(fields: [clinic_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  
+  @@unique([clinic_id, specialty])
+}
+
+model clinic_schedules {
+  id          String    @id @db.Uuid
+  clinic_id   String?   @db.Uuid
+  day_of_week Int
+  enabled     Boolean?  @default(false)
+  start_time  DateTime? @db.Time(6)
+  end_time    DateTime? @db.Time(6)
+  created_at  DateTime? @default(now()) @db.Timestamp(6)
+  updated_at  DateTime? @default(now()) @db.Timestamp(6)
+  clinics     clinics?  @relation(fields: [clinic_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  
+  @@unique([clinic_id, day_of_week])
+}
+
+model clinic_doctors {
+  id                    String              @id @db.Uuid
+  clinic_id             String?             @db.Uuid
+  user_id               String?             @db.Uuid
+  email                 String              @db.VarChar(255)
+  name                  String?             @db.VarChar(255)
+  specialty             String?             @db.VarChar(255)
+  office_number         String?             @db.VarChar(50)
+  profile_image_url     String?             @db.VarChar(500)
+  phone                 String?             @db.VarChar(20)
+  whatsapp              String?             @db.VarChar(20)
+  is_active              Boolean?           @default(true)
+  is_invited            Boolean?           @default(true)
+  invitation_token      String?             @db.VarChar(255)
+  invitation_expires_at DateTime?           @db.Timestamp(6)
+  created_at            DateTime?           @default(now()) @db.Timestamp(6)
+  updated_at            DateTime?           @default(now()) @db.Timestamp(6)
+  clinics               clinics?            @relation(fields: [clinic_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users                 users?               @relation(fields: [user_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  doctor_schedules      doctor_schedules[]
+  
+  @@unique([clinic_id, email])
+  @@unique([invitation_token])
+}
+
+model doctor_invitations {
+  id              String    @id @db.Uuid
+  clinic_id       String?   @db.Uuid
+  email           String    @db.VarChar(255)
+  invitation_token String   @db.VarChar(255)
+  expires_at      DateTime  @db.Timestamp(6)
+  status          String?   @default("pending") @db.VarChar(50)
+  created_at      DateTime? @default(now()) @db.Timestamp(6)
+  clinics         clinics?  @relation(fields: [clinic_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  
+  @@unique([invitation_token])
+}
+
+model doctor_schedules {
+  id          String           @id @db.Uuid
+  doctor_id   String?          @db.Uuid
+  clinic_id   String?          @db.Uuid
+  day_of_week Int
+  enabled     Boolean?         @default(false)
+  start_time  DateTime?        @db.Time(6)
+  end_time    DateTime?        @db.Time(6)
+  break_start DateTime?        @db.Time(6)
+  break_end   DateTime?        @db.Time(6)
+  created_at  DateTime?        @default(now()) @db.Timestamp(6)
+  updated_at  DateTime?        @default(now()) @db.Timestamp(6)
+  clinic_doctors clinic_doctors? @relation(fields: [doctor_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  clinics      clinics?         @relation(fields: [clinic_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  
+  @@unique([doctor_id, clinic_id, day_of_week])
 }
