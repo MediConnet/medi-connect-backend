@@ -255,21 +255,23 @@ async function getDashboardStats(event: APIGatewayProxyEventV2): Promise<APIGate
 async function registerProviderRequest(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   console.log('📝 [REGISTER_PROVIDER_REQUEST] Recibiendo solicitud de registro de proveedor');
   try {
-    // Schema para validar los datos de registro
+    // Schema para validar los datos de registro (actualizado para incluir clinic)
     const registerProviderSchema = z.object({
+      type: z.enum(['clinic', 'doctor', 'pharmacy', 'laboratory', 'ambulance', 'supplies'], {
+        errorMap: () => ({ message: 'Type must be one of: clinic, doctor, pharmacy, laboratory, ambulance, supplies' })
+      }),
       name: z.string().min(1, 'Name is required'),
       email: z.string().email('Invalid email format'),
-      password: z.string().min(8, 'Password must be at least 8 characters'),
-      phone: z.string().optional(),
-      whatsapp: z.string().optional(),
+      password: z.string().min(6, 'Password must be at least 6 characters').max(50, 'Password must be at most 50 characters'),
+      phone: z.string().regex(/^\d{10}$/, 'Phone must be exactly 10 digits').optional(),
+      whatsapp: z.string().regex(/^\d{10}$/, 'WhatsApp must be exactly 10 digits').optional(),
       serviceName: z.string().min(1, 'Service name is required'),
-      type: z.enum(['doctor', 'pharmacy', 'laboratory', 'ambulance', 'supplies']),
-      city: z.string().min(1, 'City is required'),
       address: z.string().optional(),
+      city: z.string().min(1, 'City is required'),
+      price: z.string().optional(), // String vacío "" para todos excepto doctor
       description: z.string().optional(),
-      price: z.string().optional(),
-      chainId: z.string().optional().nullable(),
-      // Campos adicionales para mejor información
+      chainId: z.string().optional(), // Solo para farmacias
+      // Campos adicionales opcionales (pueden no venir)
       latitude: z.number().optional(),
       longitude: z.number().optional(),
       openingHours: z.string().optional(),
@@ -328,11 +330,21 @@ async function registerProviderRequest(event: APIGatewayProxyEventV2): Promise<A
 
     if (!category) {
       console.log(`🏷️ [REGISTER_PROVIDER_REQUEST] Creando categoría: ${categorySlug}`);
+      // Mapear nombres de categorías
+      const categoryNames: Record<string, string> = {
+        'clinic': 'Clínica',
+        'doctor': 'Doctor',
+        'pharmacy': 'Farmacia',
+        'laboratory': 'Laboratorio',
+        'ambulance': 'Ambulancia',
+        'supplies': 'Insumos Médicos',
+      };
+      
       category = await prisma.service_categories.create({
         data: {
-          name: body.type.charAt(0).toUpperCase() + body.type.slice(1),
+          name: categoryNames[categorySlug] || body.type.charAt(0).toUpperCase() + body.type.slice(1),
           slug: categorySlug,
-          allows_booking: body.type === 'doctor' || body.type === 'ambulance',
+          allows_booking: body.type === 'doctor' || body.type === 'ambulance', // Clínicas no permiten booking directo
         },
       });
     }
@@ -464,6 +476,35 @@ async function registerProviderRequest(event: APIGatewayProxyEventV2): Promise<A
         is_active: false, // Inactiva hasta aprobación
       },
     });
+
+    // Si es clínica, crear registro en tabla clinics
+    if (body.type === 'clinic') {
+      console.log('🏥 [REGISTER_PROVIDER_REQUEST] Creando registro de clínica');
+      
+      await prisma.clinics.upsert({
+        where: { user_id: user.id },
+        update: {
+          name: body.serviceName,
+          address: body.address || 'Dirección no especificada',
+          phone: body.phone || body.whatsapp || '0000000000',
+          whatsapp: body.whatsapp || body.phone || '0000000000',
+          description: body.description || '',
+          is_active: false, // Inactiva hasta aprobación del admin
+        },
+        create: {
+          id: randomUUID(),
+          user_id: user.id,
+          name: body.serviceName,
+          address: body.address || 'Dirección no especificada',
+          phone: body.phone || body.whatsapp || '0000000000',
+          whatsapp: body.whatsapp || body.phone || '0000000000',
+          description: body.description || '',
+          is_active: false, // Inactiva hasta aprobación del admin
+        },
+      });
+      
+      console.log('✅ [REGISTER_PROVIDER_REQUEST] Registro de clínica creado');
+    }
 
     console.log(`✅ [REGISTER_PROVIDER_REQUEST] Solicitud creada exitosamente. Provider ID: ${provider.id}`);
     return successResponse({
