@@ -2,7 +2,7 @@ generator client {
   provider      = "prisma-client-js"
   output        = "../src/generated/prisma"
   binaryTargets = ["native", "rhel-openssl-3.0.x"]
-  engineType    = "library" // <-- Cambia "adapter" por "library"
+  engineType    = "library"
 }
 
 datasource db {
@@ -25,6 +25,7 @@ model appointments {
   providers         providers?          @relation(fields: [provider_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   payments          payments[]
   reviews           reviews[]
+  medical_history   medical_history[]
 }
 
 model cities {
@@ -36,20 +37,24 @@ model cities {
 }
 
 model medical_history {
-  id                   String     @id @db.Uuid
-  patient_id           String?    @db.Uuid
-  provider_id          String?    @db.Uuid
-  doctor_name_snapshot String?    @db.VarChar(255)
-  specialty_snapshot   String?    @db.VarChar(255)
+  id                   String    @id @db.Uuid
+  patient_id           String?   @db.Uuid
+  provider_id          String?   @db.Uuid
+  appointment_id       String?   @db.Uuid
+  doctor_name_snapshot String?   @db.VarChar(255)
+  specialty_snapshot   String?   @db.VarChar(255)
   diagnosis            String?
-  date                 DateTime?  @db.Timestamp(6)
+  date                 DateTime? @db.Timestamp(6)
   treatment            String?
   indications          String?
   observations         String?
-  created_at           DateTime?  @default(now()) @db.Timestamp(6)
-  updated_at           DateTime?  @default(now()) @db.Timestamp(6)
-  patients             patients?  @relation(fields: [patient_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  providers            providers? @relation(fields: [provider_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  created_at           DateTime? @default(now()) @db.Timestamp(6)
+  updated_at           DateTime? @default(now()) @db.Timestamp(6)
+
+  patients  patients?  @relation(fields: [patient_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  providers providers? @relation(fields: [provider_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  appointments appointments? @relation(fields: [appointment_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 }
 
 model notifications {

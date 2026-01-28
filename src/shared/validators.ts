@@ -60,6 +60,13 @@ export const updateDoctorProfileSchema = z.object({
   workSchedule: z.array(scheduleItemSchema).optional(),
 });
 
+export const createDiagnosisSchema = z.object({
+  diagnosis: z.string().min(3, "El diagnóstico es obligatorio (Ej: Faringitis)"),
+  treatment: z.string().min(3, "El tratamiento es obligatorio"),
+  indications: z.string().min(3, "Las indicaciones son obligatorias"),
+  observations: z.string().optional(), // Opcional
+});
+
 // --- Validador para actualizar estado de cita ---
 export const updateAppointmentStatusSchema = z.object({
   status: z.nativeEnum(enum_appt_status, {
