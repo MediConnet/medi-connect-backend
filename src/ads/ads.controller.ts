@@ -18,7 +18,6 @@ interface CreateAdBody {
 
 /**
  * Helper para determinar el color del anuncio según el rol del usuario.
- * Acepta string, null o undefined para máxima seguridad en TypeScript.
  */
 const getAccentColorByRole = (role?: string | null): string => {
   if (!role) return '#009688';
@@ -36,16 +35,12 @@ const getAccentColorByRole = (role?: string | null): string => {
   }
 };
 
+// --- FUNCIÓN DE CREACIÓN (POST) ---
 export async function createAdRequest(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   console.log('📢 [ADS] Procesando solicitud de nuevo anuncio...');
 
-  // 1. AUTENTICACIÓN
-  // Validamos que sea alguno de los roles permitidos para crear anuncios
   const authResult = await requireRole(event, [
-      enum_roles.provider, 
-      enum_roles.pharmacy, 
-      enum_roles.lab,
-      enum_roles.ambulance
+      enum_roles.provider, enum_roles.pharmacy, enum_roles.lab, enum_roles.ambulance
   ]);
   
   if ('statusCode' in authResult) return authResult;
@@ -54,8 +49,6 @@ export async function createAdRequest(event: APIGatewayProxyEventV2): Promise<AP
   const prisma = getPrismaClient();
 
   try {
-    // 2. OBTENER EL PERFIL DE PROVEEDOR
-    // Buscamos el ID del proveedor ligado a este usuario (Provider Profile)
     const provider = await prisma.providers.findFirst({
       where: { user_id: user.id }
     });
@@ -64,67 +57,102 @@ export async function createAdRequest(event: APIGatewayProxyEventV2): Promise<AP
       return errorResponse('No se encontró un perfil de proveedor asociado a tu cuenta.', 404);
     }
 
-    // 3. PARSEAR BODY
-    const body: CreateAdBody = JSON.parse(event.body || '{}');
-    const { 
-      badge_text, 
-      discount_title, 
-      description, 
-      button_text, 
-      image_url, 
-      start_date, 
-      end_date 
-    } = body;
+    const existingAd = await prisma.provider_ads.findFirst({
+      where: {
+        provider_id: provider.id,
+        OR: [
+          { status: 'PENDING' },
+          { 
+            status: 'APPROVED',
+            is_active: true,
+            end_date: { gt: new Date() } 
+          }
+        ]
+      }
+    });
 
-    // 4. VALIDACIÓN DE CAMPOS OBLIGATORIOS
-    if (!badge_text || !discount_title || !description || !button_text || !start_date) {
-      return errorResponse('Faltan campos obligatorios en la solicitud.', 400);
+    if (existingAd) {
+      const msg = existingAd.status === 'PENDING' 
+        ? 'Ya tienes una solicitud pendiente. Espera a que sea revisada.' 
+        : 'Ya tienes un anuncio activo vigente. Debes esperar a que termine.';
+      return errorResponse(msg, 409); 
     }
 
-    // 5. DETERMINAR COLOR DINÁMICO
-    // Usamos el rol del usuario autenticado para definir el color de marca
+    // --- CONTINÚA EL PROCESO NORMAL ---
+    const body: CreateAdBody = JSON.parse(event.body || '{}');
+    const { badge_text, discount_title, description, button_text, image_url, start_date, end_date } = body;
+
+    if (!badge_text || !discount_title || !description || !button_text || !start_date) {
+      return errorResponse('Faltan campos obligatorios.', 400);
+    }
+
     const dynamicAccentColor = getAccentColorByRole(user.role);
 
-    // 6. CREAR EN BASE DE DATOS
     const newAd = await prisma.provider_ads.create({
       data: {
-        id: randomUUID(), // ID único del anuncio
+        id: randomUUID(),
         provider_id: provider.id,
-        
-        // Mapeo Frontend -> DB
-        badge_text: badge_text,
+        badge_text,
         title: discount_title,
         subtitle: description,
         action_text: button_text,
         image_url: image_url || null,
-        
-        // Fechas
         start_date: new Date(start_date),
         end_date: end_date ? new Date(end_date) : null,
-        
         is_active: true,       
         status: 'PENDING',
-        
-        // Estilos Visuales
         bg_color_hex: '#FFFFFF',              
         accent_color_hex: dynamicAccentColor, 
-        
-        // Navegación en la App
         target_screen: 'provider_profile',
         target_id: provider.id,
         priority_order: 1
       }
     });
 
-    console.log(`✅ Solicitud de anuncio creada: ${newAd.id} | Rol: ${user.role} | Color: ${dynamicAccentColor}`);
-
-    return successResponse({ 
-      message: 'Solicitud enviada correctamente. Pendiente de aprobación.',
-      ad: newAd 
-    });
+    console.log(`✅ Solicitud creada: ${newAd.id}`);
+    return successResponse({ message: 'Solicitud enviada exitosamente.', ad: newAd });
 
   } catch (error) {
-    console.error('Error creando solicitud de anuncio:', error);
+    console.error('Error:', error);
     return errorResponse('Error interno al procesar la solicitud.', 500);
+  }
+}
+
+// --- FUNCIÓN DE CONSULTA (GET) ---
+export async function getMyAd(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  console.log('📢 [ADS] Obteniendo anuncio del usuario...');
+
+  // Validar autenticación
+  const authResult = await requireRole(event, [
+    enum_roles.provider, 
+    enum_roles.pharmacy, 
+    enum_roles.lab,
+    enum_roles.ambulance
+  ]);
+
+  if ('statusCode' in authResult) return authResult;
+  const { user } = authResult as AuthContext;
+
+  const prisma = getPrismaClient();
+
+  try {
+    const provider = await prisma.providers.findFirst({
+      where: { user_id: user.id }
+    });
+
+    if (!provider) {
+      return successResponse(null);
+    }
+
+    const latestAd = await prisma.provider_ads.findFirst({
+      where: { provider_id: provider.id },
+      orderBy: { start_date: 'desc' } 
+    });
+
+    return successResponse(latestAd);
+
+  } catch (error) {
+    console.error('Error obteniendo anuncio:', error);
+    return errorResponse('Error al consultar el anuncio', 500);
   }
 }

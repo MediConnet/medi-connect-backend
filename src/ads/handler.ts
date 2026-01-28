@@ -1,18 +1,21 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResult } from 'aws-lambda';
 import { errorResponse } from '../shared/response';
-import { createAdRequest } from './ads.controller';
+import { createAdRequest, getMyAd } from './ads.controller';
 
 export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> => {
   try {
     const method = event.requestContext.http.method;
     
-    // Ruta: POST /api/ads
+    
+    // POST /api/ads -> Crear Solicitud
     if (method === 'POST') {
       return await createAdRequest(event);
     }
 
-    // Futuro: GET /api/ads (Listar mis anuncios)
-    // if (method === 'GET') { ... }
+    // GET /api/ads (o /api/ads/my-latest) -> Obtener mi anuncio
+    if (method === 'GET') {
+      return await getMyAd(event);
+    }
 
     return errorResponse('Ruta no encontrada en el módulo de Anuncios', 404);
   } catch (error) {

@@ -134,6 +134,7 @@ async function handleLambdaResponse(
 
 // Importar handlers
 import { handler as adminHandler } from '../src/admin/handler';
+import { handler as adsHandler } from '../src/ads/handler';
 import { handler as authHandler } from '../src/auth/handler';
 import { handler as doctorsHandler } from '../src/doctors/handler';
 import { handler as suppliesHandler } from '../src/supplies/handler';
@@ -205,6 +206,12 @@ app.use('/api/admin', async (req, res) => {
 app.use('/api/providers', async (req, res) => {
   const path = req.originalUrl.split('?')[0];
   await handleLambdaResponse(adminHandler, req, res, path);
+});
+
+// Routes - Ads (Anuncios)
+app.use('/api/ads', async (req, res) => {
+  const path = req.originalUrl.split('?')[0];
+  await handleLambdaResponse(adsHandler, req, res, path);
 });
 
 // Routes - Supplies
@@ -282,32 +289,9 @@ app.listen(PORT, async () => {
   console.log(`   - POST   /api/auth/login`);
   console.log(`   - POST   /api/auth/refresh`);
   console.log(`   - GET    /api/auth/me`);
-  console.log(`   - GET    /api/doctors/profile`);
-  console.log(`   - PUT    /api/doctors/profile`);
-  console.log(`   - GET    /api/doctors/dashboard`);
-  console.log(`   - GET    /api/doctors/appointments`);
-  console.log(`   - PUT    /api/doctors/appointments/:id/status`);
-  console.log(`   - POST   /api/doctors/appointments/:id/diagnosis`);
-  console.log(`   - GET    /api/doctors/patients`);
-  console.log(`   - GET    /api/doctors/reviews`);
-  console.log(`   - GET    /api/doctors/payments`);
-  console.log(`   - GET    /api/doctors/schedule`);
-  console.log(`   - PUT    /api/doctors/schedule`);
-  console.log(`   - GET    /api/specialties`);
-  console.log(`   - GET    /api/patients/profile`);
-  console.log(`   - PUT    /api/patients/profile`);
-  console.log(`   - GET    /api/patients/appointments`);
-  console.log(`   - GET    /api/patients/appointments/:id`);
-  console.log(`   - DELETE /api/patients/appointments/:id`);
-  console.log(`   - GET    /api/patients/medical-history`);
-  console.log(`   - GET    /api/patients/favorites`);
-  console.log(`   - POST   /api/patients/favorites`);
-  console.log(`   - DELETE /api/patients/favorites/:id`);
-  console.log(`   - GET    /api/patients/notifications`);
-  console.log(`   - GET    /api/patients/notifications/unread`);
-  console.log(`   - PUT    /api/patients/notifications/:id/read`);
-  console.log(`   - PUT    /api/patients/notifications/read-all`);
   console.log(`   - POST   /api/providers/register`);
+  console.log(`   - POST   /api/ads (Crear solicitud)`);
+  console.log(`   - GET    /api/ads (Obtener mi anuncio)`);
   console.log(`   - GET    /api/admin/dashboard/stats`);
   console.log(`   - GET    /api/admin/requests`);
   console.log(`   - GET    /api/admin/ad-requests`);
