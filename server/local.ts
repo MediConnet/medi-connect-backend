@@ -168,6 +168,15 @@ try {
   // Handler no existe o tiene errores
 }
 
+let clinicsHandler: any;
+try {
+  clinicsHandler = require('../src/clinics/handler').handler;
+  console.log('✅ [CLINICS] Handler de clínicas cargado correctamente');
+} catch (e: any) {
+  console.error('❌ [CLINICS] Error al cargar handler de clínicas:', e.message);
+  console.error('❌ [CLINICS] Stack:', e.stack);
+}
+
 // Routes - Auth
 app.use('/api/auth', async (req, res) => {
   // Usar originalUrl para obtener el path completo
@@ -232,6 +241,18 @@ if (ambulancesHandler) {
     const path = req.originalUrl.split('?')[0];
     await handleLambdaResponse(ambulancesHandler, req, res, path);
   });
+}
+
+// Routes - Clinics (si existe)
+if (clinicsHandler) {
+  console.log('✅ [CLINICS] Registrando rutas de clínicas');
+  app.use('/api/clinics', async (req, res) => {
+    const path = req.originalUrl.split('?')[0];
+    console.log(`🔍 [CLINICS] Ruta recibida: ${req.method} ${path}`);
+    await handleLambdaResponse(clinicsHandler, req, res, path);
+  });
+} else {
+  console.error('❌ [CLINICS] Handler de clínicas no disponible - Las rutas no se registrarán');
 }
 
 // Health check

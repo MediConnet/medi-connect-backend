@@ -6,6 +6,7 @@ import { Pool } from 'pg';
 import {
   appointments,
   cities,
+  clinics,
   patients,
   PrismaClient,
   provider_branches,
@@ -152,6 +153,17 @@ async function main() {
       slug: 'supplies',
       default_color_hex: '#f97316',
       allows_booking: false,
+    }
+  );
+
+  const clinicCategory = await findOrCreate<service_categories>(
+    prisma.service_categories,
+    { slug: 'clinic' },
+    {
+      name: 'Clínica',
+      slug: 'clinic',
+      default_color_hex: '#14b8a6',
+      allows_booking: true,
     }
   );
 
@@ -747,6 +759,109 @@ async function main() {
 
   console.log('✅ Insumos médicos creados');
 
+  // 8.5. Crear clínica
+  console.log('🏥 Creando clínica...');
+  
+  const clinicPassword = await bcrypt.hash('clinic123', 10);
+  const clinicUser = await findOrCreate<users>(
+    prisma.users,
+    { email: 'clinic@medicones.com' },
+    {
+      id: randomUUID(),
+      email: 'clinic@medicones.com',
+      password_hash: clinicPassword,
+      role: 'provider',
+      is_active: true,
+    }
+  );
+
+  const clinicProvider = await findOrCreate<providers>(
+    prisma.providers,
+    { user_id: clinicUser.id },
+    {
+      id: randomUUID(),
+      user_id: clinicUser.id,
+      category_id: clinicCategory.id,
+      commercial_name: 'Clínica Central',
+      description: 'Clínica médica con múltiples especialidades y médicos asociados. Ofrecemos atención integral de salud con tecnología de vanguardia.',
+      verification_status: 'APPROVED',
+      commission_percentage: 15.0,
+    }
+  );
+
+  // Crear registro en tabla clinics
+  const clinic = await findOrCreate<clinics>(
+    prisma.clinics,
+    { user_id: clinicUser.id },
+    {
+      id: randomUUID(),
+      user_id: clinicUser.id,
+      name: 'Clínica Central',
+      address: 'Av. Principal 456, Quito',
+      phone: '0998765432',
+      whatsapp: '0998765432',
+      description: 'Clínica médica con múltiples especialidades y médicos asociados. Ofrecemos atención integral de salud con tecnología de vanguardia.',
+      is_active: true,
+    }
+  );
+
+  // Crear especialidades de la clínica
+  const clinicSpecialties = [
+    'Medicina General',
+    'Cardiología',
+    'Pediatría',
+    'Ginecología',
+    'Traumatología',
+    'Neurología',
+  ];
+
+  for (const specialty of clinicSpecialties) {
+    await findOrCreate(
+      prisma.clinic_specialties,
+      { clinic_id: clinic.id, specialty },
+      {
+        id: randomUUID(),
+        clinic_id: clinic.id,
+        specialty,
+      }
+    );
+  }
+
+  // Crear horarios de la clínica
+  const clinicSchedules = [
+    { day: 'monday', start: '08:00:00', end: '18:00:00' },
+    { day: 'tuesday', start: '08:00:00', end: '18:00:00' },
+    { day: 'wednesday', start: '08:00:00', end: '18:00:00' },
+    { day: 'thursday', start: '08:00:00', end: '18:00:00' },
+    { day: 'friday', start: '08:00:00', end: '18:00:00' },
+    { day: 'saturday', start: '09:00:00', end: '13:00:00' },
+  ];
+
+  for (const schedule of clinicSchedules) {
+    const dayNum = dayToNumber(schedule.day);
+    const existing = await prisma.clinic_schedules.findFirst({
+      where: {
+        clinic_id: clinic.id,
+        day_of_week: dayNum,
+      },
+    });
+    
+    if (!existing) {
+      await prisma.clinic_schedules.create({
+        data: {
+          id: randomUUID(),
+          clinic_id: clinic.id,
+          day_of_week: dayNum,
+          enabled: true,
+          start_time: new Date(`1970-01-01T${schedule.start}`),
+          end_time: new Date(`1970-01-01T${schedule.end}`),
+        },
+      });
+    }
+  }
+
+  console.log('✅ Clínica creada');
+
   // ==========================================
   // 9. Pacientes y Citas para pruebas
   // ==========================================
@@ -817,8 +932,9 @@ async function main() {
   console.log('  - 3 Laboratorios');
   console.log('  - 2 Ambulancias');
   console.log('  - 2 Insumos Médicos');
+  console.log('  - 1 Clínica');
   console.log('  - 3 Ciudades');
-  console.log('  - 5 Categorías de Servicio');
+  console.log('  - 6 Categorías de Servicio');
 }
 
 main()

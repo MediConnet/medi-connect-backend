@@ -320,25 +320,48 @@ async function login(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResu
       let serviceType = null;
       
       if (user.role === enum_roles.provider) {
-        const provider = await prisma.providers.findFirst({
+        // Verificar primero si es una clínica (tiene registro en tabla clinics)
+        const clinic = await prisma.clinics.findFirst({
           where: { user_id: user.id },
-          include: {
-            service_categories: {
-              select: {
-                slug: true,
-                name: true,
-              },
-            },
+          select: {
+            id: true,
+            name: true,
+            logo_url: true,
           },
         });
-        
-        if (provider) {
+
+        if (clinic) {
+          // Es una clínica
           providerInfo = {
-            id: provider.id,
-            commercialName: provider.commercial_name,
-            logoUrl: provider.logo_url,
+            id: clinic.id,
+            commercialName: clinic.name,
+            logoUrl: clinic.logo_url,
           };
-          serviceType = provider.service_categories?.slug || null;
+          serviceType = 'clinic';
+          console.log('🏥 [LOGIN] Usuario identificado como CLÍNICA');
+        } else {
+          // Es otro tipo de provider (doctor, farmacia, etc.)
+          const provider = await prisma.providers.findFirst({
+            where: { user_id: user.id },
+            include: {
+              service_categories: {
+                select: {
+                  slug: true,
+                  name: true,
+                },
+              },
+            },
+          });
+          
+          if (provider) {
+            providerInfo = {
+              id: provider.id,
+              commercialName: provider.commercial_name,
+              logoUrl: provider.logo_url,
+            };
+            serviceType = provider.service_categories?.slug || null;
+            console.log(`🏷️ [LOGIN] Provider identificado como: ${serviceType || 'SIN CATEGORÍA'}`);
+          }
         }
       }
 

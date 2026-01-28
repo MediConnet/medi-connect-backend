@@ -148,6 +148,74 @@ export const updateOrderStatusSchema = z.object({
   }),
 });
 
+// Clinic validators
+const dayScheduleSchema = z.object({
+  enabled: z.boolean(),
+  startTime: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, 'Start time must be in HH:mm format'),
+  endTime: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, 'End time must be in HH:mm format'),
+  breakStart: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, 'Break start time must be in HH:mm format').optional(),
+  breakEnd: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, 'Break end time must be in HH:mm format').optional(),
+});
+
+export const clinicScheduleSchema = z.object({
+  monday: dayScheduleSchema,
+  tuesday: dayScheduleSchema,
+  wednesday: dayScheduleSchema,
+  thursday: dayScheduleSchema,
+  friday: dayScheduleSchema,
+  saturday: dayScheduleSchema,
+  sunday: dayScheduleSchema,
+});
+
+export const updateClinicProfileSchema = z.object({
+  name: z.string().min(3, 'Name must be at least 3 characters').optional(),
+  logoUrl: z.string().url('Logo URL must be a valid URL').optional().or(z.literal('')),
+  specialties: z.array(z.string()).min(1, 'At least one specialty is required').optional(),
+  address: z.string().min(5, 'Address must be at least 5 characters').optional(),
+  phone: z.string().regex(/^\d{10}$/, 'Phone must be exactly 10 digits').optional(),
+  whatsapp: z.string().regex(/^\d{10}$/, 'WhatsApp must be exactly 10 digits').optional(),
+  description: z.string().min(10, 'Description must be at least 10 characters').optional(),
+  generalSchedule: clinicScheduleSchema.optional(),
+  isActive: z.boolean().optional(),
+});
+
+export const inviteDoctorSchema = z.object({
+  email: z.string().email('Invalid email format'),
+});
+
+export const acceptInvitationSchema = z.object({
+  name: z.string().min(3, 'Name must be at least 3 characters'),
+  specialty: z.string().min(1, 'Specialty is required'),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+  phone: z.string().regex(/^\d{10}$/, 'Phone must be exactly 10 digits').optional(),
+  whatsapp: z.string().regex(/^\d{10}$/, 'WhatsApp must be exactly 10 digits').optional(),
+});
+
+export const updateDoctorStatusSchema = z.object({
+  isActive: z.boolean(),
+});
+
+export const updateDoctorOfficeSchema = z.object({
+  officeNumber: z.string().optional(),
+});
+
+export const updateAppointmentStatusClinicSchema = z.object({
+  status: z.enum(['scheduled', 'confirmed', 'attended', 'cancelled', 'no_show'], {
+    errorMap: () => ({ message: 'Status must be one of: scheduled, confirmed, attended, cancelled, no-show' }),
+  }),
+});
+
+export const updateReceptionStatusSchema = z.object({
+  receptionStatus: z.enum(['arrived', 'not_arrived', 'attended'], {
+    errorMap: () => ({ message: 'Reception status must be one of: arrived, not_arrived, attended' }),
+  }),
+  receptionNotes: z.string().optional(),
+});
+
+export const updateDoctorScheduleSchema = z.object({
+  schedule: clinicScheduleSchema,
+});
+
 // Helper para extraer ID de la URL
 export function extractIdFromPath(path: string, prefix: string, suffix: string = ''): string {
   const start = prefix.length;
