@@ -302,7 +302,7 @@ export async function login(event: APIGatewayProxyEventV2): Promise<APIGatewayPr
   }
 }
 
-// 🆕 LOGOUT: MARCAR COMO REVOCADO
+//  LOGOUT: MARCAR COMO REVOCADO
 export async function logout(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   try {
     const token = event.headers.authorization?.replace('Bearer ', '');
@@ -335,8 +335,6 @@ export async function refresh(event: APIGatewayProxyEventV2): Promise<APIGateway
     const isLocalDev = process.env.STAGE === 'dev' || process.env.NODE_ENV === 'development' || !CLIENT_ID || !USER_POOL_ID;
 
     if (isLocalDev) {
-      // Lógica de desarrollo local simplificada para brevedad
-      // (Asumimos que el refresh token es un JWT válido firmado localmente)
       
       const parts = refreshToken.split('.');
       if (parts.length !== 3) return unauthorizedResponse('Invalid refresh token format');

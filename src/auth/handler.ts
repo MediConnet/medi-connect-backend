@@ -70,6 +70,11 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       return await adminHandler(proxiedEvent);
     }
 
+    // 9. Logout (NUEVO - Cierre de sesión)
+    if (method === 'POST' && path === '/api/auth/logout') {
+      return await authController.logout(event);
+    }
+
     console.log(`❌ [AUTH] ${method} ${path} - Ruta no encontrada`);
     return errorResponse('Not found', 404);
 
