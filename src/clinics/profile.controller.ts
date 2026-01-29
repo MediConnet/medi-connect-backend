@@ -124,6 +124,8 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
               address: newClinic.address,
               phone: newClinic.phone,
               whatsapp: newClinic.whatsapp,
+              latitude: newClinic.latitude ? Number(newClinic.latitude) : null,
+              longitude: newClinic.longitude ? Number(newClinic.longitude) : null,
               generalSchedule: {
                 monday: { enabled: false, startTime: '09:00', endTime: '18:00' },
                 tuesday: { enabled: false, startTime: '09:00', endTime: '18:00' },
@@ -149,6 +151,8 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
               address: 'Dirección no especificada',
               phone: '0000000000',
               whatsapp: '0000000000',
+              latitude: null,
+              longitude: null,
               generalSchedule: {
                 monday: { enabled: false, startTime: '09:00', endTime: '18:00' },
                 tuesday: { enabled: false, startTime: '09:00', endTime: '18:00' },
@@ -204,6 +208,8 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
       address: clinic.address,
       phone: clinic.phone,
       whatsapp: clinic.whatsapp,
+      latitude: clinic.latitude ? Number(clinic.latitude) : null,
+      longitude: clinic.longitude ? Number(clinic.longitude) : null,
       generalSchedule: schedule,
       description: clinic.description || '',
       isActive: clinic.is_active ?? true,
@@ -260,6 +266,8 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
       if (body.whatsapp !== undefined) clinicUpdateData.whatsapp = body.whatsapp;
       if (body.description !== undefined) clinicUpdateData.description = body.description;
       if (body.isActive !== undefined) clinicUpdateData.is_active = body.isActive;
+      if (body.latitude !== undefined) clinicUpdateData.latitude = body.latitude !== null ? body.latitude : null;
+      if (body.longitude !== undefined) clinicUpdateData.longitude = body.longitude !== null ? body.longitude : null;
 
       if (Object.keys(clinicUpdateData).length > 1) { // Más que solo updated_at
         await tx.clinics.update({

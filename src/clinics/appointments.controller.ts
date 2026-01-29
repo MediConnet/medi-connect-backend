@@ -5,6 +5,7 @@ import { logger } from '../shared/logger';
 import { getPrismaClient } from '../shared/prisma';
 import { errorResponse, internalErrorResponse, notFoundResponse, successResponse } from '../shared/response';
 import { parseBody, updateAppointmentStatusClinicSchema, updateReceptionStatusSchema, extractIdFromPath } from '../shared/validators';
+import { notifyAppointmentCancelled, notifyAppointmentConfirmed } from '../shared/notifications';
 
 // GET /api/clinics/appointments
 export async function getAppointments(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
@@ -198,6 +199,87 @@ export async function updateAppointmentStatus(event: APIGatewayProxyEventV2): Pr
       where: { id: appointmentId },
       data: { status: dbStatus },
     });
+
+    // Enviar notificaciones según el estado (no bloquea la respuesta)
+    if (body.status === 'cancelled' || body.status === 'no_show') {
+      // Obtener datos completos para notificaciones
+      const appointmentWithDetails = await prisma.appointments.findFirst({
+        where: { id: appointmentId },
+        include: {
+          clinics: {
+            include: {
+              users: true,
+            },
+          },
+          patients: {
+            include: {
+              users: true,
+            },
+          },
+        },
+      });
+      
+      if (appointmentWithDetails && appointmentWithDetails.clinic_id && appointmentWithDetails.provider_id) {
+        // Obtener el doctor desde clinic_doctors
+        const doctor = await prisma.clinic_doctors.findFirst({
+          where: {
+            clinic_id: appointmentWithDetails.clinic_id,
+            user_id: appointmentWithDetails.provider_id,
+          },
+          include: {
+            users: true,
+          },
+        });
+        
+        // Enviar notificaciones de cancelación (no bloquea la respuesta)
+        notifyAppointmentCancelled(
+          appointmentWithDetails,
+          appointmentWithDetails.clinics,
+          doctor,
+          appointmentWithDetails.patients
+        ).catch(err => {
+          console.error('❌ [CLINICS] Error en notificaciones de cancelación:', err);
+        });
+      }
+    }
+
+    // Si se confirma, programar recordatorio
+    if (body.status === 'confirmed') {
+      const appointmentWithDetails = await prisma.appointments.findFirst({
+        where: { id: appointmentId },
+        include: {
+          clinics: {
+            include: {
+              users: true,
+            },
+          },
+          patients: {
+            include: {
+              users: true,
+            },
+          },
+        },
+      });
+      
+      if (appointmentWithDetails && appointmentWithDetails.clinic_id && appointmentWithDetails.provider_id) {
+        // Obtener el doctor desde clinic_doctors
+        const doctor = await prisma.clinic_doctors.findFirst({
+          where: {
+            clinic_id: appointmentWithDetails.clinic_id,
+            user_id: appointmentWithDetails.provider_id,
+          },
+        });
+        
+        notifyAppointmentConfirmed(
+          appointmentWithDetails,
+          appointmentWithDetails.clinics,
+          doctor,
+          appointmentWithDetails.patients
+        ).catch(err => {
+          console.error('❌ [CLINICS] Error en notificaciones de confirmación:', err);
+        });
+      }
+    }
 
     console.log(`✅ [CLINICS] Estado de cita actualizado: ${appointmentId} -> ${body.status}`);
     return successResponse({

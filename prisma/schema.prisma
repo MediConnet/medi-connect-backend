@@ -78,6 +78,20 @@ model notifications {
   @@index([patient_id, created_at(sort: Desc)], map: "idx_notifications_patient_created")
 }
 
+model clinic_notifications {
+  id         String    @id @db.Uuid
+  clinic_id  String?   @db.Uuid
+  type       String    @db.VarChar(50)
+  title      String    @db.VarChar(255)
+  body       String
+  is_read    Boolean?  @default(false)
+  data       Json?
+  created_at DateTime? @default(now()) @db.Timestamp(6)
+  clinics    clinics?  @relation(fields: [clinic_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([clinic_id, created_at(sort: Desc)], map: "idx_clinic_notifications_clinic_created")
+}
+
 model patient_favorites {
   id                String             @id @db.Uuid
   patient_id        String?            @db.Uuid
@@ -302,6 +316,8 @@ model clinics {
   phone              String               @db.VarChar(20)
   whatsapp           String               @db.VarChar(20)
   description        String?
+  latitude           Decimal?             @db.Decimal(10, 8)
+  longitude          Decimal?             @db.Decimal(11, 8)
   is_active          Boolean?             @default(true)
   created_at         DateTime?            @default(now()) @db.Timestamp(6)
   updated_at         DateTime?            @default(now()) @db.Timestamp(6)
@@ -312,6 +328,7 @@ model clinics {
   users              users?               @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   doctor_invitations doctor_invitations[]
   doctor_schedules   doctor_schedules[]
+  clinic_notifications clinic_notifications[]
 }
 
 model clinic_specialties {

@@ -184,6 +184,8 @@ export const updateClinicProfileSchema = z.object({
   description: z.string().min(10, 'Description must be at least 10 characters').optional(),
   generalSchedule: clinicScheduleSchema.optional(),
   isActive: z.boolean().optional(),
+  latitude: z.number().min(-90, 'Latitude must be between -90 and 90').max(90, 'Latitude must be between -90 and 90').optional().nullable(),
+  longitude: z.number().min(-180, 'Longitude must be between -180 and 180').max(180, 'Longitude must be between -180 and 180').optional().nullable(),
 });
 
 export const inviteDoctorSchema = z.object({
