@@ -7,6 +7,7 @@ import { getDoctors, inviteDoctor, updateDoctorStatus, updateDoctorOffice } from
 import { validateInvitation, acceptInvitation } from './invitations.controller';
 import { getAppointments, updateAppointmentStatus, getTodayReception, updateReceptionStatus } from './appointments.controller';
 import { getDoctorSchedule, updateDoctorSchedule } from './schedules.controller';
+import { getClinicNotifications, getUnreadCount, markNotificationAsRead, markAllAsRead } from './notifications.controller';
 import { extractIdFromPath } from '../shared/validators';
 
 export async function handler(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
@@ -95,6 +96,23 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     // --- Rutas de Estado de Recepción ---
     if (path.startsWith('/api/clinics/appointments/') && path.endsWith('/reception')) {
       if (method === 'PATCH') return await updateReceptionStatus(event);
+    }
+
+    // --- Rutas de Notificaciones ---
+    if (path === '/api/clinics/notifications') {
+      if (method === 'GET') return await getClinicNotifications(event);
+    }
+
+    if (path === '/api/clinics/notifications/unread-count') {
+      if (method === 'GET') return await getUnreadCount(event);
+    }
+
+    if (path === '/api/clinics/notifications/read-all') {
+      if (method === 'PATCH') return await markAllAsRead(event);
+    }
+
+    if (path.startsWith('/api/clinics/notifications/') && path.endsWith('/read')) {
+      if (method === 'PATCH') return await markNotificationAsRead(event);
     }
 
     // Si no coincide ninguna ruta
