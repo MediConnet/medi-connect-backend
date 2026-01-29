@@ -86,14 +86,50 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
     is_published: mainBranch?.is_active ?? false, 
     commission_percentage: profile.commission_percentage,
     
-    // Mapeo de horarios para el frontend
-    schedules: mainBranch?.provider_schedules.map(sch => ({
-      day_id: sch.day_of_week,
-      day: dayNumberToString(sch.day_of_week ?? 0),
-      start: sch.start_time,
-      end: sch.end_time,
-      is_active: true
-    })) || []
+    // Mapeo de horarios para el frontend - Estructura completa con todos los días
+    schedules: (() => {
+      const daysMap: Record<number, any> = {};
+      const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+      
+      // Inicializar todos los días como deshabilitados
+      for (let i = 0; i < 7; i++) {
+        daysMap[i] = {
+          day: dayNames[i],
+          enabled: false,
+          startTime: null,
+          endTime: null,
+        };
+      }
+      
+      // Llenar con los horarios existentes
+      if (mainBranch?.provider_schedules) {
+        for (const sch of mainBranch.provider_schedules) {
+          const dayNum = sch.day_of_week ?? 0;
+          if (dayNum >= 0 && dayNum <= 6) {
+            const startTime = sch.start_time ? new Date(sch.start_time).toISOString().substring(11, 16) : null;
+            const endTime = sch.end_time ? new Date(sch.end_time).toISOString().substring(11, 16) : null;
+            
+            daysMap[dayNum] = {
+              day: dayNames[dayNum],
+              enabled: true,
+              startTime: startTime,
+              endTime: endTime,
+            };
+          }
+        }
+      }
+      
+      // Convertir a array en orden: lunes a domingo
+      return [
+        daysMap[1], // monday
+        daysMap[2], // tuesday
+        daysMap[3], // wednesday
+        daysMap[4], // thursday
+        daysMap[5], // friday
+        daysMap[6], // saturday
+        daysMap[0], // sunday
+      ];
+    })()
   };
 
   return successResponse(formattedResponse);
@@ -241,13 +277,49 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
       is_published: updatedMainBranch?.is_active ?? false,
       commission_percentage: updatedProfile?.commission_percentage,
       
-      schedules: updatedMainBranch?.provider_schedules.map(sch => ({
-        day_id: sch.day_of_week,
-        day: dayNumberToString(sch.day_of_week ?? 0),
-        start: sch.start_time,
-        end: sch.end_time,
-        is_active: true
-      })) || []
+      schedules: (() => {
+        const daysMap: Record<number, any> = {};
+        const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+        
+        // Inicializar todos los días como deshabilitados
+        for (let i = 0; i < 7; i++) {
+          daysMap[i] = {
+            day: dayNames[i],
+            enabled: false,
+            startTime: null,
+            endTime: null,
+          };
+        }
+        
+        // Llenar con los horarios existentes
+        if (updatedMainBranch?.provider_schedules) {
+          for (const sch of updatedMainBranch.provider_schedules) {
+            const dayNum = sch.day_of_week ?? 0;
+            if (dayNum >= 0 && dayNum <= 6) {
+              const startTime = sch.start_time ? new Date(sch.start_time).toISOString().substring(11, 16) : null;
+              const endTime = sch.end_time ? new Date(sch.end_time).toISOString().substring(11, 16) : null;
+              
+              daysMap[dayNum] = {
+                day: dayNames[dayNum],
+                enabled: true,
+                startTime: startTime,
+                endTime: endTime,
+              };
+            }
+          }
+        }
+        
+        // Convertir a array en orden: lunes a domingo
+        return [
+          daysMap[1], // monday
+          daysMap[2], // tuesday
+          daysMap[3], // wednesday
+          daysMap[4], // thursday
+          daysMap[5], // friday
+          daysMap[6], // saturday
+          daysMap[0], // sunday
+        ];
+      })()
     };
 
     return successResponse(formattedResponse);

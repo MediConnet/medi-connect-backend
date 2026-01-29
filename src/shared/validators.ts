@@ -225,6 +225,23 @@ export const updateDoctorScheduleSchema = z.object({
   schedule: clinicScheduleSchema,
 });
 
+// Clinic Associated Doctor validators
+export const updateClinicProfileDoctorSchema = z.object({
+  officeNumber: z.string().optional(),
+  phone: z.string().regex(/^\d{10}$/, 'Phone must be exactly 10 digits').optional(),
+  whatsapp: z.string().regex(/^\d{10}$/, 'WhatsApp must be exactly 10 digits').optional(),
+  profileImageUrl: z.string().url('Profile image URL must be a valid URL').optional().or(z.literal('')),
+});
+
+export const createReceptionMessageSchema = z.object({
+  message: z.string().min(1, 'Message is required').max(1000, 'Message too long'),
+});
+
+export const requestDateBlockSchema = z.object({
+  date: z.string().datetime('Invalid date format'),
+  reason: z.string().optional(),
+});
+
 // Helper para extraer ID de la URL
 export function extractIdFromPath(path: string, prefix: string, suffix: string = ''): string {
   const start = prefix.length;
