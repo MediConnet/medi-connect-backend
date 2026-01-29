@@ -6,6 +6,7 @@ import { Pool } from 'pg';
 import {
   appointments,
   cities,
+  clinic_doctors,
   clinics,
   patients,
   PrismaClient,
@@ -863,6 +864,242 @@ async function main() {
   console.log('✅ Clínica creada');
 
   // ==========================================
+  // 8.1. Médicos Asociados a la Clínica
+  // ==========================================
+  console.log('👨‍⚕️ Creando médicos asociados a la clínica...');
+
+  // Buscar algunos doctores existentes para asociarlos a la clínica
+  const doctorsToAssociate = await prisma.providers.findMany({
+    where: {
+      service_categories: {
+        slug: 'doctor'
+      }
+    },
+    include: {
+      users: true
+    },
+    take: 3
+  });
+
+  const clinicDoctors: clinic_doctors[] = [];
+  for (let i = 0; i < doctorsToAssociate.length; i++) {
+    const doctor = doctorsToAssociate[i];
+    if (!doctor.users) continue;
+
+    const clinicDoctor = await findOrCreate<clinic_doctors>(
+      prisma.clinic_doctors,
+      {
+        clinic_id: clinic.id,
+        user_id: doctor.users.id
+      },
+      {
+        id: randomUUID(),
+        clinic_id: clinic.id,
+        user_id: doctor.users.id,
+        email: doctor.users.email,
+        name: doctor.commercial_name,
+        specialty: 'Medicina General',
+        office_number: `10${i + 1}`,
+        phone: '0991111111',
+        whatsapp: '0991111111',
+        is_active: true,
+        is_invited: false, // Ya aceptaron la invitación
+      }
+    );
+    clinicDoctors.push(clinicDoctor);
+    console.log(`  ✅ Médico asociado: ${doctor.commercial_name}`);
+  }
+
+  // ==========================================
+  // 8.2. Citas de la Clínica
+  // ==========================================
+  console.log('📅 Creando citas de la clínica...');
+
+  // Buscar pacientes existentes
+  const existingPatients = await prisma.patients.findMany({
+    take: 3
+  });
+
+  if (clinicDoctors.length > 0 && existingPatients.length > 0) {
+    // Obtener los providers correspondientes a los médicos asociados
+    const providerIds: string[] = [];
+    for (const clinicDoctor of clinicDoctors) {
+      if (clinicDoctor.user_id) {
+        const provider = await prisma.providers.findFirst({
+          where: { user_id: clinicDoctor.user_id }
+        });
+        if (provider) {
+          providerIds.push(provider.id);
+        }
+      }
+    }
+
+    if (providerIds.length > 0) {
+      const today = new Date();
+      const dates = [
+        new Date(today.getTime() + 1 * 24 * 60 * 60 * 1000), // Mañana
+        new Date(today.getTime() + 2 * 24 * 60 * 60 * 1000), // Pasado mañana
+        new Date(today.getTime() + 3 * 24 * 60 * 60 * 1000), // En 3 días
+      ];
+
+      for (let i = 0; i < Math.min(3, dates.length); i++) {
+        const appointmentDate = dates[i];
+        appointmentDate.setHours(9 + i, 0, 0, 0);
+        const providerId = providerIds[i % providerIds.length];
+
+        await findOrCreate(
+          prisma.appointments,
+          {
+            clinic_id: clinic.id,
+            provider_id: providerId,
+            scheduled_for: appointmentDate
+          },
+          {
+            id: randomUUID(),
+            clinic_id: clinic.id,
+            provider_id: providerId,
+            patient_id: existingPatients[i % existingPatients.length].id,
+            scheduled_for: appointmentDate,
+            status: i === 0 ? 'CONFIRMED' : 'CONFIRMED',
+            reason: `Consulta de rutina - Cita ${i + 1}`,
+            reception_status: i === 0 ? 'arrived' : null,
+            reception_notes: i === 0 ? 'Paciente llegó puntual' : null,
+            is_paid: false,
+          }
+        );
+      }
+      console.log(`  ✅ ${Math.min(3, dates.length)} citas creadas`);
+    }
+  }
+
+  // ==========================================
+  // 8.3. Mensajes de Recepción
+  // ==========================================
+  console.log('💬 Creando mensajes de recepción...');
+
+  if (clinicDoctors.length > 0) {
+    const messages = [
+      {
+        message: 'Buenos días Dr. Necesito confirmar su disponibilidad para la próxima semana.',
+        sender_type: 'clinic',
+      },
+      {
+        message: 'Buenos días. Sí, estoy disponible todos los días de la semana.',
+        sender_type: 'doctor',
+      },
+      {
+        message: 'Perfecto. Le enviaremos el calendario actualizado.',
+        sender_type: 'clinic',
+      },
+    ];
+
+    for (const msg of messages) {
+      await prisma.reception_messages.create({
+        data: {
+          id: randomUUID(),
+          clinic_id: clinic.id,
+          doctor_id: clinicDoctors[0].id,
+          message: msg.message,
+          sender_type: msg.sender_type,
+          is_read: msg.sender_type === 'doctor', // Los mensajes de clínica no leídos
+        },
+      });
+    }
+    console.log(`  ✅ ${messages.length} mensajes creados`);
+  }
+
+  // ==========================================
+  // 8.4. Solicitudes de Bloqueo de Fecha
+  // ==========================================
+  console.log('🚫 Creando solicitudes de bloqueo de fecha...');
+
+  if (clinicDoctors.length > 0) {
+    const blockDate = new Date();
+    blockDate.setDate(blockDate.getDate() + 7);
+    blockDate.setHours(0, 0, 0, 0);
+
+    await prisma.date_block_requests.create({
+      data: {
+        id: randomUUID(),
+        clinic_id: clinic.id,
+        doctor_id: clinicDoctors[0].id,
+        date: blockDate,
+        reason: 'Vacaciones personales',
+        status: 'pending',
+      },
+    });
+
+    // Una solicitud aprobada
+    const approvedDate = new Date();
+    approvedDate.setDate(approvedDate.getDate() + 14);
+    approvedDate.setHours(0, 0, 0, 0);
+
+    await prisma.date_block_requests.create({
+      data: {
+        id: randomUUID(),
+        clinic_id: clinic.id,
+        doctor_id: clinicDoctors[0].id,
+        date: approvedDate,
+        reason: 'Conferencia médica',
+        status: 'approved',
+      },
+    });
+
+    console.log('  ✅ 2 solicitudes de bloqueo creadas (1 pendiente, 1 aprobada)');
+  }
+
+  // ==========================================
+  // 8.5. Notificaciones de Clínica
+  // ==========================================
+  console.log('🔔 Creando notificaciones de clínica...');
+
+  if (clinicDoctors.length > 0 && existingPatients.length > 0) {
+    const notifications = [
+      {
+        type: 'cita',
+        title: 'Nueva cita agendada',
+        body: `Dr. ${clinicDoctors[0].name} - ${existingPatients[0].full_name} - ${new Date().toLocaleDateString('es-EC')} 09:00`,
+        data: {
+          appointment_id: randomUUID(),
+          doctor_id: clinicDoctors[0].id,
+          doctor_name: clinicDoctors[0].name,
+          patient_name: existingPatients[0].full_name,
+          date: new Date().toISOString().split('T')[0],
+          time: '09:00',
+        },
+      },
+      {
+        type: 'cita_cancelada',
+        title: 'Cita cancelada',
+        body: `Dr. ${clinicDoctors[0].name} - ${existingPatients[0].full_name} - ${new Date().toLocaleDateString('es-EC')} 10:00`,
+        data: {
+          appointment_id: randomUUID(),
+          doctor_id: clinicDoctors[0].id,
+          doctor_name: clinicDoctors[0].name,
+          patient_name: existingPatients[0].full_name,
+          date: new Date().toISOString().split('T')[0],
+          time: '10:00',
+        },
+      },
+    ];
+
+    for (const notif of notifications) {
+      await prisma.clinic_notifications.create({
+        data: {
+          id: randomUUID(),
+          clinic_id: clinic.id,
+          type: notif.type,
+          title: notif.title,
+          body: notif.body,
+          is_read: false,
+          data: notif.data as any,
+        },
+      });
+    }
+    console.log(`  ✅ ${notifications.length} notificaciones creadas`);
+  }
+
+  // ==========================================
   // 9. Pacientes y Citas para pruebas
   // ==========================================
   console.log('👤 Creando pacientes y citas de prueba...');
@@ -933,6 +1170,11 @@ async function main() {
   console.log('  - 2 Ambulancias');
   console.log('  - 2 Insumos Médicos');
   console.log('  - 1 Clínica');
+  console.log(`  - ${clinicDoctors.length} Médicos Asociados a Clínica`);
+  console.log('  - Citas de clínica creadas');
+  console.log('  - Mensajes de recepción creados');
+  console.log('  - Solicitudes de bloqueo creadas');
+  console.log('  - Notificaciones de clínica creadas');
   console.log('  - 3 Ciudades');
   console.log('  - 6 Categorías de Servicio');
 }

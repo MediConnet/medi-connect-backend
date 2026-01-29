@@ -9,6 +9,19 @@ import { createDiagnosis, getDiagnosis } from './diagnoses.controller';
 import { getPatients } from './patients.controller';
 import { getProfile, updateProfile } from './profile.controller';
 import { getSpecialties } from './specialties.controller';
+import {
+  getClinicInfo,
+  getClinicProfile,
+  updateClinicProfile,
+  getClinicAppointments,
+  updateClinicAppointmentStatus,
+  getReceptionMessages,
+  createReceptionMessage,
+  markReceptionMessagesAsRead,
+  getDateBlocks,
+  requestDateBlock,
+  getClinicNotifications,
+} from './clinic.controller';
 
 export async function handler(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   const method = event.requestContext.http.method;
@@ -68,6 +81,45 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     // --- Specialties ---
     if (path === '/api/specialties') {
       if (method === 'GET') return await getSpecialties(event);
+    }
+
+    // --- Clinic Associated Doctor Routes ---
+    if (path === '/api/doctors/clinic-info') {
+      if (method === 'GET') return await getClinicInfo(event);
+    }
+
+    if (path === '/api/doctors/clinic/profile') {
+      if (method === 'GET') return await getClinicProfile(event);
+      if (method === 'PUT') return await updateClinicProfile(event);
+    }
+
+    if (path === '/api/doctors/clinic/appointments' || path.startsWith('/api/doctors/clinic/appointments?')) {
+      if (method === 'GET') return await getClinicAppointments(event);
+    }
+
+    if (path.startsWith('/api/doctors/clinic/appointments/') && path.endsWith('/status')) {
+      if (method === 'PATCH') return await updateClinicAppointmentStatus(event);
+    }
+
+    if (path === '/api/doctors/clinic/reception/messages') {
+      if (method === 'GET') return await getReceptionMessages(event);
+      if (method === 'POST') return await createReceptionMessage(event);
+    }
+
+    if (path === '/api/doctors/clinic/reception/messages/read') {
+      if (method === 'PATCH') return await markReceptionMessagesAsRead(event);
+    }
+
+    if (path === '/api/doctors/clinic/date-blocks' || path.startsWith('/api/doctors/clinic/date-blocks?')) {
+      if (method === 'GET') return await getDateBlocks(event);
+    }
+
+    if (path === '/api/doctors/clinic/date-blocks/request') {
+      if (method === 'POST') return await requestDateBlock(event);
+    }
+
+    if (path === '/api/doctors/clinic/notifications' || path.startsWith('/api/doctors/clinic/notifications?')) {
+      if (method === 'GET') return await getClinicNotifications(event);
     }
 
     return errorResponse('Not found', 404);

@@ -8,9 +8,15 @@ import { errorResponse, internalErrorResponse, notFoundResponse, successResponse
 import { parseBody, updateDoctorScheduleSchema, extractIdFromPath } from '../shared/validators';
 
 // Helper para convertir número de día a nombre
+// En la BD: 0=Lunes, 1=Martes, ..., 6=Domingo
 function dayNumberToName(day: number): string {
   const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-  return days[day] || 'monday';
+  // Ajustar: si day es 0-6, mapear correctamente
+  // 0 -> monday (0), 1 -> tuesday (1), ..., 6 -> sunday (6)
+  if (day >= 0 && day <= 6) {
+    return days[day];
+  }
+  return 'monday';
 }
 
 // Helper para convertir nombre de día a número (0=Lunes, 6=Domingo)
@@ -111,16 +117,43 @@ export async function getDoctorSchedule(event: APIGatewayProxyEventV2): Promise<
       sunday: { enabled: false, startTime: '09:00', endTime: '13:00' },
     };
 
+    // Mapear horarios de la BD
     schedules.forEach((sched) => {
-      const dayName = dayNumberToName(sched.day_of_week);
-      scheduleObj[dayName] = {
-        enabled: sched.enabled ?? false,
-        startTime: formatTime(sched.start_time),
-        endTime: formatTime(sched.end_time),
-        breakStart: sched.break_start ? formatTime(sched.break_start) : undefined,
-        breakEnd: sched.break_end ? formatTime(sched.break_end) : undefined,
-      };
+      const dayNum = sched.day_of_week ?? 0;
+      const dayName = dayNumberToName(dayNum);
+      // Actualizar el día si existe en el objeto inicial
+      if (scheduleObj[dayName]) {
+        scheduleObj[dayName] = {
+          enabled: sched.enabled ?? false,
+          startTime: formatTime(sched.start_time),
+          endTime: formatTime(sched.end_time),
+          breakStart: sched.break_start ? formatTime(sched.break_start) : undefined,
+          breakEnd: sched.break_end ? formatTime(sched.break_end) : undefined,
+        };
+      }
     });
+    
+    // Asegurar que todos los días estén presentes y tengan la estructura correcta
+    // Esto es crítico para evitar errores en el frontend
+    const allDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+    for (const day of allDays) {
+      // Verificar y corregir si falta el día o tiene estructura incorrecta
+      if (!scheduleObj[day] || 
+          typeof scheduleObj[day] !== 'object' || 
+          typeof scheduleObj[day].enabled === 'undefined') {
+        scheduleObj[day] = {
+          enabled: false,
+          startTime: day === 'saturday' || day === 'sunday' ? '09:00' : '09:00',
+          endTime: day === 'saturday' || day === 'sunday' ? '13:00' : '17:00',
+          breakStart: undefined,
+          breakEnd: undefined,
+        };
+      }
+      // Asegurar que las propiedades siempre estén definidas
+      if (!scheduleObj[day].startTime) scheduleObj[day].startTime = '09:00';
+      if (!scheduleObj[day].endTime) scheduleObj[day].endTime = day === 'saturday' || day === 'sunday' ? '13:00' : '17:00';
+      if (typeof scheduleObj[day].enabled !== 'boolean') scheduleObj[day].enabled = false;
+    }
 
     console.log('✅ [CLINICS] Horarios del médico obtenidos exitosamente');
     return successResponse({
@@ -199,7 +232,8 @@ export async function updateDoctorSchedule(event: APIGatewayProxyEventV2): Promi
       // Crear nuevos horarios
       const scheduleEntries = Object.entries(body.schedule);
       for (const [dayName, daySchedule] of scheduleEntries) {
-        if (daySchedule.enabled) {
+        // Validar que daySchedule existe y tiene la propiedad enabled
+        if (daySchedule && typeof daySchedule === 'object' && daySchedule.enabled) {
           const dayOfWeek = dayNameToNumber(dayName);
           const startTime = new Date(`1970-01-01T${daySchedule.startTime}:00Z`);
           const endTime = new Date(`1970-01-01T${daySchedule.endTime}:00Z`);

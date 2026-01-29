@@ -14,7 +14,28 @@ export async function getDashboard(event: APIGatewayProxyEventV2): Promise<APIGa
   const prisma = getPrismaClient();
   const userId = authContext.user.id;
 
-  // 1. Buscar Provider
+  // 1. Verificar si el médico está asociado a una clínica
+  const clinicDoctor = await prisma.clinic_doctors.findFirst({
+    where: { 
+      user_id: userId,
+      is_active: true,
+      is_invited: false // Solo médicos que aceptaron la invitación
+    },
+    include: {
+      clinics: {
+        select: {
+          id: true,
+          name: true,
+          logo_url: true,
+          address: true,
+          phone: true,
+          whatsapp: true,
+        }
+      }
+    }
+  });
+
+  // 2. Buscar Provider
   const provider = await prisma.providers.findFirst({
     where: { user_id: userId },
     include: {
@@ -26,7 +47,7 @@ export async function getDashboard(event: APIGatewayProxyEventV2): Promise<APIGa
   });
 
   if (!provider) {
-    // Retornar estructura vacía si es nuevo
+    // Retornar estructura vacía si es nuevo, pero incluir info de clínica si existe
     return successResponse({
       totalAppointments: 0,
       pendingAppointments: 0,
@@ -35,7 +56,15 @@ export async function getDashboard(event: APIGatewayProxyEventV2): Promise<APIGa
       averageRating: 0,
       totalReviews: 0,
       upcomingAppointments: [],
-      provider: null
+      provider: null,
+      clinic: clinicDoctor && clinicDoctor.clinics ? {
+        id: clinicDoctor.clinics.id,
+        name: clinicDoctor.clinics.name,
+        logoUrl: clinicDoctor.clinics.logo_url,
+        address: clinicDoctor.clinics.address,
+        phone: clinicDoctor.clinics.phone,
+        whatsapp: clinicDoctor.clinics.whatsapp,
+      } : null,
     });
   }
 
@@ -120,5 +149,13 @@ export async function getDashboard(event: APIGatewayProxyEventV2): Promise<APIGa
       category: provider.service_categories,
       branches: provider.provider_branches,
     },
+    clinic: clinicDoctor && clinicDoctor.clinics ? {
+      id: clinicDoctor.clinics.id,
+      name: clinicDoctor.clinics.name,
+      logoUrl: clinicDoctor.clinics.logo_url,
+      address: clinicDoctor.clinics.address,
+      phone: clinicDoctor.clinics.phone,
+      whatsapp: clinicDoctor.clinics.whatsapp,
+    } : null,
   });
 }
