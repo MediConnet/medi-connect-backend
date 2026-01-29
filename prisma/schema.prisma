@@ -160,8 +160,8 @@ model provider_ads {
   start_date       DateTime?  @db.Timestamp(6)
   end_date         DateTime?  @db.Timestamp(6)
   is_active        Boolean?   @default(true)
-  status           ad_status  @default(PENDING)
   priority_order   Int?
+  status           ad_status  @default(PENDING)
   providers        providers? @relation(fields: [provider_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }
 
@@ -273,12 +273,13 @@ model service_categories {
 }
 
 model sessions {
-  id          String    @id @db.Uuid
+  id          String    @id @default(uuid()) @db.Uuid
   user_id     String?   @db.Uuid
-  token       String    @db.VarChar(255)
+  token       String    @db.Text
   device_info String?   @db.VarChar(255)
   expires_at  DateTime  @db.Timestamp(6)
   created_at  DateTime? @default(now()) @db.Timestamp(6)
+  revoked_at  DateTime? @db.Timestamp(6)
   users       users?    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }
 
@@ -308,27 +309,27 @@ model users {
 }
 
 model clinics {
-  id                 String               @id @db.Uuid
-  user_id            String?              @unique @db.Uuid
-  name               String               @db.VarChar(255)
-  logo_url           String?              @db.VarChar(500)
-  address            String
-  phone              String               @db.VarChar(20)
-  whatsapp           String               @db.VarChar(20)
-  description        String?
-  latitude           Decimal?             @db.Decimal(10, 8)
-  longitude          Decimal?             @db.Decimal(11, 8)
-  is_active          Boolean?             @default(true)
-  created_at         DateTime?            @default(now()) @db.Timestamp(6)
-  updated_at         DateTime?            @default(now()) @db.Timestamp(6)
-  appointments       appointments[]
-  clinic_doctors     clinic_doctors[]
-  clinic_schedules   clinic_schedules[]
-  clinic_specialties clinic_specialties[]
-  users              users?               @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  doctor_invitations doctor_invitations[]
-  doctor_schedules   doctor_schedules[]
+  id                   String                 @id @db.Uuid
+  user_id              String?                @unique @db.Uuid
+  name                 String                 @db.VarChar(255)
+  logo_url             String?                @db.VarChar(500)
+  address              String
+  phone                String                 @db.VarChar(20)
+  whatsapp             String                 @db.VarChar(20)
+  description          String?
+  is_active            Boolean?               @default(true)
+  created_at           DateTime?              @default(now()) @db.Timestamp(6)
+  updated_at           DateTime?              @default(now()) @db.Timestamp(6)
+  latitude             Decimal?               @db.Decimal(10, 8)
+  longitude            Decimal?               @db.Decimal(11, 8)
+  appointments         appointments[]
+  clinic_doctors       clinic_doctors[]
   clinic_notifications clinic_notifications[]
+  clinic_schedules     clinic_schedules[]
+  clinic_specialties   clinic_specialties[]
+  users                users?                 @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  doctor_invitations   doctor_invitations[]
+  doctor_schedules     doctor_schedules[]
 }
 
 model clinic_specialties {
@@ -429,12 +430,12 @@ enum enum_notif_types {
 enum enum_roles {
   admin
   user
-  provider // Médicos individuales
+  provider
   patient
-  pharmacy // Farmacias
-  lab // Laboratorios
-  ambulance // Servicios de ambulancia
-  supplies // Proveedores de insumos médicos
+  pharmacy
+  lab
+  ambulance
+  supplies
 }
 
 enum enum_verification {
