@@ -18,8 +18,11 @@ export async function getClinicInfo(event: APIGatewayProxyEventV2): Promise<APIG
   const clinicDoctor = await getClinicDoctor(authContext);
 
   if (!clinicDoctor) {
+    console.log(`⚠️ [DOCTORS] Doctor ${authContext.user.id} no está asociado a ninguna clínica`);
     return notFoundResponse('Doctor is not associated with any clinic');
   }
+
+  console.log(`✅ [DOCTORS] Doctor está asociado a clínica: ${clinicDoctor.clinic_id}`);
 
   return successResponse({
     clinicId: clinicDoctor.clinic_id,

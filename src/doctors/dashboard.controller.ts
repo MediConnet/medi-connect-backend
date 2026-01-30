@@ -15,11 +15,14 @@ export async function getDashboard(event: APIGatewayProxyEventV2): Promise<APIGa
   const userId = authContext.user.id;
 
   // 1. Verificar si el médico está asociado a una clínica
+  // IMPORTANTE: Solo buscar médicos que YA aceptaron la invitación (is_invited: false)
+  // y que estén activos (is_active: true) y tengan clínica asignada (clinic_id not null)
   const clinicDoctor = await prisma.clinic_doctors.findFirst({
     where: { 
       user_id: userId,
       is_active: true,
-      is_invited: false // Solo médicos que aceptaron la invitación
+      is_invited: false, // Solo médicos que aceptaron la invitación
+      clinic_id: { not: null }, // Asegurar que tiene clínica asignada
     },
     include: {
       clinics: {
@@ -35,6 +38,27 @@ export async function getDashboard(event: APIGatewayProxyEventV2): Promise<APIGa
     }
   });
 
+  // Determinar si el doctor está realmente asociado a una clínica
+  // Solo si clinicDoctor existe, tiene clínica, y está activo
+  const isClinicAssociated = clinicDoctor && 
+                              clinicDoctor.clinic_id && 
+                              clinicDoctor.clinics && 
+                              clinicDoctor.is_active && 
+                              !clinicDoctor.is_invited;
+
+  // Log para debugging
+  if (clinicDoctor) {
+    console.log(`🔍 [DOCTORS DASHBOARD] Doctor tiene registro en clinic_doctors:`, {
+      clinicId: clinicDoctor.clinic_id,
+      isActive: clinicDoctor.is_active,
+      isInvited: clinicDoctor.is_invited,
+      hasClinic: !!clinicDoctor.clinics,
+      isClinicAssociated,
+    });
+  } else {
+    console.log(`🔍 [DOCTORS DASHBOARD] Doctor NO está asociado a ninguna clínica`);
+  }
+
   // 2. Buscar Provider
   const provider = await prisma.providers.findFirst({
     where: { user_id: userId },
@@ -47,7 +71,8 @@ export async function getDashboard(event: APIGatewayProxyEventV2): Promise<APIGa
   });
 
   if (!provider) {
-    // Retornar estructura vacía si es nuevo, pero incluir info de clínica si existe
+    // Retornar estructura vacía si es nuevo
+    // Solo incluir info de clínica si realmente está asociado
     return successResponse({
       totalAppointments: 0,
       pendingAppointments: 0,
@@ -57,13 +82,13 @@ export async function getDashboard(event: APIGatewayProxyEventV2): Promise<APIGa
       totalReviews: 0,
       upcomingAppointments: [],
       provider: null,
-      clinic: clinicDoctor && clinicDoctor.clinics ? {
-        id: clinicDoctor.clinics.id,
-        name: clinicDoctor.clinics.name,
-        logoUrl: clinicDoctor.clinics.logo_url,
-        address: clinicDoctor.clinics.address,
-        phone: clinicDoctor.clinics.phone,
-        whatsapp: clinicDoctor.clinics.whatsapp,
+      clinic: isClinicAssociated ? {
+        id: clinicDoctor!.clinics!.id,
+        name: clinicDoctor!.clinics!.name,
+        logoUrl: clinicDoctor!.clinics!.logo_url,
+        address: clinicDoctor!.clinics!.address,
+        phone: clinicDoctor!.clinics!.phone,
+        whatsapp: clinicDoctor!.clinics!.whatsapp,
       } : null,
     });
   }
@@ -149,13 +174,14 @@ export async function getDashboard(event: APIGatewayProxyEventV2): Promise<APIGa
       category: provider.service_categories,
       branches: provider.provider_branches,
     },
-    clinic: clinicDoctor && clinicDoctor.clinics ? {
-      id: clinicDoctor.clinics.id,
-      name: clinicDoctor.clinics.name,
-      logoUrl: clinicDoctor.clinics.logo_url,
-      address: clinicDoctor.clinics.address,
-      phone: clinicDoctor.clinics.phone,
-      whatsapp: clinicDoctor.clinics.whatsapp,
+    // Solo devolver información de clínica si realmente está asociado
+    clinic: isClinicAssociated ? {
+      id: clinicDoctor!.clinics!.id,
+      name: clinicDoctor!.clinics!.name,
+      logoUrl: clinicDoctor!.clinics!.logo_url,
+      address: clinicDoctor!.clinics!.address,
+      phone: clinicDoctor!.clinics!.phone,
+      whatsapp: clinicDoctor!.clinics!.whatsapp,
     } : null,
   });
 }

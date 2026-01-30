@@ -3,7 +3,7 @@ import { logger } from '../shared/logger';
 import { errorResponse, internalErrorResponse, optionsResponse } from '../shared/response';
 import { getProfile, updateProfile } from './profile.controller';
 import { getDashboard } from './dashboard.controller';
-import { getDoctors, inviteDoctor, updateDoctorStatus, updateDoctorOffice } from './doctors.controller';
+import { getDoctors, inviteDoctor, updateDoctorStatus, updateDoctorOffice, deleteDoctor } from './doctors.controller';
 import { validateInvitation, acceptInvitation } from './invitations.controller';
 import { getAppointments, updateAppointmentStatus, getTodayReception, updateReceptionStatus } from './appointments.controller';
 import { getDoctorSchedule, updateDoctorSchedule } from './schedules.controller';
@@ -57,6 +57,15 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     // --- Rutas de Consultorio de Médico ---
     if (path.startsWith('/api/clinics/doctors/') && path.endsWith('/office')) {
       if (method === 'PATCH') return await updateDoctorOffice(event);
+    }
+
+    // --- Rutas de Eliminación de Médico ---
+    if (path.startsWith('/api/clinics/doctors/') && 
+        !path.includes('/status') && 
+        !path.includes('/office') && 
+        !path.includes('/schedule') && 
+        !path.includes('/invite')) {
+      if (method === 'DELETE') return await deleteDoctor(event);
     }
 
     // --- Rutas de Horarios de Médico ---

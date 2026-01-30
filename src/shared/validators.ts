@@ -190,11 +190,38 @@ export const updateClinicProfileSchema = z.object({
 
 export const inviteDoctorSchema = z.object({
   email: z.string().email('Invalid email format'),
+  // ❌ name y specialty ya no se envían en la invitación - se completan al aceptar
 });
+
+const validSpecialties = [
+  'Medicina General',
+  'Cardiología',
+  'Dermatología',
+  'Ginecología',
+  'Pediatría',
+  'Oftalmología',
+  'Traumatología',
+  'Neurología',
+  'Psiquiatría',
+  'Urología',
+  'Endocrinología',
+  'Gastroenterología',
+  'Neumología',
+  'Otorrinolaringología',
+  'Oncología',
+  'Reumatología',
+  'Nefrología',
+  'Cirugía General',
+  'Anestesiología',
+  'Odontología',
+] as const;
 
 export const acceptInvitationSchema = z.object({
   name: z.string().min(3, 'Name must be at least 3 characters'),
-  specialty: z.string().min(1, 'Specialty is required'),
+  specialty: z.string().min(1, 'Specialty is required')
+    .refine((val) => validSpecialties.includes(val as any), {
+      message: `Specialty must be one of: ${validSpecialties.join(', ')}`,
+    }),
   password: z.string().min(8, 'Password must be at least 8 characters'),
   phone: z.string().regex(/^\d{10}$/, 'Phone must be exactly 10 digits').optional(),
   whatsapp: z.string().regex(/^\d{10}$/, 'WhatsApp must be exactly 10 digits').optional(),
