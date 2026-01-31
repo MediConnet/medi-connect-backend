@@ -8,6 +8,7 @@ import { enum_roles, enum_verification } from '../generated/prisma/client';
 import { approveRequestSchema, rejectRequestSchema, parseBody } from '../shared/validators';
 import { randomUUID } from 'crypto';
 import * as bcrypt from 'bcrypt';
+import { getPharmacyChains, createPharmacyChain, updatePharmacyChain, deletePharmacyChain } from './pharmacy-chains.controller';
 
 export async function handler(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   const method = event.requestContext.http.method;
@@ -115,6 +116,39 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       console.log('✅ [ADMIN] PUT /api/admin/requests/{id}/reject - Rechazando solicitud');
       const result = await rejectRequest(event);
       console.log(`✅ [ADMIN] PUT /api/admin/requests/{id}/reject - Completado con status ${result.statusCode}`);
+      return result;
+    }
+
+    // --- Rutas de Pharmacy Chains (Admin) ---
+    // GET /api/admin/pharmacy-chains
+    if (method === 'GET' && path === '/api/admin/pharmacy-chains') {
+      console.log('✅ [ADMIN] GET /api/admin/pharmacy-chains - Obteniendo cadenas de farmacias');
+      const result = await getPharmacyChains(event);
+      console.log(`✅ [ADMIN] GET /api/admin/pharmacy-chains - Completado con status ${result.statusCode}`);
+      return result;
+    }
+
+    // POST /api/admin/pharmacy-chains
+    if (method === 'POST' && path === '/api/admin/pharmacy-chains') {
+      console.log('✅ [ADMIN] POST /api/admin/pharmacy-chains - Creando cadena de farmacias');
+      const result = await createPharmacyChain(event);
+      console.log(`✅ [ADMIN] POST /api/admin/pharmacy-chains - Completado con status ${result.statusCode}`);
+      return result;
+    }
+
+    // PUT /api/admin/pharmacy-chains/:id
+    if (method === 'PUT' && path.startsWith('/api/admin/pharmacy-chains/')) {
+      console.log('✅ [ADMIN] PUT /api/admin/pharmacy-chains/:id - Actualizando cadena de farmacias');
+      const result = await updatePharmacyChain(event);
+      console.log(`✅ [ADMIN] PUT /api/admin/pharmacy-chains/:id - Completado con status ${result.statusCode}`);
+      return result;
+    }
+
+    // DELETE /api/admin/pharmacy-chains/:id
+    if (method === 'DELETE' && path.startsWith('/api/admin/pharmacy-chains/')) {
+      console.log('✅ [ADMIN] DELETE /api/admin/pharmacy-chains/:id - Eliminando cadena de farmacias');
+      const result = await deletePharmacyChain(event);
+      console.log(`✅ [ADMIN] DELETE /api/admin/pharmacy-chains/:id - Completado con status ${result.statusCode}`);
       return result;
     }
 

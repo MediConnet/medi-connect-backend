@@ -392,3 +392,62 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
     return internalErrorResponse('Failed to update clinic profile');
   }
 }
+
+// POST /api/clinics/upload-logo
+export async function uploadLogo(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  console.log('✅ [CLINICS] POST /api/clinics/upload-logo - Subiendo logo');
+  
+  const authResult = await requireRole(event, [enum_roles.provider]);
+  if ('statusCode' in authResult) {
+    console.error('❌ [CLINICS] POST /api/clinics/upload-logo - Error de autenticación/autorización');
+    return authResult;
+  }
+
+  const authContext = authResult as AuthContext;
+  const prisma = getPrismaClient();
+
+  try {
+    const body = JSON.parse(event.body || '{}');
+    const logoUrl = body.logoUrl || body.url || body.imageUrl;
+
+    if (!logoUrl || typeof logoUrl !== 'string') {
+      return errorResponse('Logo URL is required', 400);
+    }
+
+    // Validar que sea una URL válida o base64
+    const isBase64 = logoUrl.startsWith('data:image/');
+    const isUrl = logoUrl.startsWith('http://') || logoUrl.startsWith('https://');
+
+    if (!isBase64 && !isUrl) {
+      return errorResponse('Logo must be a valid URL or base64 image', 400);
+    }
+
+    // Buscar clínica del usuario
+    const clinic = await prisma.clinics.findFirst({
+      where: { user_id: authContext.user.id },
+    });
+
+    if (!clinic) {
+      return notFoundResponse('Clinic not found');
+    }
+
+    // Actualizar logo
+    await prisma.clinics.update({
+      where: { id: clinic.id },
+      data: {
+        logo_url: logoUrl,
+        updated_at: new Date(),
+      },
+    });
+
+    console.log('✅ [CLINICS] Logo actualizado exitosamente');
+    return successResponse({
+      logoUrl: logoUrl,
+      message: 'Logo actualizado correctamente',
+    });
+  } catch (error: any) {
+    console.error(`❌ [CLINICS] Error al subir logo:`, error.message);
+    logger.error('Error uploading logo', error);
+    return internalErrorResponse('Failed to upload logo');
+  }
+}

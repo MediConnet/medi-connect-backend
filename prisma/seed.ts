@@ -9,6 +9,7 @@ import {
   clinic_doctors,
   clinics,
   patients,
+  pharmacy_chains,
   PrismaClient,
   provider_branches,
   providers,
@@ -474,7 +475,55 @@ async function main() {
 
   console.log('✅ Doctores creados');
 
-  // 5. Crear farmacias
+  // 5. Crear cadenas de farmacias
+  console.log('🏪 Creando cadenas de farmacias...');
+  const pharmacyChainsData = [
+    {
+      name: 'Fybeca',
+      logoUrl: 'https://scalashopping.com/wp-content/uploads/2018/08/logo-Fybeca-01-1024x683.png',
+      isActive: true,
+    },
+    {
+      name: 'Sana Sana',
+      logoUrl: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSKWAttN0PrToBQ9ZKbVicBbTL9RoFXG2TiKQ&s',
+      isActive: true,
+    },
+    {
+      name: "Pharmacy's",
+      logoUrl: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQj7nO9P5Hx_jBWhln5kKvzrWxn8XCSz_1SSw&s',
+      isActive: true,
+    },
+    {
+      name: 'MegaFarmacias',
+      logoUrl: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQtktD8217ZZ0okM9bxmMokMWFfX9i27xbYgA&s',
+      isActive: true,
+    },
+  ];
+
+  const createdChains: any[] = [];
+  for (const chainData of pharmacyChainsData) {
+    const chain = await prisma.pharmacy_chains.upsert({
+      where: { name: chainData.name },
+      update: {
+        logo_url: chainData.logoUrl,
+        is_active: chainData.isActive,
+        updated_at: new Date(),
+      },
+      create: {
+        id: randomUUID(),
+        name: chainData.name,
+        logo_url: chainData.logoUrl,
+        is_active: chainData.isActive,
+        created_at: new Date(),
+        updated_at: new Date(),
+      },
+    });
+    createdChains.push(chain);
+    console.log(`  ✅ Cadena creada: ${chain.name}`);
+  }
+  console.log(`✅ ${createdChains.length} cadenas de farmacias creadas`);
+
+  // 6. Crear farmacias
   console.log('💊 Creando farmacias...');
   
   // Farmacia Fybeca
@@ -491,6 +540,9 @@ async function main() {
     }
   );
 
+  // Buscar la cadena Fybeca
+  const fybecaChain = createdChains.find((c) => c.name === 'Fybeca');
+  
   const pharmacyProvider = await findOrCreate<providers>(
     prisma.providers,
     { user_id: pharmacyUser.id },
@@ -503,6 +555,7 @@ async function main() {
       description: 'Somos parte de tu vida. Encuentra medicinas, productos de cuidado personal, belleza, maternidad y más. Calidad y servicio garantizado en todo el Ecuador.',
       verification_status: 'APPROVED',
       commission_percentage: 15.0,
+      chain_id: fybecaChain?.id || null, // ⭐ Asociar con la cadena
     }
   );
 
@@ -1224,6 +1277,7 @@ async function main() {
   console.log('\n📊 Resumen:');
   console.log('  - 2 Administradores');
   console.log('  - 5 Doctores');
+  console.log('  - 4 Cadenas de Farmacias');
   console.log('  - 3 Farmacias');
   console.log('  - 3 Laboratorios');
   console.log('  - 2 Ambulancias');

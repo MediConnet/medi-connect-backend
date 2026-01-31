@@ -16,8 +16,8 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   exposedHeaders: ['Authorization'],
 }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '10mb' })); // ⭐ Aumentar límite para subida de imágenes
+app.use(express.urlencoded({ extended: true, limit: '10mb' })); // ⭐ Aumentar límite para subida de imágenes
 
 // Middleware de logging para todas las requests
 app.use((req, res, next) => {
@@ -139,6 +139,7 @@ import { handler as authHandler } from '../src/auth/handler';
 import { handler as doctorsHandler } from '../src/doctors/handler';
 import { handler as suppliesHandler } from '../src/supplies/handler';
 import { handler as homeHandler } from '../src/home/handler';
+import { handler as pharmacyChainsHandler } from '../src/pharmacy-chains/handler';
 
 // Importar otros handlers si existen
 let pharmaciesHandler: any;
@@ -225,6 +226,12 @@ app.use('/api/home', async (req, res) => {
 app.use('/api/supplies', async (req, res) => {
   const path = req.originalUrl.split('?')[0];
   await handleLambdaResponse(suppliesHandler, req, res, path);
+});
+
+// Routes - Pharmacy Chains (público)
+app.use('/api/pharmacy-chains', async (req, res) => {
+  const path = req.originalUrl.split('?')[0];
+  await handleLambdaResponse(pharmacyChainsHandler, req, res, path);
 });
 
 // Routes - Patients

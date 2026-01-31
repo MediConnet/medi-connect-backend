@@ -280,6 +280,33 @@ export const markReceptionMessagesReadSchema = z.object({
   messageIds: z.array(z.string().uuid('Invalid message ID format')).min(1, 'At least one message ID is required'),
 });
 
+// ⭐ Pharmacy Chains Validators
+export const createPharmacyChainSchema = z.object({
+  name: z.string().min(1, 'Name is required').max(255, 'Name too long'),
+  logoUrl: z.string().min(1, 'Logo URL is required').refine(
+    (val) => {
+      const isBase64 = val.startsWith('data:image/');
+      const isUrl = val.startsWith('http://') || val.startsWith('https://');
+      return isBase64 || isUrl;
+    },
+    { message: 'Logo must be a valid URL or base64 image' }
+  ),
+  isActive: z.boolean().optional().default(true),
+});
+
+export const updatePharmacyChainSchema = z.object({
+  name: z.string().min(1, 'Name is required').max(255, 'Name too long').optional(),
+  logoUrl: z.string().min(1, 'Logo URL is required').refine(
+    (val) => {
+      const isBase64 = val.startsWith('data:image/');
+      const isUrl = val.startsWith('http://') || val.startsWith('https://');
+      return isBase64 || isUrl;
+    },
+    { message: 'Logo must be a valid URL or base64 image' }
+  ).optional(),
+  isActive: z.boolean().optional(),
+});
+
 export const requestDateBlockSchema = z.object({
   date: z.string().datetime('Invalid date format'),
   reason: z.string().optional(),

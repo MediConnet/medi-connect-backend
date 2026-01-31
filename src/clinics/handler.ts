@@ -1,7 +1,7 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResult } from 'aws-lambda';
 import { logger } from '../shared/logger';
 import { errorResponse, internalErrorResponse, optionsResponse } from '../shared/response';
-import { getProfile, updateProfile } from './profile.controller';
+import { getProfile, updateProfile, uploadLogo } from './profile.controller';
 import { getDashboard } from './dashboard.controller';
 import { getDoctors, inviteDoctor, updateDoctorStatus, updateDoctorOffice, deleteDoctor } from './doctors.controller';
 import { validateInvitation, acceptInvitation } from './invitations.controller';
@@ -31,6 +31,12 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       console.log(`✅ [CLINICS HANDLER] Ruta de perfil encontrada`);
       if (method === 'GET') return await getProfile(event);
       if (method === 'PUT') return await updateProfile(event);
+    }
+
+    // --- Ruta de Subida de Logo ---
+    if (path === '/api/clinics/upload-logo') {
+      console.log(`✅ [CLINICS HANDLER] Ruta de upload-logo encontrada`);
+      if (method === 'POST') return await uploadLogo(event);
     }
 
     // --- Rutas de Dashboard ---
