@@ -369,6 +369,10 @@ model clinic_doctors {
   profile_image_url     String?            @db.VarChar(500)
   phone                 String?            @db.VarChar(20)
   whatsapp              String?            @db.VarChar(20)
+  experience            Int?               // Años de experiencia
+  bio                   String?            @db.Text // Biografía profesional
+  education             Json?              // Array de estudios: ["Universidad Central - Medicina"]
+  certifications        Json?              // Array de certificaciones: ["Certificación ABC"]
   is_active             Boolean?           @default(true)
   is_invited            Boolean?           @default(true)
   invitation_token      String?            @unique @db.VarChar(255)

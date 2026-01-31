@@ -3,6 +3,10 @@ import { AuthContext } from './auth';
 
 /**
  * Obtiene el registro de médico asociado a clínica para un usuario
+ * Solo retorna médicos que:
+ * - Están activos (is_active: true)
+ * - Ya aceptaron la invitación (is_invited: false)
+ * - Tienen clínica asignada (clinic_id not null)
  */
 export async function getClinicDoctor(authContext: AuthContext) {
   const prisma = getPrismaClient();
@@ -12,6 +16,7 @@ export async function getClinicDoctor(authContext: AuthContext) {
       user_id: authContext.user.id,
       is_active: true,
       is_invited: false, // Solo médicos que aceptaron la invitación
+      clinic_id: { not: null }, // Asegurar que tiene clínica asignada
     },
     include: {
       clinics: {
@@ -24,7 +29,12 @@ export async function getClinicDoctor(authContext: AuthContext) {
     },
   });
 
-  return clinicDoctor;
+  // Validación adicional: asegurar que tiene clínica y está realmente asociado
+  if (clinicDoctor && clinicDoctor.clinic_id && clinicDoctor.clinics) {
+    return clinicDoctor;
+  }
+
+  return null;
 }
 
 /**

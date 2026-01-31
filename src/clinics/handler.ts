@@ -3,11 +3,12 @@ import { logger } from '../shared/logger';
 import { errorResponse, internalErrorResponse, optionsResponse } from '../shared/response';
 import { getProfile, updateProfile } from './profile.controller';
 import { getDashboard } from './dashboard.controller';
-import { getDoctors, inviteDoctor, updateDoctorStatus, updateDoctorOffice } from './doctors.controller';
+import { getDoctors, inviteDoctor, updateDoctorStatus, updateDoctorOffice, deleteDoctor } from './doctors.controller';
 import { validateInvitation, acceptInvitation } from './invitations.controller';
 import { getAppointments, updateAppointmentStatus, getTodayReception, updateReceptionStatus } from './appointments.controller';
 import { getDoctorSchedule, updateDoctorSchedule } from './schedules.controller';
 import { getClinicNotifications, getUnreadCount, markNotificationAsRead, markAllAsRead } from './notifications.controller';
+import { getReceptionMessages, createReceptionMessage, markReceptionMessagesRead } from './reception-messages.controller';
 import { extractIdFromPath } from '../shared/validators';
 
 export async function handler(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
@@ -59,6 +60,15 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       if (method === 'PATCH') return await updateDoctorOffice(event);
     }
 
+    // --- Rutas de Eliminación de Médico ---
+    if (path.startsWith('/api/clinics/doctors/') && 
+        !path.includes('/status') && 
+        !path.includes('/office') && 
+        !path.includes('/schedule') && 
+        !path.includes('/invite')) {
+      if (method === 'DELETE') return await deleteDoctor(event);
+    }
+
     // --- Rutas de Horarios de Médico ---
     if (path.startsWith('/api/clinics/doctors/') && path.endsWith('/schedule')) {
       if (method === 'GET') return await getDoctorSchedule(event);
@@ -96,6 +106,16 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     // --- Rutas de Estado de Recepción ---
     if (path.startsWith('/api/clinics/appointments/') && path.endsWith('/reception')) {
       if (method === 'PATCH') return await updateReceptionStatus(event);
+    }
+
+    // --- Rutas de Mensajes de Recepción ---
+    if (path === '/api/clinics/reception/messages' || (path.startsWith('/api/clinics/reception/messages') && path.includes('?'))) {
+      if (method === 'GET') return await getReceptionMessages(event);
+      if (method === 'POST') return await createReceptionMessage(event);
+    }
+
+    if (path === '/api/clinics/reception/messages/read') {
+      if (method === 'PATCH') return await markReceptionMessagesRead(event);
     }
 
     // --- Rutas de Notificaciones ---

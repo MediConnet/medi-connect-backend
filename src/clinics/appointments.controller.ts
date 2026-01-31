@@ -35,6 +35,9 @@ export async function getAppointments(event: APIGatewayProxyEventV2): Promise<AP
     // Construir filtros
     const where: any = { clinic_id: clinic.id };
 
+    // ⭐ Si no hay parámetros, devolver TODAS las citas (para gráficos)
+    // Los filtros son opcionales y se aplican solo si se envían
+
     if (queryParams.date) {
       const date = new Date(queryParams.date);
       const nextDay = new Date(date);
@@ -46,10 +49,38 @@ export async function getAppointments(event: APIGatewayProxyEventV2): Promise<AP
     }
 
     if (queryParams.doctorId) {
-      where.provider_id = queryParams.doctorId;
+      // Buscar el provider_id que corresponde al doctorId (user_id del doctor)
+      const clinicDoctor = await prisma.clinic_doctors.findFirst({
+        where: {
+          clinic_id: clinic.id,
+          id: queryParams.doctorId, // doctorId puede ser el id de clinic_doctors
+        },
+        select: {
+          user_id: true,
+        },
+      });
+
+      if (clinicDoctor?.user_id) {
+        // Buscar el provider_id que corresponde a este user_id
+        const provider = await prisma.providers.findFirst({
+          where: {
+            user_id: clinicDoctor.user_id,
+          },
+          select: {
+            id: true,
+          },
+        });
+        if (provider) {
+          where.provider_id = provider.id;
+        }
+      } else {
+        // Si no se encuentra, intentar usar directamente como provider_id
+        where.provider_id = queryParams.doctorId;
+      }
     }
 
     if (queryParams.status) {
+      // Mapear estados del frontend a estados de la BD
       const statusMap: Record<string, string> = {
         'scheduled': 'CONFIRMED',
         'confirmed': 'CONFIRMED',
@@ -57,7 +88,7 @@ export async function getAppointments(event: APIGatewayProxyEventV2): Promise<AP
         'cancelled': 'CANCELLED',
         'no_show': 'CANCELLED',
       };
-      where.status = statusMap[queryParams.status] || queryParams.status.toUpperCase();
+      where.status = statusMap[queryParams.status.toLowerCase()] || queryParams.status.toUpperCase();
     }
 
     // Obtener citas con relaciones
@@ -90,17 +121,38 @@ export async function getAppointments(event: APIGatewayProxyEventV2): Promise<AP
     });
 
     // Obtener información de médicos de la clínica
+    // Necesitamos obtener los user_id de los providers para buscar en clinic_doctors
     const providerIds = appointments
       .map(apt => apt.provider_id)
       .filter((id): id is string => id !== null);
     
-    const clinicDoctors = providerIds.length > 0
+    // Obtener los user_id de los providers
+    const providers = providerIds.length > 0
+      ? await prisma.providers.findMany({
+          where: {
+            id: { in: providerIds },
+          },
+          select: {
+            id: true,
+            user_id: true,
+            commercial_name: true,
+          },
+        })
+      : [];
+
+    const providerUserIds = providers
+      .map(p => p.user_id)
+      .filter((id): id is string => id !== null);
+    
+    // Obtener información de médicos de la clínica usando user_id
+    const clinicDoctors = providerUserIds.length > 0
       ? await prisma.clinic_doctors.findMany({
           where: {
             clinic_id: clinic.id,
-            user_id: { in: providerIds },
+            user_id: { in: providerUserIds },
           },
           select: {
+            id: true,
             user_id: true,
             name: true,
             specialty: true,
@@ -108,31 +160,55 @@ export async function getAppointments(event: APIGatewayProxyEventV2): Promise<AP
         })
       : [];
 
+    // Crear mapas para búsqueda rápida
+    const providerToUserIdMap = new Map(providers.map(p => [p.id, p.user_id]));
     const doctorMap = new Map(clinicDoctors.map(doc => [doc.user_id, doc]));
+    const providerNameMap = new Map(providers.map(p => [p.id, p.commercial_name]));
+
+    // Normalizar estados de BD a formato del frontend
+    const normalizeStatus = (dbStatus: string | null): string => {
+      if (!dbStatus) return 'scheduled';
+      const status = dbStatus.toUpperCase();
+      if (status === 'CONFIRMED') return 'confirmed';
+      if (status === 'CANCELLED') return 'cancelled';
+      if (status === 'attended' || status === 'ATTENDED') return 'attended';
+      return 'scheduled';
+    };
 
     console.log(`✅ [CLINICS] Citas obtenidas exitosamente (${appointments.length} citas)`);
     return successResponse(
       appointments.map((apt) => {
         const scheduledFor = apt.scheduled_for ? new Date(apt.scheduled_for) : null;
-        const doctor = apt.provider_id ? doctorMap.get(apt.provider_id) : null;
+        
+        // Obtener información del doctor
+        const providerUserId = apt.provider_id ? providerToUserIdMap.get(apt.provider_id) : null;
+        const doctor = providerUserId ? doctorMap.get(providerUserId) : null;
+        const providerName = apt.provider_id ? providerNameMap.get(apt.provider_id) : null;
+        
+        // Formatear fecha y hora
+        const date = scheduledFor ? scheduledFor.toISOString().split('T')[0] : null; // YYYY-MM-DD
+        const time = scheduledFor 
+          ? `${String(scheduledFor.getHours()).padStart(2, '0')}:${String(scheduledFor.getMinutes()).padStart(2, '0')}` 
+          : null; // HH:mm
+
         return {
           id: apt.id,
-          clinicId: apt.clinic_id,
-          doctorId: apt.provider_id,
-          doctorName: doctor?.name || apt.providers?.commercial_name || 'Médico',
-          doctorSpecialty: doctor?.specialty || null,
-          patientId: apt.patient_id,
+          clinicId: apt.clinic_id || null,
+          doctorId: apt.provider_id || null, // ⭐ provider_id como doctorId
+          doctorName: doctor?.name || providerName || 'Médico', // ⭐ REQUERIDO para gráficos
+          doctorSpecialty: doctor?.specialty || null, // ⭐ REQUERIDO para gráficos
+          patientId: apt.patient_id || null,
           patientName: apt.patients?.full_name || 'Paciente',
           patientPhone: apt.patients?.phone || null,
           patientEmail: apt.patients?.users?.email || null,
-          date: scheduledFor ? scheduledFor.toISOString().split('T')[0] : null,
-          time: scheduledFor ? `${String(scheduledFor.getHours()).padStart(2, '0')}:${String(scheduledFor.getMinutes()).padStart(2, '0')}` : null,
+          date: date, // ⭐ Formato: YYYY-MM-DD
+          time: time, // ⭐ Formato: HH:mm
           reason: apt.reason || null,
-          status: apt.status || 'scheduled',
+          status: normalizeStatus(apt.status), // ⭐ Valores: scheduled, confirmed, attended, cancelled, no_show
           receptionStatus: apt.reception_status || null,
           receptionNotes: apt.reception_notes || null,
-          createdAt: apt.scheduled_for?.toISOString() || null,
-          updatedAt: apt.scheduled_for?.toISOString() || null,
+          createdAt: null, // ⚠️ appointments no tiene created_at en el schema
+          updatedAt: null, // ⚠️ appointments no tiene updated_at en el schema
         };
       })
     );

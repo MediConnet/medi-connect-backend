@@ -6,6 +6,7 @@ import { errorResponse, internalErrorResponse, notFoundResponse, successResponse
 import { parseBody, acceptInvitationSchema, extractIdFromPath } from '../shared/validators';
 import { createHash } from 'crypto';
 import { enum_roles } from '../generated/prisma/client';
+import { generateJWT } from '../shared/auth';
 
 // GET /api/clinics/invite/:token
 export async function validateInvitation(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
@@ -112,7 +113,19 @@ export async function acceptInvitation(event: APIGatewayProxyEventV2): Promise<A
       return errorResponse('Email already registered', 400);
     }
 
-    // TRANSACCIÓN: Crear usuario, actualizar médico e invitación
+    // Buscar la categoría de servicio "doctor"
+    const doctorCategory = await prisma.service_categories.findFirst({
+      where: {
+        slug: 'doctor',
+      },
+    });
+
+    if (!doctorCategory) {
+      console.error(`❌ [CLINICS] Categoría de servicio "doctor" no encontrada`);
+      return errorResponse('Doctor service category not found', 500);
+    }
+
+    // TRANSACCIÓN: Crear usuario, provider, actualizar médico e invitación
     const result = await prisma.$transaction(async (tx) => {
       // Crear hash de contraseña
       const passwordHash = createHash('sha256').update(body.password).digest('hex');
@@ -128,6 +141,18 @@ export async function acceptInvitation(event: APIGatewayProxyEventV2): Promise<A
         },
       });
 
+      // Crear provider con serviceType = 'doctor'
+      const provider = await tx.providers.create({
+        data: {
+          id: randomUUID(),
+          user_id: user.id,
+          category_id: doctorCategory.id, // ⭐ category_id es Int, no service_category_id
+          commercial_name: body.name, // Usar el nombre del médico
+          description: `Médico especialista en ${body.specialty}`,
+          verification_status: 'APPROVED', // Aprobado automáticamente al aceptar invitación de clínica
+        },
+      });
+
       // Buscar registro de médico
       const doctor = await tx.clinic_doctors.findFirst({
         where: {
@@ -140,13 +165,13 @@ export async function acceptInvitation(event: APIGatewayProxyEventV2): Promise<A
         throw new Error('Doctor record not found');
       }
 
-      // Actualizar registro de médico
+      // Actualizar registro de médico con name y specialty
       const updatedDoctor = await tx.clinic_doctors.update({
         where: { id: doctor.id },
         data: {
           user_id: user.id,
-          name: body.name,
-          specialty: body.specialty,
+          name: body.name, // ⭐ Completar name
+          specialty: body.specialty, // ⭐ Completar specialty
           phone: body.phone || null,
           whatsapp: body.whatsapp || null,
           is_invited: false,
@@ -162,19 +187,24 @@ export async function acceptInvitation(event: APIGatewayProxyEventV2): Promise<A
         data: { status: 'accepted' },
       });
 
-      return { user, doctor: updatedDoctor };
+      return { user, provider, doctor: updatedDoctor };
     });
 
-    // TODO: Generar JWT token
-    // Por ahora, retornamos el usuario creado
-    // En producción, deberías generar un token JWT aquí
+    // Generar JWT token
+    const jwtToken = generateJWT({
+      userId: result.user.id,
+      email: result.user.email,
+      role: result.user.role,
+    });
 
     console.log(`✅ [CLINICS] Invitación aceptada exitosamente: ${invitation.email}`);
     return successResponse(
       {
         userId: result.user.id,
         email: result.user.email,
-        token: 'TODO: Generate JWT token', // TODO: Implementar generación de JWT
+        token: jwtToken,
+        serviceType: 'doctor', // ⭐ serviceType = 'doctor'
+        tipo: 'doctor', // ⭐ tipo = 'doctor'
         doctor: {
           id: result.doctor.id,
           clinicId: result.doctor.clinic_id,

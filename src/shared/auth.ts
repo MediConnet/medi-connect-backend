@@ -2,6 +2,7 @@ import { APIGatewayProxyEventV2, APIGatewayProxyResult } from 'aws-lambda';
 import { enum_roles, users } from '../generated/prisma/client';
 import { getPrismaClient } from './prisma';
 import { forbiddenResponse, unauthorizedResponse } from './response';
+import * as crypto from 'crypto';
 
 export interface AuthContext {
   cognitoUserId: string;
@@ -300,4 +301,40 @@ export async function requireRole(
 
   console.log(`✅ [REQUIRE_ROLE] Rol verificado correctamente: ${authContext.user.role}`);
   return authContext;
+}
+
+/**
+ * Genera un JWT token para desarrollo local
+ */
+export function generateJWT(payload: { userId: string; email: string; role: string | null }): string {
+  const header = { alg: 'HS256', typ: 'JWT' };
+
+  const base64UrlEncode = (str: string): string => {
+    return Buffer.from(str).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+  };
+
+  const encodedHeader = base64UrlEncode(JSON.stringify(header));
+  const now = Math.floor(Date.now() / 1000);
+  
+  const jwtPayload = {
+    sub: payload.userId,
+    userId: payload.userId,
+    email: payload.email,
+    role: payload.role,
+    iat: now,
+    exp: now + 3600, // 1 hora
+  };
+  
+  const encodedPayload = base64UrlEncode(JSON.stringify(jwtPayload));
+  const secret = process.env.JWT_SECRET || 'local-dev-secret-key';
+  
+  const signature = crypto
+    .createHmac('sha256', secret)
+    .update(`${encodedHeader}.${encodedPayload}`)
+    .digest('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=/g, '');
+  
+  return `${encodedHeader}.${encodedPayload}.${signature}`;
 }

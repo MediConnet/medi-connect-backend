@@ -1,4 +1,4 @@
-import nodemailer from 'nodemailer';
+import { ServerClient } from 'postmark';
 import { logger } from './logger';
 
 interface EmailOptions {
@@ -8,80 +8,73 @@ interface EmailOptions {
   text?: string;
 }
 
-// Configuración del transporter de email
-let transporter: nodemailer.Transporter | null = null;
+// Cliente de Postmark (singleton)
+let postmarkClient: ServerClient | null = null;
 
 /**
- * Inicializa el servicio de email
+ * Inicializa el servicio de email con Postmark
  */
-function initializeEmailService(): nodemailer.Transporter | null {
-  if (transporter) {
-    return transporter;
+function initializeEmailService(): ServerClient | null {
+  if (postmarkClient) {
+    return postmarkClient;
   }
 
-  // Configuración desde variables de entorno
-  const smtpHost = process.env.SMTP_HOST;
-  const smtpPort = parseInt(process.env.SMTP_PORT || '587', 10);
-  const smtpUser = process.env.SMTP_USER;
-  const smtpPassword = process.env.SMTP_PASSWORD;
-  const smtpSecure = process.env.SMTP_SECURE === 'true';
+  // Token de API de Postmark desde variables de entorno
+  const postmarkApiToken = process.env.POSTMARK_API_TOKEN || '72f8532f-fdb7-41e3-96d1-75bf80a1b416';
+  
+  // Email desde el que se enviarán los correos (debe estar verificado en Postmark)
+  const fromEmail = process.env.POSTMARK_FROM_EMAIL || process.env.SMTP_FROM || 'bobbie.conroy491@mazun.org';
 
-  // Si no hay configuración, retornar null (modo desarrollo)
-  if (!smtpHost || !smtpUser || !smtpPassword) {
-    console.log('⚠️ [EMAIL] Servicio de email no configurado. Usando modo desarrollo (solo logs)');
+  // Si no hay token, retornar null (modo desarrollo)
+  if (!postmarkApiToken) {
+    console.log('⚠️ [EMAIL] Token de Postmark no configurado. Usando modo desarrollo (solo logs)');
     return null;
   }
 
   try {
-    transporter = nodemailer.createTransport({
-      host: smtpHost,
-      port: smtpPort,
-      secure: smtpSecure, // true para 465, false para otros puertos
-      auth: {
-        user: smtpUser,
-        pass: smtpPassword,
-      },
-    });
-
-    console.log('✅ [EMAIL] Servicio de email inicializado');
-    return transporter;
+    postmarkClient = new ServerClient(postmarkApiToken);
+    console.log('✅ [EMAIL] Servicio de email Postmark inicializado');
+    console.log(`📧 [EMAIL] Email remitente: ${fromEmail}`);
+    return postmarkClient;
   } catch (error: any) {
-    console.error('❌ [EMAIL] Error al inicializar servicio de email:', error.message);
-    logger.error('Error initializing email service', error);
+    console.error('❌ [EMAIL] Error al inicializar servicio de email Postmark:', error.message);
+    logger.error('Error initializing Postmark email service', error);
     return null;
   }
 }
 
 /**
- * Envía un email
+ * Envía un email usando Postmark
  */
 export async function sendEmail(options: EmailOptions): Promise<boolean> {
   try {
-    const emailTransporter = initializeEmailService();
+    const client = initializeEmailService();
+    const fromEmail = process.env.POSTMARK_FROM_EMAIL || process.env.SMTP_FROM || 'noreply@mediconnect.com';
 
-    // Si no hay transporter configurado, solo log (modo desarrollo)
-    if (!emailTransporter) {
+    // Si no hay cliente configurado, solo log (modo desarrollo)
+    if (!client) {
       console.log('📧 [EMAIL] (Modo desarrollo) Email no enviado:');
+      console.log(`   From: ${fromEmail}`);
       console.log(`   To: ${options.to}`);
       console.log(`   Subject: ${options.subject}`);
       console.log(`   Body: ${options.text || options.html.substring(0, 100)}...`);
       return true; // Retornar true para no bloquear el flujo
     }
 
-    const mailOptions = {
-      from: process.env.SMTP_FROM || process.env.SMTP_USER,
-      to: options.to,
-      subject: options.subject,
-      html: options.html,
-      text: options.text || options.html.replace(/<[^>]*>/g, ''), // Texto plano sin HTML
-    };
+    // Enviar email usando Postmark
+    const response = await client.sendEmail({
+      From: fromEmail,
+      To: options.to,
+      Subject: options.subject,
+      HtmlBody: options.html,
+      TextBody: options.text || options.html.replace(/<[^>]*>/g, ''), // Texto plano sin HTML
+    });
 
-    const info = await emailTransporter.sendMail(mailOptions);
-    console.log(`✅ [EMAIL] Email enviado a ${options.to}:`, info.messageId);
+    console.log(`✅ [EMAIL] Email enviado a ${options.to} usando Postmark. MessageID: ${response.MessageID}`);
     return true;
   } catch (error: any) {
     console.error(`❌ [EMAIL] Error al enviar email a ${options.to}:`, error.message);
-    logger.error('Error sending email', error, { to: options.to, subject: options.subject });
+    logger.error('Error sending email with Postmark', error, { to: options.to, subject: options.subject });
     return false; // Retornar false pero no lanzar error
   }
 }
