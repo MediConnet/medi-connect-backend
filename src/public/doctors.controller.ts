@@ -27,11 +27,9 @@ export async function getAllDoctors(event: APIGatewayProxyEventV2): Promise<APIG
     // Construir where clause
     const where: any = {
       verification_status: 'APPROVED', // Solo médicos aprobados
+      category_id: 1, // Solo médicos (category_id = 1)
       users: {
         is_active: true,
-      },
-      service_categories: {
-        slug: 'doctor', // Solo médicos (singular, como en admin handler)
       },
       provider_branches: {
         some: {
@@ -145,11 +143,19 @@ export async function getAllDoctors(event: APIGatewayProxyEventV2): Promise<APIG
       const mainBranch = doctor.provider_branches[0];
       const specialty = doctor.specialties[0];
       
+      // Debug: verificar especialidades
+      if (doctor.specialties && doctor.specialties.length > 0) {
+        console.log(`✅ [PUBLIC DOCTORS] Doctor ${doctor.commercial_name} tiene ${doctor.specialties.length} especialidad(es):`, doctor.specialties.map(s => s.name));
+      } else {
+        console.log(`⚠️ [PUBLIC DOCTORS] Doctor ${doctor.commercial_name} NO tiene especialidades asignadas`);
+      }
+      
       return {
         id: doctor.id,
         nombre: doctor.commercial_name || '',
         apellido: '', // Los médicos usan commercial_name completo
         especialidad: specialty?.name || '',
+        especialidadId: specialty?.id || '',
         descripcion: doctor.description || '',
         experiencia: doctor.years_of_experience || 0,
         registro: '', // No disponible en el schema actual
@@ -167,8 +173,8 @@ export async function getAllDoctors(event: APIGatewayProxyEventV2): Promise<APIG
           consulta: mainBranch?.consultation_fee ? Number(mainBranch.consultation_fee) : 0,
         },
         formasPago: mainBranch?.payment_methods || [],
-        createdAt: new Date(),
-        updatedAt: new Date(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       };
     });
     
@@ -211,11 +217,9 @@ export async function getDoctorById(event: APIGatewayProxyEventV2): Promise<APIG
       where: {
         id: doctorId,
         verification_status: 'APPROVED',
+        category_id: 1, // Solo médicos (category_id = 1)
         users: {
           is_active: true,
-        },
-        service_categories: {
-          slug: 'doctor',
         },
         provider_branches: {
           some: {
@@ -277,6 +281,7 @@ export async function getDoctorById(event: APIGatewayProxyEventV2): Promise<APIG
       nombre: doctor.commercial_name || '',
       apellido: '',
       especialidad: specialty?.name || '',
+      especialidadId: specialty?.id || '',
       descripcion: doctor.description || '',
       experiencia: doctor.years_of_experience || 0,
       registro: '',
@@ -294,8 +299,8 @@ export async function getDoctorById(event: APIGatewayProxyEventV2): Promise<APIG
         consulta: mainBranch?.consultation_fee ? Number(mainBranch.consultation_fee) : 0,
       },
       formasPago: mainBranch?.payment_methods || [],
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
     
     console.log(`✅ [PUBLIC DOCTORS] Médico encontrado: ${formattedDoctor.nombre}`);
@@ -327,11 +332,9 @@ export async function searchDoctors(event: APIGatewayProxyEventV2): Promise<APIG
     const doctors = await prisma.providers.findMany({
       where: {
         verification_status: 'APPROVED',
+        category_id: 1, // Solo médicos (category_id = 1)
         users: {
           is_active: true,
-        },
-        service_categories: {
-          slug: 'doctor',
         },
         provider_branches: {
           some: {
@@ -411,19 +414,26 @@ export async function searchDoctors(event: APIGatewayProxyEventV2): Promise<APIG
         nombre: doctor.commercial_name || '',
         apellido: '',
         especialidad: specialty?.name || '',
+        especialidadId: specialty?.id || '',
         descripcion: doctor.description || '',
         experiencia: doctor.years_of_experience || 0,
+        registro: '',
         telefono: mainBranch?.phone_contact || '',
         email: doctor.users?.email || '',
         direccion: mainBranch?.address_text || '',
         ciudad: mainBranch?.cities?.name || '',
+        codigoPostal: '',
         horarioAtencion: '',
         imagen: doctor.logo_url || doctor.users?.profile_picture_url || '',
         calificacion: mainBranch?.rating_cache || 0,
+        latitud: mainBranch?.latitude || null,
+        longitud: mainBranch?.longitude || null,
         tarifas: {
           consulta: mainBranch?.consultation_fee ? Number(mainBranch.consultation_fee) : 0,
         },
         formasPago: mainBranch?.payment_methods || [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       };
     });
     

@@ -250,6 +250,13 @@ export const createReviewSchema = z.object({
   appointment_id: z.string().uuid('Appointment ID must be a valid UUID').optional().nullable(),
 });
 
+// Doctor review validators (simplified, branch_id is obtained from doctor)
+export const createDoctorReviewSchema = z.object({
+  rating: z.number().int().min(1, 'Rating must be at least 1').max(5, 'Rating must be at most 5'),
+  comment: z.string().optional().nullable(),
+  appointment_id: z.string().uuid('Appointment ID must be a valid UUID').optional().nullable(),
+});
+
 // Appointment validators
 export const createAppointmentSchema = z.object({
   doctorId: z.string().uuid('Doctor ID must be a valid UUID'),

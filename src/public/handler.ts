@@ -2,6 +2,7 @@ import { APIGatewayProxyEventV2, APIGatewayProxyResult } from 'aws-lambda';
 import { logger } from '../shared/logger';
 import { errorResponse, internalErrorResponse, optionsResponse } from '../shared/response';
 import { getAllDoctors, getDoctorById, searchDoctors } from './doctors.controller';
+import { getDoctorReviews, createDoctorReview } from './doctors-reviews.controller';
 import { getAllPharmacies, getPharmacyBrands, getPharmacyBranches, getPharmacyBranchById } from './pharmacies.controller';
 
 export async function handler(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
@@ -28,12 +29,22 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       return await searchDoctors(event);
     }
 
+    // GET /api/public/doctors/{id}/reviews - Obtener reseñas de un doctor
+    if (path.startsWith('/api/public/doctors/') && path.endsWith('/reviews') && method === 'GET') {
+      return await getDoctorReviews(event);
+    }
+
+    // POST /api/public/doctors/{id}/reviews - Crear reseña de un doctor
+    if (path.startsWith('/api/public/doctors/') && path.endsWith('/reviews') && method === 'POST') {
+      return await createDoctorReview(event);
+    }
+
     // GET /api/public/doctors/{id} - Obtener médico por ID
     if (path.startsWith('/api/public/doctors/') && method === 'GET') {
       const pathParts = path.split('/');
       const lastPart = pathParts[pathParts.length - 1];
-      // Si no es "search", es un ID
-      if (lastPart !== 'search') {
+      // Si no es "search" ni "reviews", es un ID
+      if (lastPart !== 'search' && lastPart !== 'reviews') {
         return await getDoctorById(event);
       }
     }

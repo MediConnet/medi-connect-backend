@@ -44,6 +44,12 @@ functions:
       - httpApi:
           path: /api/public/doctors/{id}
           method: GET
+      - httpApi:
+          path: /api/public/doctors/{id}/reviews
+          method: GET
+      - httpApi:
+          path: /api/public/doctors/{id}/reviews
+          method: POST
       # Public Pharmacies
       - httpApi:
           path: /api/public/pharmacies/brands

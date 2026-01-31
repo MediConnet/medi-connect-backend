@@ -6,7 +6,7 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
+  provider = "postgresql"
 }
 
 model appointments {
@@ -228,10 +228,23 @@ model provider_schedules {
   provider_branches provider_branches? @relation(fields: [branch_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }
 
+model pharmacy_chains {
+  id         String      @id @db.Uuid
+  name       String      @db.VarChar(255)
+  logo_url   String?     @db.Text
+  is_active  Boolean?    @default(true)
+  created_at DateTime?   @default(now()) @db.Timestamp(6)
+  updated_at DateTime?   @default(now()) @db.Timestamp(6)
+  providers  providers[]
+
+  @@unique([name])
+}
+
 model providers {
   id                    String                  @id @db.Uuid
   user_id               String?                 @db.Uuid
   category_id           Int?
+  chain_id              String?                 @db.Uuid
   commercial_name       String?                 @db.VarChar(255)
   logo_url              String?                 @db.VarChar(255)
   description           String?
@@ -248,6 +261,9 @@ model providers {
   service_categories    service_categories?     @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   users                 users?                  @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   specialties           specialties[]           @relation("providersTospecialties")
+  pharmacy_chains       pharmacy_chains?        @relation(fields: [chain_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([chain_id])
 }
 
 model reviews {
@@ -359,24 +375,24 @@ model clinic_schedules {
 }
 
 model clinic_doctors {
-  id                    String             @id @db.Uuid
-  clinic_id             String?            @db.Uuid
-  user_id               String?            @db.Uuid
-  email                 String             @db.VarChar(255)
-  name                  String?            @db.VarChar(255)
-  specialty             String?            @db.VarChar(255)
-  office_number         String?            @db.VarChar(50)
-  profile_image_url     String?            @db.VarChar(500)
-  phone                 String?            @db.VarChar(20)
-  whatsapp              String?            @db.VarChar(20)
-  is_active             Boolean?           @default(true)
-  is_invited            Boolean?           @default(true)
-  invitation_token      String?            @unique @db.VarChar(255)
-  invitation_expires_at DateTime?          @db.Timestamp(6)
-  created_at            DateTime?          @default(now()) @db.Timestamp(6)
-  updated_at            DateTime?          @default(now()) @db.Timestamp(6)
-  clinics               clinics?           @relation(fields: [clinic_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  users                 users?             @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+  id                    String                @id @db.Uuid
+  clinic_id             String?               @db.Uuid
+  user_id               String?               @db.Uuid
+  email                 String                @db.VarChar(255)
+  name                  String?               @db.VarChar(255)
+  specialty             String?               @db.VarChar(255)
+  office_number         String?               @db.VarChar(50)
+  profile_image_url     String?               @db.VarChar(500)
+  phone                 String?               @db.VarChar(20)
+  whatsapp              String?               @db.VarChar(20)
+  is_active             Boolean?              @default(true)
+  is_invited            Boolean?              @default(true)
+  invitation_token      String?               @unique @db.VarChar(255)
+  invitation_expires_at DateTime?             @db.Timestamp(6)
+  created_at            DateTime?             @default(now()) @db.Timestamp(6)
+  updated_at            DateTime?             @default(now()) @db.Timestamp(6)
+  clinics               clinics?              @relation(fields: [clinic_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users                 users?                @relation(fields: [user_id], references: [id], onUpdate: NoAction)
   doctor_schedules      doctor_schedules[]
   reception_messages    reception_messages[]
   date_block_requests   date_block_requests[]
@@ -385,29 +401,29 @@ model clinic_doctors {
 }
 
 model reception_messages {
-  id            String          @id @db.Uuid
-  clinic_id     String?         @db.Uuid
-  doctor_id     String?         @db.Uuid
-  message       String
-  sender_type   String          @db.VarChar(50)
-  is_read       Boolean?        @default(false)
-  created_at    DateTime?       @default(now()) @db.Timestamp(6)
-  clinics       clinics?        @relation(fields: [clinic_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id             String          @id @db.Uuid
+  clinic_id      String?         @db.Uuid
+  doctor_id      String?         @db.Uuid
+  message        String
+  sender_type    String          @db.VarChar(50)
+  is_read        Boolean?        @default(false)
+  created_at     DateTime?       @default(now()) @db.Timestamp(6)
+  clinics        clinics?        @relation(fields: [clinic_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   clinic_doctors clinic_doctors? @relation(fields: [doctor_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([clinic_id, doctor_id, created_at(sort: Desc)], map: "idx_reception_messages_clinic_doctor_created")
 }
 
 model date_block_requests {
-  id            String          @id @db.Uuid
-  clinic_id     String?         @db.Uuid
-  doctor_id     String?         @db.Uuid
-  date          DateTime         @db.Timestamp(6)
-  reason        String?
-  status        String          @db.VarChar(50) @default("pending")
-  created_at    DateTime?       @default(now()) @db.Timestamp(6)
-  updated_at    DateTime?       @default(now()) @db.Timestamp(6)
-  clinics       clinics?        @relation(fields: [clinic_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id             String          @id @db.Uuid
+  clinic_id      String?         @db.Uuid
+  doctor_id      String?         @db.Uuid
+  date           DateTime        @db.Timestamp(6)
+  reason         String?
+  status         String          @default("pending") @db.VarChar(50)
+  created_at     DateTime?       @default(now()) @db.Timestamp(6)
+  updated_at     DateTime?       @default(now()) @db.Timestamp(6)
+  clinics        clinics?        @relation(fields: [clinic_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   clinic_doctors clinic_doctors? @relation(fields: [doctor_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([clinic_id, doctor_id, date], map: "idx_date_block_requests_clinic_doctor_date")
