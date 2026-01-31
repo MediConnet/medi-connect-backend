@@ -35,17 +35,29 @@ export async function getPharmacyBrands(event: APIGatewayProxyEventV2): Promise<
         commercial_name: true,
         logo_url: true,
       },
-      distinct: ['commercial_name'],
       orderBy: {
         commercial_name: 'asc',
       },
     });
     
+    // Obtener marcas únicas por commercial_name
+    const uniqueBrandsMap = new Map<string, { id: string; nombre: string; logo: string }>();
+    pharmacies.forEach(pharmacy => {
+      const name = pharmacy.commercial_name || '';
+      if (name && !uniqueBrandsMap.has(name)) {
+        uniqueBrandsMap.set(name, {
+          id: pharmacy.id,
+          nombre: name,
+          logo: pharmacy.logo_url || '',
+        });
+      }
+    });
+    
     // Transformar a formato de marcas
-    const brands = pharmacies.map(pharmacy => ({
-      id: pharmacy.id,
-      nombre: pharmacy.commercial_name || '',
-      logo: pharmacy.logo_url || '',
+    const brands = Array.from(uniqueBrandsMap.values()).map(brand => ({
+      id: brand.id,
+      nombre: brand.nombre,
+      logo: brand.logo,
       color: '#002F87', // Color por defecto, puede venir de la DB en el futuro
     }));
     

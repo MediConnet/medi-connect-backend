@@ -14,6 +14,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
   const method = event.requestContext.http.method;
   const path = event.requestContext.http.path;
 
+  console.log(`\n🔵 [PATIENTS HANDLER] ${method} ${path} - Handler invocado`);
   logger.info('Patients handler invoked', { method, path });
 
   // Manejar preflight OPTIONS requests (CORS)

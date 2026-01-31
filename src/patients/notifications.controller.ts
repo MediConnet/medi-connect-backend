@@ -51,21 +51,42 @@ export async function getNotifications(event: APIGatewayProxyEventV2): Promise<A
     });
 
     console.log(`✅ [PATIENTS] Se encontraron ${notifications.length} notificaciones`);
-    return successResponse(
-      notifications.map(notif => ({
-        id: notif.id,
-        type: notif.type,
-        title: notif.title,
-        body: notif.body,
-        isRead: notif.is_read || false,
-        data: notif.data,
-        createdAt: notif.created_at,
-      }))
-    );
+    
+    // Transformar notificaciones de forma segura
+    const formattedNotifications = notifications.map(notif => {
+      try {
+        return {
+          id: notif.id,
+          type: notif.type || 'general',
+          title: notif.title || '',
+          body: notif.body || '',
+          isRead: notif.is_read || false,
+          data: notif.data || {},
+          createdAt: notif.created_at || new Date(),
+        };
+      } catch (mapError: any) {
+        console.error('❌ [PATIENTS] Error mapeando notificación:', mapError.message);
+        return {
+          id: notif.id,
+          type: 'general',
+          title: 'Notificación',
+          body: '',
+          isRead: false,
+          data: {},
+          createdAt: new Date(),
+        };
+      }
+    });
+    
+    return successResponse(formattedNotifications, 200, event);
   } catch (error: any) {
     console.error('❌ [PATIENTS] Error al obtener notificaciones:', error.message);
+    console.error('❌ [PATIENTS] Stack completo:', error.stack);
     logger.error('Error getting notifications', error);
-    return internalErrorResponse('Failed to get notifications');
+    
+    // Retornar error más descriptivo
+    const errorMessage = error.message || 'Failed to get notifications';
+    return internalErrorResponse(errorMessage, event);
   }
 }
 

@@ -1,4 +1,5 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResult } from 'aws-lambda';
+import { randomUUID } from 'crypto';
 import { AuthContext, requireAuth } from '../shared/auth';
 import { logger } from '../shared/logger';
 import { getPrismaClient } from '../shared/prisma';
@@ -81,8 +82,12 @@ export async function createAppointment(event: APIGatewayProxyEventV2): Promise<
     }
 
     // Crear la cita
+    // Mapear paymentMethod: el enum solo tiene CASH y CARD, convertir TRANSFER a CARD
+    const paymentMethod = body.paymentMethod === 'TRANSFER' ? 'CARD' : (body.paymentMethod as 'CASH' | 'CARD');
+    
     const appointment = await prisma.appointments.create({
       data: {
+        id: randomUUID(),
         patient_id: patient.id,
         provider_id: body.doctorId,
         branch_id: mainBranch.id,
@@ -90,16 +95,13 @@ export async function createAppointment(event: APIGatewayProxyEventV2): Promise<
         scheduled_for: scheduledFor,
         status: 'PENDING',
         reason: body.reason,
-        payment_method: body.paymentMethod,
+        payment_method: paymentMethod,
         is_paid: false,
         cost: 0, // Se puede actualizar después
       },
       include: {
         providers: {
-          select: {
-            id: true,
-            commercial_name: true,
-            logo_url: true,
+          include: {
             service_categories: {
               select: {
                 name: true,
@@ -108,35 +110,35 @@ export async function createAppointment(event: APIGatewayProxyEventV2): Promise<
             },
           },
         },
-        provider_branches: {
-          select: {
-            id: true,
-            name: true,
-            address_text: true,
-            phone_contact: true,
-          },
-        },
+        provider_branches: true,
       },
     });
 
     console.log('✅ [PATIENTS] Cita creada exitosamente');
+    
+    // TypeScript necesita ayuda para inferir el tipo con include
+    // Acceder a las relaciones usando aserción de tipo
+    const appointmentWithRelations = appointment as any;
+    const provider = appointmentWithRelations.providers;
+    const branch = appointmentWithRelations.provider_branches;
+    
     return successResponse({
       id: appointment.id,
       scheduledFor: appointment.scheduled_for,
       status: appointment.status,
       reason: appointment.reason,
       isPaid: appointment.is_paid || false,
-      provider: appointment.providers ? {
-        id: appointment.providers.id,
-        name: appointment.providers.commercial_name,
-        logoUrl: appointment.providers.logo_url,
-        category: appointment.providers.service_categories?.name || null,
+      provider: provider ? {
+        id: provider.id,
+        name: provider.commercial_name,
+        logoUrl: provider.logo_url,
+        category: provider.service_categories?.name || null,
       } : null,
-      branch: appointment.provider_branches ? {
-        id: appointment.provider_branches.id,
-        name: appointment.provider_branches.name,
-        address: appointment.provider_branches.address_text,
-        phone: appointment.provider_branches.phone_contact,
+      branch: branch ? {
+        id: branch.id,
+        name: branch.name,
+        address: branch.address_text,
+        phone: branch.phone_contact,
       } : null,
     }, 201);
   } catch (error: any) {
@@ -190,10 +192,7 @@ export async function getAppointments(event: APIGatewayProxyEventV2): Promise<AP
       where,
       include: {
         providers: {
-          select: {
-            id: true,
-            commercial_name: true,
-            logo_url: true,
+          include: {
             service_categories: {
               select: {
                 name: true,
@@ -202,14 +201,7 @@ export async function getAppointments(event: APIGatewayProxyEventV2): Promise<AP
             },
           },
         },
-        provider_branches: {
-          select: {
-            id: true,
-            name: true,
-            address_text: true,
-            phone_contact: true,
-          },
-        },
+        provider_branches: true,
       },
       orderBy: {
         scheduled_for: 'desc',
@@ -220,25 +212,31 @@ export async function getAppointments(event: APIGatewayProxyEventV2): Promise<AP
 
     console.log(`✅ [PATIENTS] Se encontraron ${appointments.length} citas`);
     return successResponse(
-      appointments.map(apt => ({
-        id: apt.id,
-        scheduledFor: apt.scheduled_for,
-        status: apt.status,
-        reason: apt.reason,
-        isPaid: apt.is_paid || false,
-        provider: apt.providers ? {
-          id: apt.providers.id,
-          name: apt.providers.commercial_name,
-          logoUrl: apt.providers.logo_url,
-          category: apt.providers.service_categories?.name || null,
-        } : null,
-        branch: apt.provider_branches ? {
-          id: apt.provider_branches.id,
-          name: apt.provider_branches.name,
-          address: apt.provider_branches.address_text,
-          phone: apt.provider_branches.phone_contact,
-        } : null,
-      }))
+      appointments.map(apt => {
+        // TypeScript necesita ayuda para inferir el tipo con include
+        const aptWithRelations = apt as any;
+        const provider = aptWithRelations.providers;
+        const branch = aptWithRelations.provider_branches;
+        return {
+          id: apt.id,
+          scheduledFor: apt.scheduled_for,
+          status: apt.status,
+          reason: apt.reason,
+          isPaid: apt.is_paid || false,
+          provider: provider ? {
+            id: provider.id,
+            name: provider.commercial_name,
+            logoUrl: provider.logo_url,
+            category: provider.service_categories?.name || null,
+          } : null,
+          branch: branch ? {
+            id: branch.id,
+            name: branch.name,
+            address: branch.address_text,
+            phone: branch.phone_contact,
+          } : null,
+        };
+      })
     );
   } catch (error: any) {
     console.error('❌ [PATIENTS] Error al obtener citas:', error.message);
@@ -280,11 +278,7 @@ export async function getAppointmentById(event: APIGatewayProxyEventV2): Promise
       where: { id: appointmentId },
       include: {
         providers: {
-          select: {
-            id: true,
-            commercial_name: true,
-            logo_url: true,
-            description: true,
+          include: {
             service_categories: {
               select: {
                 name: true,
@@ -293,15 +287,7 @@ export async function getAppointmentById(event: APIGatewayProxyEventV2): Promise
             },
           },
         },
-        provider_branches: {
-          select: {
-            id: true,
-            name: true,
-            address_text: true,
-            phone_contact: true,
-            email_contact: true,
-          },
-        },
+        provider_branches: true,
       },
     });
 
@@ -315,25 +301,31 @@ export async function getAppointmentById(event: APIGatewayProxyEventV2): Promise
     }
 
     console.log('✅ [PATIENTS] Cita obtenida exitosamente');
+    
+    // TypeScript necesita ayuda para inferir el tipo con include
+    const appointmentWithRelations = appointment as any;
+    const provider = appointmentWithRelations.providers;
+    const branch = appointmentWithRelations.provider_branches;
+    
     return successResponse({
       id: appointment.id,
       scheduledFor: appointment.scheduled_for,
       status: appointment.status,
       reason: appointment.reason,
       isPaid: appointment.is_paid || false,
-      provider: appointment.providers ? {
-        id: appointment.providers.id,
-        name: appointment.providers.commercial_name,
-        logoUrl: appointment.providers.logo_url,
-        description: appointment.providers.description,
-        category: appointment.providers.service_categories?.name || null,
+      provider: provider ? {
+        id: provider.id,
+        name: provider.commercial_name,
+        logoUrl: provider.logo_url,
+        description: provider.description || null,
+        category: provider.service_categories?.name || null,
       } : null,
-      branch: appointment.provider_branches ? {
-        id: appointment.provider_branches.id,
-        name: appointment.provider_branches.name,
-        address: appointment.provider_branches.address_text,
-        phone: appointment.provider_branches.phone_contact,
-        email: appointment.provider_branches.email_contact,
+      branch: branch ? {
+        id: branch.id,
+        name: branch.name,
+        address: branch.address_text,
+        phone: branch.phone_contact,
+        email: branch.email_contact || null,
       } : null,
     });
   } catch (error: any) {

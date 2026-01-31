@@ -95,6 +95,17 @@ async function handleLambdaResponse(
     origin: req.headers.origin,
   });
   
+  // Validar que el handler sea una función
+  if (!handler || typeof handler !== 'function') {
+    const duration = Date.now() - startTime;
+    console.error(`❌ [REQUEST] ${req.method} ${path} - Error después de ${duration}ms: handler is not a function`);
+    res.status(500).json({
+      success: false,
+      message: 'Handler not available. Check server logs for details.',
+    });
+    return;
+  }
+  
   try {
     const event = createApiGatewayEvent(req, path);
     console.log(`🔍 [REQUEST] Event creado. Headers en event:`, {
@@ -139,6 +150,7 @@ import { handler as authHandler } from '../src/auth/handler';
 import { handler as doctorsHandler } from '../src/doctors/handler';
 import { handler as suppliesHandler } from '../src/supplies/handler';
 import { handler as pharmaciesHandler } from '../src/pharmacies/handler';
+import { handler as publicHandler } from '../src/public/handler';
 
 // Importar otros handlers si existen
 let laboratoriesHandler: any;
@@ -159,8 +171,14 @@ try {
 let patientsHandler: any;
 try {
   patientsHandler = require('../src/patients/handler').handler;
-} catch (e) {
-  // Handler no existe o tiene errores
+  if (!patientsHandler) {
+    console.error('❌ [PATIENTS] Handler exportado pero es undefined');
+  } else {
+    console.log('✅ [PATIENTS] Handler de pacientes cargado correctamente');
+  }
+} catch (e: any) {
+  console.error('❌ [PATIENTS] Error al cargar handler:', e.message);
+  console.error('❌ [PATIENTS] Stack:', e.stack);
 }
 
 let clinicsHandler: any;
@@ -177,6 +195,14 @@ app.use('/api/auth', async (req, res) => {
   // Usar originalUrl para obtener el path completo
   const path = req.originalUrl.split('?')[0]; // Remover query string si existe
   await handleLambdaResponse(authHandler, req, res, path);
+});
+
+// Routes - Public (doctors, pharmacies, etc.)
+console.log('✅ [PUBLIC] Registrando rutas públicas en /api/public');
+app.use('/api/public', async (req, res) => {
+  const path = req.originalUrl.split('?')[0];
+  console.log(`🔍 [PUBLIC ROUTE] ${req.method} ${path} - originalUrl: ${req.originalUrl}`);
+  await handleLambdaResponse(publicHandler, req, res, path);
 });
 
 // Routes - Doctors
@@ -215,10 +241,23 @@ app.use('/api/supplies', async (req, res) => {
 });
 
 // Routes - Patients
-app.use('/api/patients', async (req, res) => {
-  const path = req.originalUrl.split('?')[0];
-  await handleLambdaResponse(patientsHandler, req, res, path);
-});
+if (patientsHandler) {
+  console.log('✅ [PATIENTS] Registrando rutas de pacientes en /api/patients');
+  app.use('/api/patients', async (req, res) => {
+    const path = req.originalUrl.split('?')[0];
+    console.log(`🔍 [PATIENTS ROUTE] ${req.method} ${path} - originalUrl: ${req.originalUrl}`);
+    await handleLambdaResponse(patientsHandler, req, res, path);
+  });
+} else {
+  console.error('❌ [PATIENTS] Handler de pacientes no disponible - Las rutas no se registrarán');
+  app.use('/api/patients', (req, res) => {
+    console.error(`❌ [PATIENTS] Petición recibida pero handler no disponible: ${req.method} ${req.originalUrl}`);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Patients handler not available. Check server logs.' 
+    });
+  });
+}
 
 // Routes - Pharmacies
 console.log('✅ [PHARMACIES] Registrando rutas de farmacias en /api/pharmacies');

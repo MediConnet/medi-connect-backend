@@ -303,25 +303,8 @@ export async function createReview(event: APIGatewayProxyEventV2): Promise<APIGa
       return notFoundResponse('Branch not found');
     }
 
-    // Verificar si ya existe una reseña del mismo paciente para esta sucursal
-    // Solo verificar si branch_id es un UUID válido
-    if (isValidUUID(body.branch_id)) {
-      try {
-        const existingReview = await prisma.reviews.findFirst({
-          where: {
-            patient_id: patient.id,
-            branch_id: body.branch_id,
-          },
-        });
-
-        if (existingReview) {
-          console.error('❌ [PHARMACIES] Ya existe una reseña para esta sucursal');
-          return errorResponse('Review already exists for this branch', 409);
-        }
-      } catch (error: any) {
-        console.warn('⚠️ [PHARMACIES] Error al verificar reseña existente (continuando):', error.message);
-      }
-    }
+    // Permitir múltiples reseñas del mismo paciente para la misma sucursal
+    // (Se eliminó la validación que impedía múltiples reseñas)
 
     // Crear reseña
     // Si branch_id no es UUID válido, usar null en desarrollo (para datos mock)
