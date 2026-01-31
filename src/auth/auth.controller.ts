@@ -106,7 +106,61 @@ export async function register(event: APIGatewayProxyEventV2): Promise<APIGatewa
     validatePayloadSize(event);
     const body = parseBody(event.body, registerSchema);
     const prisma = getPrismaClient();
+    
+    const isLocalDev = process.env.STAGE === 'dev' || process.env.NODE_ENV === 'development' || !CLIENT_ID || !USER_POOL_ID;
 
+    // --- MODO DESARROLLO / FALLBACK LOCAL ---
+    if (isLocalDev) {
+      console.log('🔧 [REGISTER] Modo desarrollo local - Registro directo en BD');
+      
+      // Verificar si el usuario ya existe
+      const existingUser = await prisma.users.findFirst({ where: { email: body.email } });
+      if (existingUser) {
+        console.error('❌ [REGISTER] Usuario ya existe:', body.email);
+        return errorResponse('User already exists', 409);
+      }
+
+      // Hashear contraseña
+      const passwordHash = await bcrypt.hash(body.password, 10);
+      
+      // Determinar el rol
+      const userRole = body.role ? mapRoleToEnum(body.role) : enum_roles.patient;
+      
+      // Crear usuario en DB
+      const user = await prisma.users.create({
+        data: {
+          id: randomUUID(),
+          email: body.email,
+          password_hash: passwordHash,
+          role: userRole,
+          is_active: true, // Activar automáticamente en desarrollo
+        },
+      });
+
+      // Si es un paciente, crear el registro en la tabla patients
+      if (userRole === enum_roles.patient) {
+        const fullName = [body.firstName, body.lastName].filter(Boolean).join(' ') || body.email;
+        
+        await prisma.patients.create({
+          data: {
+            id: randomUUID(),
+            user_id: user.id,
+            full_name: fullName,
+            phone: body.phone || null,
+          },
+        });
+        console.log('✅ [REGISTER] Perfil de paciente creado');
+      }
+
+      console.log('✅ [REGISTER] Usuario registrado exitosamente:', user.email);
+      return successResponse({
+        userId: user.id,
+        email: user.email,
+        message: 'User registered successfully',
+      }, 201);
+    }
+
+    // --- MODO PRODUCCIÓN CON COGNITO ---
     // Registrar en Cognito
     const signUpCommand = new SignUpCommand({
       ClientId: CLIENT_ID,
@@ -143,6 +197,7 @@ export async function register(event: APIGatewayProxyEventV2): Promise<APIGatewa
     logger.error('Error in register', error);
     if (error.message.includes('Validation error')) return errorResponse(error.message, 400);
     if (error.name === 'UsernameExistsException') return errorResponse('User already exists', 409);
+    if (error.code === 'P2002') return errorResponse('User already exists', 409);
     return internalErrorResponse('Failed to register user');
   }
 }
@@ -177,6 +232,15 @@ export async function login(event: APIGatewayProxyEventV2): Promise<APIGatewayPr
       if (!passwordMatch) {
         console.error('❌ [LOGIN] Contraseña incorrecta');
         return unauthorizedResponse('Invalid credentials');
+      }
+
+      // Obtener info del paciente si existe
+      let patientInfo = null;
+      if (user.role === enum_roles.patient) {
+        patientInfo = await prisma.patients.findFirst({
+          where: { user_id: user.id },
+          select: { full_name: true, phone: true },
+        });
       }
 
       // Obtener info del provider
@@ -250,6 +314,15 @@ export async function login(event: APIGatewayProxyEventV2): Promise<APIGatewayPr
       const normalizedRole = user.role ? String(user.role).toLowerCase() : 'patient';
       const normalizedServiceType = serviceType ? String(serviceType).toLowerCase() : null;
       
+      // Extraer nombre y apellido del full_name del paciente si existe
+      let firstName = '';
+      let lastName = '';
+      if (patientInfo && patientInfo.full_name) {
+        const nameParts = patientInfo.full_name.trim().split(/\s+/);
+        firstName = nameParts[0] || '';
+        lastName = nameParts.slice(1).join(' ') || '';
+      }
+      
       const responseData: any = {
         token: jwtToken,
         accessToken: jwtToken,
@@ -262,6 +335,10 @@ export async function login(event: APIGatewayProxyEventV2): Promise<APIGatewayPr
           email: user.email,
           role: normalizedRole,
           profilePictureUrl: user.profile_picture_url,
+          firstName: firstName,
+          lastName: lastName,
+          name: patientInfo?.full_name || providerInfo?.commercialName || '',
+          phone: patientInfo?.phone || null,
         },
       };
 

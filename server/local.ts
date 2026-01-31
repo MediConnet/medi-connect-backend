@@ -138,17 +138,11 @@ import { handler as adsHandler } from '../src/ads/handler';
 import { handler as authHandler } from '../src/auth/handler';
 import { handler as doctorsHandler } from '../src/doctors/handler';
 import { handler as suppliesHandler } from '../src/supplies/handler';
+import { handler as pharmaciesHandler } from '../src/pharmacies/handler';
 
 // Importar otros handlers si existen
-let pharmaciesHandler: any;
 let laboratoriesHandler: any;
 let ambulancesHandler: any;
-
-try {
-  pharmaciesHandler = require('../src/pharmacies/handler').handler;
-} catch (e) {
-  // Handler no existe o tiene errores
-}
 
 try {
   laboratoriesHandler = require('../src/laboratories/handler').handler;
@@ -226,13 +220,13 @@ app.use('/api/patients', async (req, res) => {
   await handleLambdaResponse(patientsHandler, req, res, path);
 });
 
-// Routes - Pharmacies (si existe)
-if (pharmaciesHandler) {
-  app.use('/api/pharmacies', async (req, res) => {
-    const path = req.originalUrl.split('?')[0];
-    await handleLambdaResponse(pharmaciesHandler, req, res, path);
-  });
-}
+// Routes - Pharmacies
+console.log('✅ [PHARMACIES] Registrando rutas de farmacias en /api/pharmacies');
+app.use('/api/pharmacies', async (req, res) => {
+  const path = req.originalUrl.split('?')[0];
+  console.log(`🔍 [PHARMACIES ROUTE] ${req.method} ${path} - originalUrl: ${req.originalUrl}`);
+  await handleLambdaResponse(pharmaciesHandler, req, res, path);
+});
 
 // Routes - Laboratories (si existe)
 if (laboratoriesHandler) {

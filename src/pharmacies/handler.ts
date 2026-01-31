@@ -5,7 +5,7 @@ import { getProfile, updateProfile } from './profile.controller';
 import { getDashboard } from './dashboard.controller';
 import { getProducts, createProduct, updateProduct, deleteProduct } from './products.controller';
 import { getOrders, updateOrderStatus } from './orders.controller';
-import { getReviews } from './reviews.controller';
+import { getReviews, getBranchReviews, createReview } from './reviews.controller';
 import { getPayments } from './payments.controller';
 import { extractIdFromPath } from '../shared/validators';
 
@@ -14,6 +14,10 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
   const path = event.requestContext.http.path;
 
   logger.info('Pharmacies handler invoked', { method, path });
+  console.log(`🔍 [PHARMACIES HANDLER] ${method} ${path}`);
+  console.log(`🔍 [PHARMACIES HANDLER] Path exacto: "${path}"`);
+  console.log(`🔍 [PHARMACIES HANDLER] Path length: ${path.length}`);
+  console.log(`🔍 [PHARMACIES HANDLER] Path === '/api/pharmacies/reviews': ${path === '/api/pharmacies/reviews'}`);
 
   // Manejar preflight OPTIONS requests (CORS)
   if (method === 'OPTIONS') {
@@ -56,8 +60,16 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     }
 
     // --- Rutas de Reseñas ---
+    // GET /api/pharmacies/reviews/:branchId - Obtener reseñas de una sucursal (público)
+    if (path.startsWith('/api/pharmacies/reviews/') && method === 'GET') {
+      return await getBranchReviews(event);
+    }
+    
+    // GET /api/pharmacies/reviews - Listar reseñas del provider (solo providers)
+    // POST /api/pharmacies/reviews - Crear reseña
     if (path === '/api/pharmacies/reviews') {
       if (method === 'GET') return await getReviews(event);
+      if (method === 'POST') return await createReview(event);
     }
 
     // --- Rutas de Pagos ---

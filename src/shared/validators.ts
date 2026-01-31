@@ -242,6 +242,14 @@ export const requestDateBlockSchema = z.object({
   reason: z.string().optional(),
 });
 
+// Review validators
+export const createReviewSchema = z.object({
+  branch_id: z.string().min(1, 'Branch ID is required'),
+  rating: z.number().int().min(1, 'Rating must be at least 1').max(5, 'Rating must be at most 5'),
+  comment: z.string().optional().nullable(),
+  appointment_id: z.string().uuid('Appointment ID must be a valid UUID').optional().nullable(),
+});
+
 // Helper para extraer ID de la URL
 export function extractIdFromPath(path: string, prefix: string, suffix: string = ''): string {
   const start = prefix.length;
