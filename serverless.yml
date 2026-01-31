@@ -30,6 +30,149 @@ custom:
     noPrependStageInUrl: true 
 
 functions:
+  # Public endpoints (no authentication required)
+  publicHandler:
+    handler: src/public/handler.handler
+    events:
+      # Public Doctors
+      - httpApi:
+          path: /api/public/doctors
+          method: GET
+      - httpApi:
+          path: /api/public/doctors/search
+          method: GET
+      - httpApi:
+          path: /api/public/doctors/{id}
+          method: GET
+      # Public Pharmacies
+      - httpApi:
+          path: /api/public/pharmacies/brands
+          method: GET
+      - httpApi:
+          path: /api/public/pharmacies/brands/{brandId}/branches
+          method: GET
+      - httpApi:
+          path: /api/public/pharmacies/branches/{id}
+          method: GET
+      - httpApi:
+          path: /api/public/pharmacies
+          method: GET
+
+  # Laboratories
+  laboratoriesHandler:
+    handler: src/laboratories/handler.handler
+    events:
+      - httpApi:
+          path: /api/laboratories
+          method: GET
+      - httpApi:
+          path: /api/laboratories/search
+          method: GET
+      - httpApi:
+          path: /api/laboratories/{id}
+          method: GET
+
+  # Ambulances
+  ambulancesHandler:
+    handler: src/ambulances/handler.handler
+    events:
+      - httpApi:
+          path: /api/ambulances
+          method: GET
+      - httpApi:
+          path: /api/ambulances/search
+          method: GET
+      - httpApi:
+          path: /api/ambulances/{id}
+          method: GET
+
+  # Supplies (Insumos)
+  suppliesHandler:
+    handler: src/supplies/handler.handler
+    events:
+      - httpApi:
+          path: /api/supplies/stores
+          method: GET
+      - httpApi:
+          path: /api/supplies/stores/search
+          method: GET
+      - httpApi:
+          path: /api/supplies/stores/{id}
+          method: GET
+      - httpApi:
+          path: /api/supplies/stores/{storeId}/products
+          method: GET
+      - httpApi:
+          path: /api/supplies/products
+          method: GET
+
+  # Patients (includes reminders)
+  patientsHandler:
+    handler: src/patients/handler.handler
+    events:
+      - httpApi:
+          path: /api/patients/profile
+          method: GET
+      - httpApi:
+          path: /api/patients/profile
+          method: PUT
+      - httpApi:
+          path: /api/patients/appointments
+          method: GET
+      - httpApi:
+          path: /api/patients/appointments
+          method: POST
+      - httpApi:
+          path: /api/patients/appointments/{id}
+          method: GET
+      - httpApi:
+          path: /api/patients/appointments/{id}
+          method: DELETE
+      - httpApi:
+          path: /api/patients/medical-history
+          method: GET
+      - httpApi:
+          path: /api/patients/medical-history/{id}
+          method: GET
+      - httpApi:
+          path: /api/patients/favorites
+          method: GET
+      - httpApi:
+          path: /api/patients/favorites
+          method: POST
+      - httpApi:
+          path: /api/patients/favorites/{id}
+          method: DELETE
+      - httpApi:
+          path: /api/patients/notifications
+          method: GET
+      - httpApi:
+          path: /api/patients/notifications/unread
+          method: GET
+      - httpApi:
+          path: /api/patients/notifications/read-all
+          method: PUT
+      - httpApi:
+          path: /api/patients/notifications/{id}/read
+          method: PUT
+      # Reminders
+      - httpApi:
+          path: /api/patients/reminders
+          method: GET
+      - httpApi:
+          path: /api/patients/reminders
+          method: POST
+      - httpApi:
+          path: /api/patients/reminders/{id}
+          method: PATCH
+      - httpApi:
+          path: /api/patients/reminders/{id}
+          method: DELETE
+      - httpApi:
+          path: /api/patients/reminders/{id}/toggle
+          method: PATCH
+
+  # Doctors (existing - keep as is for now)
   doctorsHandler:
     handler: src/doctors/handler.handler
     events:

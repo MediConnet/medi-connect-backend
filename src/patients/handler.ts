@@ -2,10 +2,11 @@ import { APIGatewayProxyEventV2, APIGatewayProxyResult } from 'aws-lambda';
 import { logger } from '../shared/logger';
 import { errorResponse, internalErrorResponse, optionsResponse } from '../shared/response';
 import { getProfile, updateProfile } from './profile.controller';
-import { getAppointments, getAppointmentById, cancelAppointment } from './appointments.controller';
+import { createAppointment, getAppointments, getAppointmentById, cancelAppointment } from './appointments.controller';
 import { getMedicalHistory, getMedicalHistoryById } from './medical-history.controller';
 import { getFavorites, addFavorite, removeFavorite } from './favorites.controller';
 import { getNotifications, markNotificationAsRead, markAllNotificationsAsRead, getUnreadCount } from './notifications.controller';
+import { getReminders, createReminder, updateReminder, deleteReminder, toggleReminder } from './reminders.controller';
 import { requireAuth, AuthContext } from '../shared/auth';
 import { enum_roles } from '../generated/prisma/client';
 
@@ -30,6 +31,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     // --- Rutas de Citas ---
     if (path === '/api/patients/appointments') {
       if (method === 'GET') return await getAppointments(event);
+      if (method === 'POST') return await createAppointment(event);
     }
 
     // GET /api/patients/appointments/:id
@@ -81,12 +83,33 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       return await markNotificationAsRead(event);
     }
 
+    // --- Rutas de Recordatorios ---
+    if (path === '/api/patients/reminders') {
+      if (method === 'GET') return await getReminders(event);
+      if (method === 'POST') return await createReminder(event);
+    }
+
+    // PATCH /api/patients/reminders/{id}
+    if (path.startsWith('/api/patients/reminders/') && path.endsWith('/toggle') && method === 'PATCH') {
+      return await toggleReminder(event);
+    }
+
+    // PATCH /api/patients/reminders/{id} (actualizar)
+    if (path.startsWith('/api/patients/reminders/') && !path.endsWith('/toggle') && method === 'PATCH') {
+      return await updateReminder(event);
+    }
+
+    // DELETE /api/patients/reminders/{id}
+    if (path.startsWith('/api/patients/reminders/') && method === 'DELETE') {
+      return await deleteReminder(event);
+    }
+
     // Si no coincide ninguna ruta
-    return errorResponse('Not found', 404);
+    return errorResponse('Not found', 404, undefined, event);
 
   } catch (error: any) {
     console.error(`❌ [PATIENTS] ${method} ${path} - Error:`, error.message);
     logger.error('Error in patients handler', error, { method, path });
-    return internalErrorResponse(error.message || 'Internal server error');
+    return internalErrorResponse(error.message || 'Internal server error', event);
   }
 }
