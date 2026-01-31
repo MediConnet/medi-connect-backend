@@ -82,13 +82,13 @@ export async function getDashboard(event: APIGatewayProxyEventV2): Promise<APIGa
       totalReviews: 0,
       upcomingAppointments: [],
       provider: null,
-      clinic: isClinicAssociated ? {
-        id: clinicDoctor!.clinics!.id,
-        name: clinicDoctor!.clinics!.name,
-        logoUrl: clinicDoctor!.clinics!.logo_url,
-        address: clinicDoctor!.clinics!.address,
-        phone: clinicDoctor!.clinics!.phone,
-        whatsapp: clinicDoctor!.clinics!.whatsapp,
+      clinic: isClinicAssociated && clinicDoctor?.clinics ? {
+        id: clinicDoctor.clinics.id || null,
+        name: clinicDoctor.clinics.name || null,
+        logoUrl: clinicDoctor.clinics.logo_url || null,
+        address: clinicDoctor.clinics.address || null, // ⭐ SIEMPRE presente (null si no existe)
+        phone: clinicDoctor.clinics.phone || null,
+        whatsapp: clinicDoctor.clinics.whatsapp || null,
       } : null,
     });
   }
@@ -175,13 +175,13 @@ export async function getDashboard(event: APIGatewayProxyEventV2): Promise<APIGa
       branches: provider.provider_branches,
     },
     // Solo devolver información de clínica si realmente está asociado
-    clinic: isClinicAssociated ? {
-      id: clinicDoctor!.clinics!.id,
-      name: clinicDoctor!.clinics!.name,
-      logoUrl: clinicDoctor!.clinics!.logo_url,
-      address: clinicDoctor!.clinics!.address,
-      phone: clinicDoctor!.clinics!.phone,
-      whatsapp: clinicDoctor!.clinics!.whatsapp,
+    clinic: isClinicAssociated && clinicDoctor?.clinics ? {
+      id: clinicDoctor.clinics.id || null,
+      name: clinicDoctor.clinics.name || null,
+      logoUrl: clinicDoctor.clinics.logo_url || null,
+      address: clinicDoctor.clinics.address || null, // ⭐ SIEMPRE presente (null si no existe)
+      phone: clinicDoctor.clinics.phone || null,
+      whatsapp: clinicDoctor.clinics.whatsapp || null,
     } : null,
   });
 }

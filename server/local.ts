@@ -138,6 +138,7 @@ import { handler as adsHandler } from '../src/ads/handler';
 import { handler as authHandler } from '../src/auth/handler';
 import { handler as doctorsHandler } from '../src/doctors/handler';
 import { handler as suppliesHandler } from '../src/supplies/handler';
+import { handler as homeHandler } from '../src/home/handler';
 
 // Importar otros handlers si existen
 let pharmaciesHandler: any;
@@ -212,6 +213,12 @@ app.use('/api/providers', async (req, res) => {
 app.use('/api/ads', async (req, res) => {
   const path = req.originalUrl.split('?')[0];
   await handleLambdaResponse(adsHandler, req, res, path);
+});
+
+// Routes - Home
+app.use('/api/home', async (req, res) => {
+  const path = req.originalUrl.split('?')[0];
+  await handleLambdaResponse(homeHandler, req, res, path);
 });
 
 // Routes - Supplies

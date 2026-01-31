@@ -196,19 +196,38 @@ async function main() {
     { name: 'Odontología', description: 'Especialidad médica que trata la salud bucal y dental', color_hex: '#66BB6A' },
   ];
 
+  let createdCount = 0;
+  let existingCount = 0;
+  let errorCount = 0;
+  
   for (const specialty of specialtiesList) {
-    await findOrCreate<specialties>(
-      prisma.specialties,
-      { name: specialty.name },
-      {
-        id: randomUUID(),
-        name: specialty.name,
-        description: specialty.description,
-        color_hex: specialty.color_hex,
+    try {
+      const existing = await prisma.specialties.findFirst({
+        where: { name: specialty.name },
+      });
+      
+      if (existing) {
+        console.log(`  ⚠️  Especialidad ya existe: ${specialty.name}`);
+        existingCount++;
+      } else {
+        await prisma.specialties.create({
+          data: {
+            id: randomUUID(),
+            name: specialty.name,
+            description: specialty.description,
+            color_hex: specialty.color_hex,
+          },
+        });
+        console.log(`  ✅ Creada: ${specialty.name}`);
+        createdCount++;
       }
-    );
+    } catch (error: any) {
+      console.error(`  ❌ Error al crear especialidad ${specialty.name}:`, error.message);
+      errorCount++;
+    }
   }
-  console.log(`✅ ${specialtiesList.length} especialidades creadas`);
+  
+  console.log(`✅ Especialidades procesadas: ${createdCount} creadas, ${existingCount} ya existían${errorCount > 0 ? `, ${errorCount} errores` : ''}`);
 
   // 3. Crear usuarios administradores
   console.log('👨‍💼 Creando usuarios administradores...');

@@ -106,29 +106,30 @@ export async function getDoctorSchedule(event: APIGatewayProxyEventV2): Promise<
       },
     });
 
-    // Construir objeto de horarios
+    // Construir objeto de horarios con valores por defecto seguros
     const scheduleObj: Record<string, any> = {
-      monday: { enabled: false, startTime: '09:00', endTime: '17:00' },
-      tuesday: { enabled: false, startTime: '09:00', endTime: '17:00' },
-      wednesday: { enabled: false, startTime: '09:00', endTime: '17:00' },
-      thursday: { enabled: false, startTime: '09:00', endTime: '17:00' },
-      friday: { enabled: false, startTime: '09:00', endTime: '17:00' },
-      saturday: { enabled: false, startTime: '09:00', endTime: '13:00' },
-      sunday: { enabled: false, startTime: '09:00', endTime: '13:00' },
+      monday: { enabled: false, startTime: '09:00', endTime: '17:00', breakStart: null, breakEnd: null },
+      tuesday: { enabled: false, startTime: '09:00', endTime: '17:00', breakStart: null, breakEnd: null },
+      wednesday: { enabled: false, startTime: '09:00', endTime: '17:00', breakStart: null, breakEnd: null },
+      thursday: { enabled: false, startTime: '09:00', endTime: '17:00', breakStart: null, breakEnd: null },
+      friday: { enabled: false, startTime: '09:00', endTime: '17:00', breakStart: null, breakEnd: null },
+      saturday: { enabled: false, startTime: '09:00', endTime: '13:00', breakStart: null, breakEnd: null },
+      sunday: { enabled: false, startTime: '09:00', endTime: '13:00', breakStart: null, breakEnd: null },
     };
 
     // Mapear horarios de la BD
     schedules.forEach((sched) => {
       const dayNum = sched.day_of_week ?? 0;
       const dayName = dayNumberToName(dayNum);
-      // Actualizar el día si existe en el objeto inicial
-      if (scheduleObj[dayName]) {
+      
+      // Asegurar que el día existe antes de actualizar
+      if (scheduleObj[dayName] && dayName in scheduleObj) {
         scheduleObj[dayName] = {
           enabled: sched.enabled ?? false,
-          startTime: formatTime(sched.start_time),
-          endTime: formatTime(sched.end_time),
-          breakStart: sched.break_start ? formatTime(sched.break_start) : undefined,
-          breakEnd: sched.break_end ? formatTime(sched.break_end) : undefined,
+          startTime: formatTime(sched.start_time) || '09:00',
+          endTime: formatTime(sched.end_time) || '17:00',
+          breakStart: sched.break_start ? formatTime(sched.break_start) : null,
+          breakEnd: sched.break_end ? formatTime(sched.break_end) : null,
         };
       }
     });
@@ -137,22 +138,38 @@ export async function getDoctorSchedule(event: APIGatewayProxyEventV2): Promise<
     // Esto es crítico para evitar errores en el frontend
     const allDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
     for (const day of allDays) {
-      // Verificar y corregir si falta el día o tiene estructura incorrecta
-      if (!scheduleObj[day] || 
-          typeof scheduleObj[day] !== 'object' || 
-          typeof scheduleObj[day].enabled === 'undefined') {
+      // Validar y corregir estructura - asegurar que siempre sea un objeto válido
+      if (!scheduleObj[day] || typeof scheduleObj[day] !== 'object' || scheduleObj[day] === null) {
         scheduleObj[day] = {
           enabled: false,
-          startTime: day === 'saturday' || day === 'sunday' ? '09:00' : '09:00',
+          startTime: '09:00',
           endTime: day === 'saturday' || day === 'sunday' ? '13:00' : '17:00',
-          breakStart: undefined,
-          breakEnd: undefined,
+          breakStart: null,
+          breakEnd: null,
         };
+      } else {
+        // Asegurar que todas las propiedades requeridas estén definidas
+        if (typeof scheduleObj[day].enabled !== 'boolean') {
+          scheduleObj[day].enabled = false;
+        }
+        if (!scheduleObj[day].startTime || typeof scheduleObj[day].startTime !== 'string') {
+          scheduleObj[day].startTime = '09:00';
+        }
+        if (!scheduleObj[day].endTime || typeof scheduleObj[day].endTime !== 'string') {
+          scheduleObj[day].endTime = day === 'saturday' || day === 'sunday' ? '13:00' : '17:00';
+        }
+        // breakStart y breakEnd deben ser null (no undefined) si no hay valor
+        if (!('breakStart' in scheduleObj[day])) {
+          scheduleObj[day].breakStart = null;
+        } else if (scheduleObj[day].breakStart === undefined) {
+          scheduleObj[day].breakStart = null;
+        }
+        if (!('breakEnd' in scheduleObj[day])) {
+          scheduleObj[day].breakEnd = null;
+        } else if (scheduleObj[day].breakEnd === undefined) {
+          scheduleObj[day].breakEnd = null;
+        }
       }
-      // Asegurar que las propiedades siempre estén definidas
-      if (!scheduleObj[day].startTime) scheduleObj[day].startTime = '09:00';
-      if (!scheduleObj[day].endTime) scheduleObj[day].endTime = day === 'saturday' || day === 'sunday' ? '13:00' : '17:00';
-      if (typeof scheduleObj[day].enabled !== 'boolean') scheduleObj[day].enabled = false;
     }
 
     console.log('✅ [CLINICS] Horarios del médico obtenidos exitosamente');
@@ -232,11 +249,19 @@ export async function updateDoctorSchedule(event: APIGatewayProxyEventV2): Promi
       // Crear nuevos horarios
       const scheduleEntries = Object.entries(body.schedule);
       for (const [dayName, daySchedule] of scheduleEntries) {
-        // Validar que daySchedule existe y tiene la propiedad enabled
-        if (daySchedule && typeof daySchedule === 'object' && daySchedule.enabled) {
+        // Validar que daySchedule existe, es un objeto y tiene la propiedad enabled
+        if (!daySchedule || typeof daySchedule !== 'object') {
+          console.warn(`⚠️ [CLINICS] Horario inválido para ${dayName}, omitiendo...`);
+          continue;
+        }
+        
+        // Asegurar que enabled existe y es boolean
+        const isEnabled = daySchedule.enabled === true;
+        
+        if (isEnabled) {
           const dayOfWeek = dayNameToNumber(dayName);
-          const startTime = new Date(`1970-01-01T${daySchedule.startTime}:00Z`);
-          const endTime = new Date(`1970-01-01T${daySchedule.endTime}:00Z`);
+          const startTime = daySchedule.startTime ? new Date(`1970-01-01T${daySchedule.startTime}:00Z`) : new Date('1970-01-01T09:00:00Z');
+          const endTime = daySchedule.endTime ? new Date(`1970-01-01T${daySchedule.endTime}:00Z`) : new Date('1970-01-01T17:00:00Z');
           const breakStart = daySchedule.breakStart ? new Date(`1970-01-01T${daySchedule.breakStart}:00Z`) : null;
           const breakEnd = daySchedule.breakEnd ? new Date(`1970-01-01T${daySchedule.breakEnd}:00Z`) : null;
 

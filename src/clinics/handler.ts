@@ -8,6 +8,7 @@ import { validateInvitation, acceptInvitation } from './invitations.controller';
 import { getAppointments, updateAppointmentStatus, getTodayReception, updateReceptionStatus } from './appointments.controller';
 import { getDoctorSchedule, updateDoctorSchedule } from './schedules.controller';
 import { getClinicNotifications, getUnreadCount, markNotificationAsRead, markAllAsRead } from './notifications.controller';
+import { getReceptionMessages, createReceptionMessage, markReceptionMessagesRead } from './reception-messages.controller';
 import { extractIdFromPath } from '../shared/validators';
 
 export async function handler(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
@@ -105,6 +106,16 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     // --- Rutas de Estado de Recepción ---
     if (path.startsWith('/api/clinics/appointments/') && path.endsWith('/reception')) {
       if (method === 'PATCH') return await updateReceptionStatus(event);
+    }
+
+    // --- Rutas de Mensajes de Recepción ---
+    if (path === '/api/clinics/reception/messages' || (path.startsWith('/api/clinics/reception/messages') && path.includes('?'))) {
+      if (method === 'GET') return await getReceptionMessages(event);
+      if (method === 'POST') return await createReceptionMessage(event);
+    }
+
+    if (path === '/api/clinics/reception/messages/read') {
+      if (method === 'PATCH') return await markReceptionMessagesRead(event);
     }
 
     // --- Rutas de Notificaciones ---

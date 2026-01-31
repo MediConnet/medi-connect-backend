@@ -254,14 +254,30 @@ export const updateDoctorScheduleSchema = z.object({
 
 // Clinic Associated Doctor validators
 export const updateClinicProfileDoctorSchema = z.object({
+  specialty: z.string().optional(),
+  experience: z.number().int().min(0).max(50).optional(), // Años de experiencia (0-50)
+  bio: z.string().max(2000, 'Bio must be less than 2000 characters').optional(),
+  education: z.array(z.string()).optional(), // Array de estudios
+  certifications: z.array(z.string()).optional(), // Array de certificaciones
   officeNumber: z.string().optional(),
   phone: z.string().regex(/^\d{10}$/, 'Phone must be exactly 10 digits').optional(),
   whatsapp: z.string().regex(/^\d{10}$/, 'WhatsApp must be exactly 10 digits').optional(),
   profileImageUrl: z.string().url('Profile image URL must be a valid URL').optional().or(z.literal('')),
 });
 
+// Schema para clínica enviando mensaje a médico (requiere doctorId)
 export const createReceptionMessageSchema = z.object({
+  doctorId: z.string().uuid('Invalid doctor ID format'), // ⭐ Requerido para clínica
   message: z.string().min(1, 'Message is required').max(1000, 'Message too long'),
+});
+
+// Schema para médico enviando mensaje (solo message, doctorId se obtiene del contexto)
+export const createReceptionMessageDoctorSchema = z.object({
+  message: z.string().min(1, 'Message is required').max(1000, 'Message too long'),
+});
+
+export const markReceptionMessagesReadSchema = z.object({
+  messageIds: z.array(z.string().uuid('Invalid message ID format')).min(1, 'At least one message ID is required'),
 });
 
 export const requestDateBlockSchema = z.object({

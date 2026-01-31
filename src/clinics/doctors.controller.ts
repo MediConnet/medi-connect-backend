@@ -52,26 +52,28 @@ export async function getDoctors(event: APIGatewayProxyEventV2): Promise<APIGate
     });
 
     console.log(`✅ [CLINICS] Médicos obtenidos exitosamente (${doctors.length} médicos)`);
-    return successResponse(
-      doctors.map((doctor) => ({
-        id: doctor.id,
-        clinicId: doctor.clinic_id,
-        userId: doctor.user_id,
-        email: doctor.email,
-        name: doctor.name || null,
-        specialty: doctor.specialty || null,
-        isActive: doctor.is_active ?? true,
-        isInvited: doctor.is_invited ?? false,
-        invitationToken: doctor.invitation_token || null,
-        invitationExpiresAt: doctor.invitation_expires_at?.toISOString() || null,
-        officeNumber: doctor.office_number || null,
-        profileImageUrl: doctor.profile_image_url || null,
-        phone: doctor.phone || null,
-        whatsapp: doctor.whatsapp || null,
-        createdAt: doctor.created_at?.toISOString() || null,
-        updatedAt: doctor.updated_at?.toISOString() || null,
-      }))
-    );
+    
+    // Mapear médicos a formato de respuesta
+    // ⭐ name y specialty siempre presentes (null si no aceptó la invitación)
+    const doctorsData = doctors.map((doctor) => ({
+      id: doctor.id,
+      clinicId: doctor.clinic_id,
+      userId: doctor.user_id || null, // null si no ha aceptado
+      email: doctor.email,
+      name: doctor.name || null, // ⭐ SIEMPRE presente (null si no aceptó)
+      specialty: doctor.specialty || null, // ⭐ SIEMPRE presente (null si no aceptó)
+      isActive: doctor.is_active ?? true,
+      isInvited: doctor.is_invited ?? false, // true si aún no aceptó
+      officeNumber: doctor.office_number || null,
+      profileImageUrl: doctor.profile_image_url || null,
+      phone: doctor.phone || null,
+      whatsapp: doctor.whatsapp || null,
+      createdAt: doctor.created_at?.toISOString() || null,
+      updatedAt: doctor.updated_at?.toISOString() || null,
+      // ❌ Removidos: invitationToken, invitationExpiresAt (datos sensibles)
+    }));
+
+    return successResponse(doctorsData);
   } catch (error: any) {
     console.error(`❌ [CLINICS] Error al obtener médicos:`, error.message);
     logger.error('Error getting doctors', error);
