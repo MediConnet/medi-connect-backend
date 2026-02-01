@@ -242,7 +242,7 @@ app.use('/api/supplies', async (req, res) => {
 // Routes - Pharmacy Chains (público)
 app.use('/api/pharmacy-chains', async (req, res) => {
   const path = req.originalUrl.split('?')[0];
-  await handleLambdaResponse(pharmacyChainsHandler, req, res, path);
+  await handleLambdaResponse(pharmaciesHandler, req, res, path);
 });
 
 // Routes - Patients
@@ -262,8 +262,6 @@ if (patientsHandler) {
       message: 'Patients handler not available. Check server logs.' 
     });
   });
-} else {
-  console.warn('⚠️ [PHARMACIES] Handler de farmacias no disponible');
 }
 
 // Routes - Pharmacies
@@ -354,3 +352,7 @@ app.listen(PORT, async () => {
   console.log(`   - Doctor: doctor@medicones.com / doctor123`);
   console.log(`   - Farmacia: farmacia@medicones.com / farmacia123`);
 });
+
+function homeHandler(event: APIGatewayProxyEventV2): Promise<any> {
+  throw new Error('Function not implemented.');
+}

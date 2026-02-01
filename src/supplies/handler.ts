@@ -3,6 +3,7 @@ import { successResponse, errorResponse, notFoundResponse, internalErrorResponse
 import { logger } from '../shared/logger';
 import { getPrismaClient } from '../shared/prisma';
 import { extractIdFromPath } from '../shared/validators';
+import { getSupplies, getSupplyReviews, createSupplyReview } from './supplies.controller';
 
 // Nota: Este módulo es público, no requiere autenticación
 // En producción, aquí se conectaría a una base de datos de tiendas y productos
