@@ -1,5 +1,6 @@
 # ALL_ENDPOINTS_CHECKLIST
 
+
 Resumen: Estado base detectado buscando rutas en el código.
 
 - Estado: `Implementado` = ruta encontrada exactamente o equivalente en handlers.
