@@ -30,6 +30,38 @@ custom:
     noPrependStageInUrl: true 
 
 functions:
+  # Authentication endpoints
+  authHandler:
+    handler: src/auth/handler.handler
+    events:
+      - httpApi:
+          path: /api/auth/register
+          method: POST
+      - httpApi:
+          path: /api/auth/login
+          method: POST
+      - httpApi:
+          path: /api/auth/refresh
+          method: POST
+      - httpApi:
+          path: /api/auth/me
+          method: GET
+      - httpApi:
+          path: /api/auth/change-password
+          method: POST
+      - httpApi:
+          path: /api/auth/forgot-password
+          method: POST
+      - httpApi:
+          path: /api/auth/reset-password
+          method: POST
+      - httpApi:
+          path: /api/auth/register-professional
+          method: POST
+      - httpApi:
+          path: /api/auth/logout
+          method: POST
+
   # Public endpoints (no authentication required)
   publicHandler:
     handler: src/public/handler.handler
@@ -63,6 +95,16 @@ functions:
       - httpApi:
           path: /api/public/pharmacies
           method: GET
+      # Public Ambulances
+      - httpApi:
+          path: /api/ambulances
+          method: GET
+      - httpApi:
+          path: /api/ambulances/search
+          method: GET
+      - httpApi:
+          path: /api/ambulances/{id}
+          method: GET
 
   # Laboratories
   laboratoriesHandler:
@@ -76,20 +118,6 @@ functions:
           method: GET
       - httpApi:
           path: /api/laboratories/{id}
-          method: GET
-
-  # Ambulances
-  ambulancesHandler:
-    handler: src/ambulances/handler.handler
-    events:
-      - httpApi:
-          path: /api/ambulances
-          method: GET
-      - httpApi:
-          path: /api/ambulances/search
-          method: GET
-      - httpApi:
-          path: /api/ambulances/{id}
           method: GET
 
   # Supplies (Insumos)
@@ -178,16 +206,203 @@ functions:
           path: /api/patients/reminders/{id}/toggle
           method: PATCH
 
-  # Doctors (existing - keep as is for now)
+  # Doctors
   doctorsHandler:
     handler: src/doctors/handler.handler
     events:
-      - httpApi:  
+      # Profile
+      - httpApi:
           path: /api/doctors/profile
           method: GET
-      - httpApi:  
+      - httpApi:
           path: /api/doctors/profile
           method: PUT
-      - httpApi: 
+      # Dashboard
+      - httpApi:
+          path: /api/doctors/dashboard
+          method: GET
+      # Appointments
+      - httpApi:
           path: /api/doctors/appointments
+          method: GET
+      - httpApi:
+          path: /api/doctors/appointments/{id}/status
+          method: PUT
+      - httpApi:
+          path: /api/doctors/appointments/{id}/diagnosis
+          method: POST
+      - httpApi:
+          path: /api/doctors/appointments/{id}/diagnosis
+          method: GET
+      # Patients
+      - httpApi:
+          path: /api/doctors/patients
+          method: GET
+      # Reviews
+      - httpApi:
+          path: /api/doctors/reviews
+          method: GET
+      # Payments
+      - httpApi:
+          path: /api/doctors/payments
+          method: GET
+      # Specialties
+      - httpApi:
+          path: /api/specialties
+          method: GET
+      # Clinic Info
+      - httpApi:
+          path: /api/doctors/clinic-info
+          method: GET
+      - httpApi:
+          path: /api/doctors/clinic/profile
+          method: GET
+      - httpApi:
+          path: /api/doctors/clinic/profile
+          method: PUT
+      - httpApi:
+          path: /api/doctors/clinic/appointments
+          method: GET
+      - httpApi:
+          path: /api/doctors/clinic/appointments/{id}/status
+          method: PATCH
+      - httpApi:
+          path: /api/doctors/clinic/reception/messages
+          method: GET
+      - httpApi:
+          path: /api/doctors/clinic/reception/messages
+          method: POST
+      - httpApi:
+          path: /api/doctors/clinic/reception/messages/read
+          method: PATCH
+      - httpApi:
+          path: /api/doctors/clinic/date-blocks
+          method: GET
+      - httpApi:
+          path: /api/doctors/clinic/date-blocks/request
+          method: POST
+      - httpApi:
+          path: /api/doctors/clinic/notifications
+          method: GET
+
+  # Clinics
+  clinicsHandler:
+    handler: src/clinics/handler.handler
+    events:
+      # Profile
+      - httpApi:
+          path: /api/clinics/profile
+          method: GET
+      - httpApi:
+          path: /api/clinics/profile
+          method: PUT
+      # Dashboard
+      - httpApi:
+          path: /api/clinics/dashboard
+          method: GET
+      # Doctors
+      - httpApi:
+          path: /api/clinics/doctors
+          method: GET
+      - httpApi:
+          path: /api/clinics/doctors/invite
+          method: POST
+      - httpApi:
+          path: /api/clinics/doctors/{id}/status
+          method: PATCH
+      - httpApi:
+          path: /api/clinics/doctors/{id}/office
+          method: PATCH
+      - httpApi:
+          path: /api/clinics/doctors/{id}/schedule
+          method: GET
+      - httpApi:
+          path: /api/clinics/doctors/{id}/schedule
+          method: PUT
+      # Invitations
+      - httpApi:
+          path: /api/clinics/invite/{id}
+          method: GET
+      - httpApi:
+          path: /api/clinics/invite/{id}/accept
+          method: POST
+      # Appointments
+      - httpApi:
+          path: /api/clinics/appointments
+          method: GET
+      - httpApi:
+          path: /api/clinics/appointments/{id}/status
+          method: PATCH
+      # Reception
+      - httpApi:
+          path: /api/clinics/reception/today
+          method: GET
+      - httpApi:
+          path: /api/clinics/appointments/{id}/reception
+          method: PATCH
+      # Notifications
+      - httpApi:
+          path: /api/clinics/notifications
+          method: GET
+      - httpApi:
+          path: /api/clinics/notifications/unread-count
+          method: GET
+      - httpApi:
+          path: /api/clinics/notifications/read-all
+          method: PATCH
+      - httpApi:
+          path: /api/clinics/notifications/{id}/read
+          method: PATCH
+
+  # Pharmacies
+  pharmaciesHandler:
+    handler: src/pharmacies/handler.handler
+    events:
+      # Profile
+      - httpApi:
+          path: /api/pharmacies/profile
+          method: GET
+      - httpApi:
+          path: /api/pharmacies/profile
+          method: PUT
+      # Dashboard
+      - httpApi:
+          path: /api/pharmacies/dashboard
+          method: GET
+      # Products
+      - httpApi:
+          path: /api/pharmacies/products
+          method: GET
+      - httpApi:
+          path: /api/pharmacies/products
+          method: POST
+      - httpApi:
+          path: /api/pharmacies/products/{id}
+          method: PUT
+      - httpApi:
+          path: /api/pharmacies/products/{id}
+          method: DELETE
+      # Orders
+      - httpApi:
+          path: /api/pharmacies/orders
+          method: GET
+      - httpApi:
+          path: /api/pharmacies/orders/{id}/status
+          method: PUT
+      # Reviews
+      - httpApi:
+          path: /api/pharmacies/reviews
+          method: GET
+      - httpApi:
+          path: /api/pharmacies/reviews
+          method: POST
+      - httpApi:
+          path: /api/pharmacies/reviews/{id}
+          method: GET
+      # Payments
+      - httpApi:
+          path: /api/pharmacies/payments
+          method: GET
+      - httpApi:
+          path: /api/pharmacies/payments/income
           method: GET

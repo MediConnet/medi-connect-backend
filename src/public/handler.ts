@@ -4,6 +4,7 @@ import { errorResponse, internalErrorResponse, optionsResponse } from '../shared
 import { getAllDoctors, getDoctorById, searchDoctors } from './doctors.controller';
 import { getDoctorReviews, createDoctorReview } from './doctors-reviews.controller';
 import { getAllPharmacies, getPharmacyBrands, getPharmacyBranches, getPharmacyBranchById } from './pharmacies.controller';
+import { getAllAmbulances, getAmbulanceById, searchAmbulances } from './ambulances.controller';
 
 export async function handler(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   const method = event.requestContext.http.method;
@@ -69,6 +70,28 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     // GET /api/public/pharmacies - Listar todas las farmacias (alternativa)
     if (path === '/api/public/pharmacies' && method === 'GET') {
       return await getAllPharmacies(event);
+    }
+
+    // --- RUTAS PÚBLICAS DE AMBULANCIAS ---
+    
+    // GET /api/ambulances - Listar ambulancias
+    if (path === '/api/ambulances' && method === 'GET') {
+      return await getAllAmbulances(event);
+    }
+
+    // GET /api/ambulances/search - Buscar ambulancias
+    if (path === '/api/ambulances/search' && method === 'GET') {
+      return await searchAmbulances(event);
+    }
+
+    // GET /api/ambulances/{id} - Obtener ambulancia por ID
+    if (path.startsWith('/api/ambulances/') && method === 'GET') {
+      const pathParts = path.split('/');
+      const lastPart = pathParts[pathParts.length - 1];
+      // Si no es "search", es un ID
+      if (lastPart !== 'search') {
+        return await getAmbulanceById(event);
+      }
     }
 
     // Si no coincide ninguna ruta

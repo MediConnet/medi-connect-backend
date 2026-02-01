@@ -23,18 +23,12 @@ export async function getAllLaboratories(event: APIGatewayProxyEventV2): Promise
     
     // Construir where
     const where: any = {
+      category_id: 3, // Laboratorios (category_id = 3)
       verification_status: 'APPROVED',
       users: {
         is_active: true,
       },
-      service_categories: {
-        slug: 'laboratory',
-      },
-      provider_branches: {
-        some: {
-          is_active: true,
-        },
-      },
+      // Removido filtro de provider_branches para permitir laboratorios sin sucursales
     };
     
     if (city) {
@@ -89,9 +83,11 @@ export async function getAllLaboratories(event: APIGatewayProxyEventV2): Promise
           },
           provider_branches: {
             where: {
-              is_main: true,
               is_active: true,
             },
+            orderBy: [
+              { is_main: 'desc' }, // Priorizar sucursal principal
+            ],
             take: 1,
             include: {
               cities: {
@@ -174,18 +170,12 @@ export async function getLaboratoryById(event: APIGatewayProxyEventV2): Promise<
     const laboratory = await prisma.providers.findFirst({
       where: {
         id: laboratoryId,
+        category_id: 3, // Laboratorios (category_id = 3)
         verification_status: 'APPROVED',
         users: {
           is_active: true,
         },
-        service_categories: {
-          slug: 'laboratory',
-        },
-        provider_branches: {
-          some: {
-            is_active: true,
-          },
-        },
+        // Removido filtro de provider_branches para permitir laboratorios sin sucursales
       },
       include: {
         users: {
@@ -195,9 +185,11 @@ export async function getLaboratoryById(event: APIGatewayProxyEventV2): Promise<
         },
         provider_branches: {
           where: {
-            is_main: true,
             is_active: true,
           },
+          orderBy: [
+            { is_main: 'desc' }, // Priorizar sucursal principal
+          ],
           take: 1,
           include: {
             cities: {
@@ -291,18 +283,12 @@ export async function searchLaboratories(event: APIGatewayProxyEventV2): Promise
     
     const laboratories = await prisma.providers.findMany({
       where: {
+        category_id: 3, // Laboratorios (category_id = 3)
         verification_status: 'APPROVED',
         users: {
           is_active: true,
         },
-        service_categories: {
-          slug: 'laboratory',
-        },
-        provider_branches: {
-          some: {
-            is_active: true,
-          },
-        },
+        // Removido filtro de provider_branches para permitir laboratorios sin sucursales
         OR: [
           {
             commercial_name: {
@@ -343,9 +329,11 @@ export async function searchLaboratories(event: APIGatewayProxyEventV2): Promise
       include: {
         provider_branches: {
           where: {
-            is_main: true,
             is_active: true,
           },
+          orderBy: [
+            { is_main: 'desc' }, // Priorizar sucursal principal
+          ],
           take: 1,
           include: {
             cities: {

@@ -154,16 +154,9 @@ import { handler as publicHandler } from '../src/public/handler';
 
 // Importar otros handlers si existen
 let laboratoriesHandler: any;
-let ambulancesHandler: any;
 
 try {
   laboratoriesHandler = require('../src/laboratories/handler').handler;
-} catch (e) {
-  // Handler no existe o tiene errores
-}
-
-try {
-  ambulancesHandler = require('../src/ambulances/handler').handler;
 } catch (e) {
   // Handler no existe o tiene errores
 }
@@ -275,13 +268,13 @@ if (laboratoriesHandler) {
   });
 }
 
-// Routes - Ambulances (si existe)
-if (ambulancesHandler) {
-  app.use('/api/ambulances', async (req, res) => {
-    const path = req.originalUrl.split('?')[0];
-    await handleLambdaResponse(ambulancesHandler, req, res, path);
-  });
-}
+// Routes - Ambulances (ahora manejadas por publicHandler)
+console.log('✅ [AMBULANCES] Registrando rutas de ambulancias en /api/ambulances (usando publicHandler)');
+app.use('/api/ambulances', async (req, res) => {
+  const path = req.originalUrl.split('?')[0];
+  console.log(`🔍 [AMBULANCES ROUTE] ${req.method} ${path} - originalUrl: ${req.originalUrl}`);
+  await handleLambdaResponse(publicHandler, req, res, path);
+});
 
 // Routes - Clinics (si existe)
 if (clinicsHandler) {

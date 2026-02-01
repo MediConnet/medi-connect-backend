@@ -5,37 +5,36 @@ import { errorResponse, internalErrorResponse, successResponse } from '../shared
 import { extractIdFromPath } from '../shared/validators';
 
 /**
- * Listar ambulancias
+ * Listar ambulancias públicas (sin autenticación)
  * GET /api/ambulances
  */
 export async function getAllAmbulances(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('✅ [AMBULANCES] GET /api/ambulances - Listando ambulancias');
+  console.log('✅ [PUBLIC AMBULANCES] GET /api/ambulances - Listando ambulancias públicas');
   
   try {
     const prisma = getPrismaClient();
     const queryParams = event.queryStringParameters || {};
     
+    // Parámetros de paginación
     const page = parseInt(queryParams.page || '1', 10);
     const limit = parseInt(queryParams.limit || '20', 10);
     const offset = (page - 1) * limit;
+    
+    // Filtros
     const city = queryParams.city;
-    const available = queryParams.available === 'true';
     const search = queryParams.search;
     
-    // Construir where
+    // Construir where clause
     const where: any = {
       category_id: 4, // Ambulancias (category_id = 4)
       verification_status: 'APPROVED',
       users: {
         is_active: true,
       },
-      provider_branches: {
-        some: {
-          is_active: true,
-        },
-      },
+      // Removido filtro de provider_branches para permitir ambulancias sin sucursales
     };
     
+    // Filtrar por ciudad (a través de branches)
     if (city) {
       where.provider_branches = {
         some: {
@@ -50,8 +49,7 @@ export async function getAllAmbulances(event: APIGatewayProxyEventV2): Promise<A
       };
     }
     
-    // El filtro de available ya está cubierto por el filtro inicial de branches activas
-    
+    // Búsqueda por nombre o descripción
     if (search) {
       where.OR = [
         {
@@ -79,6 +77,7 @@ export async function getAllAmbulances(event: APIGatewayProxyEventV2): Promise<A
       ];
     }
     
+    // Obtener ambulancias
     const [ambulances, total] = await Promise.all([
       prisma.providers.findMany({
         where,
@@ -90,9 +89,11 @@ export async function getAllAmbulances(event: APIGatewayProxyEventV2): Promise<A
           },
           provider_branches: {
             where: {
-              is_main: true,
               is_active: true,
             },
+            orderBy: [
+              { is_main: 'desc' }, // Priorizar sucursal principal
+            ],
             take: 1,
             include: {
               cities: {
@@ -113,9 +114,9 @@ export async function getAllAmbulances(event: APIGatewayProxyEventV2): Promise<A
       prisma.providers.count({ where }),
     ]);
     
+    // Transformar datos para el frontend
     const formattedAmbulances = ambulances.map(ambulance => {
       const mainBranch = ambulance.provider_branches[0];
-      
       const horarioAtencion = mainBranch?.opening_hours_text || '24 horas';
       const disponible24h = horarioAtencion.toLowerCase().includes('24') || horarioAtencion.toLowerCase().includes('24 horas');
       
@@ -134,14 +135,14 @@ export async function getAllAmbulances(event: APIGatewayProxyEventV2): Promise<A
         imagen: ambulance.logo_url || mainBranch?.image_url || '',
         calificacion: mainBranch?.rating_cache || 0,
         disponible24h: disponible24h,
-        tipo: 'Ambulancia', // Tipo de ambulancia
+        tipo: 'Ambulancia',
         zonaCobertura: mainBranch?.cities?.name ? `Área metropolitana de ${mainBranch.cities.name}` : 'Área metropolitana',
-        createdAt: new Date(),
-        updatedAt: new Date(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       };
     });
     
-    console.log(`✅ [AMBULANCES] Se encontraron ${formattedAmbulances.length} ambulancias (total: ${total})`);
+    console.log(`✅ [PUBLIC AMBULANCES] Se encontraron ${formattedAmbulances.length} ambulancias (total: ${total})`);
     
     return successResponse({
       ambulances: formattedAmbulances,
@@ -153,18 +154,18 @@ export async function getAllAmbulances(event: APIGatewayProxyEventV2): Promise<A
       },
     }, 200, event);
   } catch (error: any) {
-    console.error('❌ [AMBULANCES] Error al listar ambulancias:', error.message);
-    logger.error('Error fetching ambulances', error);
+    console.error('❌ [PUBLIC AMBULANCES] Error al listar ambulancias:', error.message);
+    logger.error('Error fetching public ambulances', error);
     return internalErrorResponse('Failed to fetch ambulances', event);
   }
 }
 
 /**
- * Obtener ambulancia por ID
+ * Obtener ambulancia pública por ID
  * GET /api/ambulances/{id}
  */
 export async function getAmbulanceById(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('✅ [AMBULANCES] GET /api/ambulances/{id} - Obteniendo ambulancia');
+  console.log('✅ [PUBLIC AMBULANCES] GET /api/ambulances/{id} - Obteniendo ambulancia');
   
   try {
     const ambulanceId = extractIdFromPath(event.requestContext.http.path, '/api/ambulances/');
@@ -183,11 +184,7 @@ export async function getAmbulanceById(event: APIGatewayProxyEventV2): Promise<A
         users: {
           is_active: true,
         },
-        provider_branches: {
-          some: {
-            is_active: true,
-          },
-        },
+        // Removido filtro de provider_branches para permitir ambulancias sin sucursales
       },
       include: {
         users: {
@@ -197,9 +194,11 @@ export async function getAmbulanceById(event: APIGatewayProxyEventV2): Promise<A
         },
         provider_branches: {
           where: {
-            is_main: true,
             is_active: true,
           },
+          orderBy: [
+            { is_main: 'desc' }, // Priorizar sucursal principal
+          ],
           take: 1,
           include: {
             cities: {
@@ -219,7 +218,6 @@ export async function getAmbulanceById(event: APIGatewayProxyEventV2): Promise<A
     }
     
     const mainBranch = ambulance.provider_branches[0];
-    
     const horarioAtencion = mainBranch?.opening_hours_text || '24 horas';
     const disponible24h = horarioAtencion.toLowerCase().includes('24') || horarioAtencion.toLowerCase().includes('24 horas');
     
@@ -240,14 +238,14 @@ export async function getAmbulanceById(event: APIGatewayProxyEventV2): Promise<A
       disponible24h: disponible24h,
       tipo: 'Ambulancia',
       zonaCobertura: mainBranch?.cities?.name ? `Área metropolitana de ${mainBranch.cities.name}` : 'Área metropolitana',
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
     
-    console.log(`✅ [AMBULANCES] Ambulancia encontrada: ${formattedAmbulance.nombre}`);
+    console.log(`✅ [PUBLIC AMBULANCES] Ambulancia encontrada: ${formattedAmbulance.nombre}`);
     return successResponse(formattedAmbulance, 200, event);
   } catch (error: any) {
-    console.error('❌ [AMBULANCES] Error al obtener ambulancia:', error.message);
+    console.error('❌ [PUBLIC AMBULANCES] Error al obtener ambulancia:', error.message);
     logger.error('Error fetching ambulance by id', error);
     return internalErrorResponse('Failed to fetch ambulance', event);
   }
@@ -258,7 +256,7 @@ export async function getAmbulanceById(event: APIGatewayProxyEventV2): Promise<A
  * GET /api/ambulances/search?q={query}
  */
 export async function searchAmbulances(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('✅ [AMBULANCES] GET /api/ambulances/search - Buscando ambulancias');
+  console.log('✅ [PUBLIC AMBULANCES] GET /api/ambulances/search - Buscando ambulancias');
   
   try {
     const queryParams = event.queryStringParameters || {};
@@ -277,11 +275,7 @@ export async function searchAmbulances(event: APIGatewayProxyEventV2): Promise<A
         users: {
           is_active: true,
         },
-        provider_branches: {
-          some: {
-            is_active: true,
-          },
-        },
+        // Removido filtro de provider_branches para permitir ambulancias sin sucursales
         OR: [
           {
             commercial_name: {
@@ -322,9 +316,11 @@ export async function searchAmbulances(event: APIGatewayProxyEventV2): Promise<A
       include: {
         provider_branches: {
           where: {
-            is_main: true,
             is_active: true,
           },
+          orderBy: [
+            { is_main: 'desc' }, // Priorizar sucursal principal
+          ],
           take: 1,
           include: {
             cities: {
@@ -359,12 +355,12 @@ export async function searchAmbulances(event: APIGatewayProxyEventV2): Promise<A
       };
     });
     
-    console.log(`✅ [AMBULANCES] Se encontraron ${formattedAmbulances.length} ambulancias para "${query}"`);
+    console.log(`✅ [PUBLIC AMBULANCES] Se encontraron ${formattedAmbulances.length} ambulancias para "${query}"`);
     return successResponse({
       ambulances: formattedAmbulances,
     }, 200, event);
   } catch (error: any) {
-    console.error('❌ [AMBULANCES] Error al buscar ambulancias:', error.message);
+    console.error('❌ [PUBLIC AMBULANCES] Error al buscar ambulancias:', error.message);
     logger.error('Error searching ambulances', error);
     return internalErrorResponse('Failed to search ambulances', event);
   }

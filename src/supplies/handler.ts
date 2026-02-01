@@ -79,18 +79,12 @@ async function getStores(event: APIGatewayProxyEventV2): Promise<APIGatewayProxy
     const prisma = getPrismaClient();
     
     const where: any = {
+      category_id: 5, // Insumos médicos (category_id = 5)
       verification_status: 'APPROVED',
       users: {
         is_active: true,
       },
-      service_categories: {
-        slug: 'supplies',
-      },
-      provider_branches: {
-        some: {
-          is_active: true,
-        },
-      },
+      // Removido filtro de provider_branches para permitir tiendas sin sucursales
     };
 
     if (city) {
@@ -113,9 +107,11 @@ async function getStores(event: APIGatewayProxyEventV2): Promise<APIGatewayProxy
         include: {
           provider_branches: {
             where: {
-              is_main: true,
               is_active: true,
             },
+            orderBy: [
+              { is_main: 'desc' }, // Priorizar sucursal principal
+            ],
             take: 1,
             include: {
               cities: {
@@ -182,18 +178,12 @@ async function getStore(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyR
     const provider = await prisma.providers.findFirst({
       where: {
         id: storeId,
+        category_id: 5, // Insumos médicos (category_id = 5)
         verification_status: 'APPROVED',
         users: {
           is_active: true,
         },
-        service_categories: {
-          slug: 'supplies',
-        },
-        provider_branches: {
-          some: {
-            is_active: true,
-          },
-        },
+        // Removido filtro de provider_branches para permitir tiendas sin sucursales
       },
       include: {
         users: {
@@ -203,9 +193,11 @@ async function getStore(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyR
         },
         provider_branches: {
           where: {
-            is_main: true,
             is_active: true,
           },
+          orderBy: [
+            { is_main: 'desc' }, // Priorizar sucursal principal
+          ],
           take: 1,
           include: {
             cities: {
@@ -291,18 +283,12 @@ async function getProducts(event: APIGatewayProxyEventV2): Promise<APIGatewayPro
     
     const where: any = {
       providers: {
-        service_categories: {
-          slug: 'supplies',
-        },
+        category_id: 5, // Insumos médicos (category_id = 5)
         verification_status: 'APPROVED',
         users: {
           is_active: true,
         },
-        provider_branches: {
-          some: {
-            is_active: true,
-          },
-        },
+        // Removido filtro de provider_branches para permitir tiendas sin sucursales
       },
     };
 
@@ -393,18 +379,12 @@ async function searchStores(event: APIGatewayProxyEventV2): Promise<APIGatewayPr
     
     const providers = await prisma.providers.findMany({
       where: {
+        category_id: 5, // Insumos médicos (category_id = 5)
         verification_status: 'APPROVED',
         users: {
           is_active: true,
         },
-        service_categories: {
-          slug: 'supplies',
-        },
-        provider_branches: {
-          some: {
-            is_active: true,
-          },
-        },
+        // Removido filtro de provider_branches para permitir tiendas sin sucursales
         OR: [
           {
             commercial_name: {
@@ -445,9 +425,11 @@ async function searchStores(event: APIGatewayProxyEventV2): Promise<APIGatewayPr
       include: {
         provider_branches: {
           where: {
-            is_main: true,
             is_active: true,
           },
+          orderBy: [
+            { is_main: 'desc' }, // Priorizar sucursal principal
+          ],
           take: 1,
           include: {
             cities: {
