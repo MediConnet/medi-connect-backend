@@ -2,6 +2,7 @@ import { APIGatewayProxyEventV2 } from 'aws-lambda';
 import cors from 'cors';
 import * as dotenv from 'dotenv';
 import express from 'express';
+import { execSync } from 'child_process';
 
 // Cargar variables de entorno
 dotenv.config();
@@ -306,11 +307,31 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Función para ejecutar migraciones
+async function runMigrations() {
+  try {
+    console.log(`🔄 Ejecutando migraciones de base de datos...`);
+    execSync('npx prisma migrate deploy', { 
+      stdio: 'inherit',
+      env: { ...process.env }
+    });
+    console.log(`✅ Migraciones aplicadas exitosamente`);
+  } catch (error: any) {
+    console.error(`❌ Error al ejecutar migraciones:`, error.message);
+    // No bloqueamos el inicio del servidor si las migraciones fallan
+    // pero registramos el error para que sea visible
+    console.log(`⚠️  Continuando con el inicio del servidor...`);
+  }
+}
+
 // Start server
 app.listen(PORT, async () => {
   console.log(`🚀 MediConnect Backend - Production Server`);
   console.log(`📡 Server running on port ${PORT}`);
   console.log(`🌐 API available at /api`);
+  
+  // Ejecutar migraciones antes de verificar la conexión
+  await runMigrations();
   
   // Verificar conexión a la base de datos
   try {

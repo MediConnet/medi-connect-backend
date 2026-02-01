@@ -8,6 +8,7 @@
     "build:prisma": "prisma generate",
     "build:ts": "tsc",
     "build:layers": "node scripts/build-layers.js",
+    "migrate:deploy": "prisma migrate deploy",
     "package": "npm run build && node scripts/package.js",
     "upload": "node scripts/upload.js",
     "deploy": "npm run package && npm run upload && aws cloudformation deploy --template-file infrastructure/cloudformation/template.yaml --stack-name medi-connect-backend --capabilities CAPABILITY_IAM --parameter-overrides Stage=dev",
