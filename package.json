@@ -17,7 +17,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "seed": "ts-node prisma/seed.ts",
-    "start": "node server.js"
+    "start": "node dist/index.js"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"
