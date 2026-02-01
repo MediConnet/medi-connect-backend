@@ -12,6 +12,9 @@ coverage/
 *~
 .esbuild
 .serverless
+# .gitignore
+/dist
+
 
 /src/generated/prisma
 layers/prisma-layer/nodejs/src/generated/prisma/
