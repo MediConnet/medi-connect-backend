@@ -21,9 +21,12 @@ export async function getDashboard(event: APIGatewayProxyEventV2): Promise<APIGa
 
   console.log(`🔍 [PHARMACIES] Obteniendo dashboard para userId: ${userId}`);
 
-  // Buscar provider con información completa
+  // ⭐ Buscar provider con información completa (solo aprobados o pendientes, más reciente primero)
   const provider = await prisma.providers.findFirst({
-    where: { user_id: userId },
+    where: { 
+      user_id: userId,
+      verification_status: { in: ['APPROVED', 'PENDING'] }, // Solo aprobados o pendientes
+    },
     include: {
       provider_branches: {
         select: {

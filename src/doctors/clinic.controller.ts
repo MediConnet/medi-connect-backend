@@ -3,7 +3,7 @@ import { enum_roles } from '../generated/prisma/client';
 import { AuthContext, requireRole } from '../shared/auth';
 import { getPrismaClient } from '../shared/prisma';
 import { successResponse, errorResponse, notFoundResponse, internalErrorResponse } from '../shared/response';
-import { parseBody, extractIdFromPath, updateClinicProfileDoctorSchema, createReceptionMessageSchema, requestDateBlockSchema, updateAppointmentStatusSchema } from '../shared/validators';
+import { parseBody, extractIdFromPath, updateClinicProfileDoctorSchema, createReceptionMessageDoctorSchema, requestDateBlockSchema, updateAppointmentStatusSchema } from '../shared/validators';
 import { getClinicDoctor, validateClinicDoctorAccess, validateAppointmentAccess } from '../shared/clinic-doctor-helpers';
 import { logger } from '../shared/logger';
 
@@ -17,16 +17,31 @@ export async function getClinicInfo(event: APIGatewayProxyEventV2): Promise<APIG
   const authContext = authResult as AuthContext;
   const clinicDoctor = await getClinicDoctor(authContext);
 
-  if (!clinicDoctor) {
-    return notFoundResponse('Doctor is not associated with any clinic');
+  // ⭐ En lugar de retornar 404, retornar objeto con campos null para evitar errores en frontend
+  if (!clinicDoctor || !clinicDoctor.clinics) {
+    console.warn(`⚠️ [DOCTORS] Doctor ${authContext.user.id} no está asociado a ninguna clínica - retornando objeto vacío`);
+    return successResponse({
+      id: null,
+      name: null,
+      address: null,
+      phone: null,
+      whatsapp: null,
+      logoUrl: null,
+    });
   }
 
+  const clinic = clinicDoctor.clinics;
+
+  console.log(`✅ [DOCTORS] Doctor está asociado a clínica: ${clinicDoctor.clinic_id}`);
+
+  // ⭐ Retornar estructura esperada por el frontend (solo campos de clínica)
   return successResponse({
-    clinicId: clinicDoctor.clinic_id,
-    clinicName: clinicDoctor.clinics?.name,
-    doctorId: clinicDoctor.id,
-    officeNumber: clinicDoctor.office_number,
-    isActive: clinicDoctor.is_active,
+    id: clinic.id,
+    name: clinic.name || null,
+    address: clinic.address || null,
+    phone: clinic.phone || null,
+    whatsapp: clinic.whatsapp || null,
+    logoUrl: clinic.logo_url || null,
   });
 }
 
@@ -38,33 +53,66 @@ export async function getClinicProfile(event: APIGatewayProxyEventV2): Promise<A
   if ('statusCode' in authResult) return authResult;
 
   const authContext = authResult as AuthContext;
-  const clinicDoctor = await getClinicDoctor(authContext);
+  const prisma = getPrismaClient();
+  
+  // ⭐ Obtener clinicDoctor con relaciones necesarias
+  const clinicDoctor = await prisma.clinic_doctors.findFirst({
+    where: {
+      user_id: authContext.user.id,
+      is_active: true,
+      is_invited: false,
+      clinic_id: { not: null },
+    },
+    include: {
+      clinics: true,
+      users: {
+        select: { email: true },
+      },
+    },
+  });
 
+  // ⭐ En lugar de retornar 404, retornar objeto con campos null para evitar errores en frontend
   if (!clinicDoctor || !clinicDoctor.clinics) {
-    return notFoundResponse('Doctor is not associated with any clinic');
+    console.warn('⚠️ [DOCTORS] Doctor no está asociado a ninguna clínica - retornando objeto vacío');
+    return successResponse({
+      id: null,
+      clinicId: null,
+      clinicInfo: null,
+      specialty: null,
+      experience: null,
+      bio: null,
+      education: [],
+      certifications: [],
+      profileImageUrl: null,
+      phone: null,
+      whatsapp: null,
+      email: null,
+    });
   }
 
   const clinic = clinicDoctor.clinics;
 
+  // ⭐ Retornar estructura esperada por el frontend
   return successResponse({
-    id: clinic.id,
-    name: clinic.name,
-    logoUrl: clinic.logo_url,
-    address: clinic.address,
-    phone: clinic.phone,
-    whatsapp: clinic.whatsapp,
-    description: clinic.description,
-    latitude: clinic.latitude ? Number(clinic.latitude) : null,
-    longitude: clinic.longitude ? Number(clinic.longitude) : null,
-    doctorInfo: {
-      id: clinicDoctor.id,
-      name: clinicDoctor.name,
-      specialty: clinicDoctor.specialty,
-      officeNumber: clinicDoctor.office_number,
-      profileImageUrl: clinicDoctor.profile_image_url,
-      phone: clinicDoctor.phone,
-      whatsapp: clinicDoctor.whatsapp,
+    id: clinicDoctor.id, // ⭐ ID del doctor, no de la clínica
+    clinicId: clinicDoctor.clinic_id || null,
+    clinicInfo: {
+      id: clinic.id,
+      name: clinic.name || null,
+      address: clinic.address || null,
+      phone: clinic.phone || null,
+      whatsapp: clinic.whatsapp || null,
+      logoUrl: clinic.logo_url || null,
     },
+    specialty: clinicDoctor.specialty || null,
+    experience: clinicDoctor.experience || null,
+    bio: clinicDoctor.bio || null,
+    education: clinicDoctor.education ? (Array.isArray(clinicDoctor.education) ? clinicDoctor.education : []) : [],
+    certifications: clinicDoctor.certifications ? (Array.isArray(clinicDoctor.certifications) ? clinicDoctor.certifications : []) : [],
+    profileImageUrl: clinicDoctor.profile_image_url || null,
+    phone: clinicDoctor.phone || null,
+    whatsapp: clinicDoctor.whatsapp || null,
+    email: clinicDoctor.users?.email || clinicDoctor.email || null,
   });
 }
 
@@ -89,6 +137,14 @@ export async function updateClinicProfile(event: APIGatewayProxyEventV2): Promis
       updated_at: new Date(),
     };
 
+    // ⭐ Nuevos campos
+    if (body.specialty !== undefined) updateData.specialty = body.specialty;
+    if (body.experience !== undefined) updateData.experience = body.experience;
+    if (body.bio !== undefined) updateData.bio = body.bio || null;
+    if (body.education !== undefined) updateData.education = body.education || null;
+    if (body.certifications !== undefined) updateData.certifications = body.certifications || null;
+    
+    // Campos existentes
     if (body.officeNumber !== undefined) updateData.office_number = body.officeNumber;
     if (body.phone !== undefined) updateData.phone = body.phone;
     if (body.whatsapp !== undefined) updateData.whatsapp = body.whatsapp;
@@ -97,14 +153,36 @@ export async function updateClinicProfile(event: APIGatewayProxyEventV2): Promis
     const updated = await prisma.clinic_doctors.update({
       where: { id: clinicDoctor.id },
       data: updateData,
+      include: {
+        clinics: true,
+        users: {
+          select: { email: true },
+        },
+      },
     });
 
+    // ⭐ Retornar estructura esperada por el frontend
+    const clinic = updated.clinics;
     return successResponse({
       id: updated.id,
-      officeNumber: updated.office_number,
-      phone: updated.phone,
-      whatsapp: updated.whatsapp,
-      profileImageUrl: updated.profile_image_url,
+      clinicId: updated.clinic_id || null,
+      clinicInfo: clinic ? {
+        id: clinic.id,
+        name: clinic.name || null,
+        address: clinic.address || null,
+        phone: clinic.phone || null,
+        whatsapp: clinic.whatsapp || null,
+        logoUrl: clinic.logo_url || null,
+      } : null,
+      specialty: updated.specialty || null,
+      experience: updated.experience || null,
+      bio: updated.bio || null,
+      education: updated.education ? (Array.isArray(updated.education) ? updated.education : []) : [],
+      certifications: updated.certifications ? (Array.isArray(updated.certifications) ? updated.certifications : []) : [],
+      profileImageUrl: updated.profile_image_url || null,
+      phone: updated.phone || null,
+      whatsapp: updated.whatsapp || null,
+      email: updated.users?.email || updated.email || null,
     });
   } catch (error: any) {
     console.error(`❌ [DOCTORS] Error al actualizar perfil:`, error.message);
@@ -272,13 +350,43 @@ export async function getReceptionMessages(event: APIGatewayProxyEventV2): Promi
       where.is_read = false;
     }
 
+    // Obtener mensajes con información de clínica
     const messages = await prisma.reception_messages.findMany({
       where,
-      orderBy: { created_at: 'desc' },
+      include: {
+        clinics: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        clinic_doctors: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+      orderBy: { created_at: 'asc' }, // ⭐ Cambiar a ascendente para consistencia
       take: parseInt(queryParams.limit || '50', 10),
     });
 
-    return successResponse(messages);
+    // Mapear a formato de respuesta con from correcto
+    const messagesData = messages.map((msg) => ({
+      id: msg.id,
+      clinicId: msg.clinic_id || null,
+      doctorId: msg.doctor_id || null,
+      doctorName: clinicDoctor.name || 'Médico', // ⭐ REQUERIDO
+      from: msg.sender_type === 'doctor' ? 'doctor' : 'reception', // ⭐ Mapear correctamente
+      message: msg.message,
+      timestamp: msg.created_at?.toISOString() || new Date().toISOString(),
+      isRead: msg.is_read ?? false,
+      senderName: msg.sender_type === 'doctor'
+        ? (clinicDoctor.name || 'Médico')
+        : (msg.clinics?.name || 'Recepción'), // ⭐ Nombre de clínica o médico
+    }));
+
+    return successResponse(messagesData);
   } catch (error: any) {
     console.error(`❌ [DOCTORS] Error al obtener mensajes:`, error.message);
     logger.error('Error getting reception messages', error);
@@ -294,12 +402,12 @@ export async function createReceptionMessage(event: APIGatewayProxyEventV2): Pro
   if ('statusCode' in authResult) return authResult;
 
   const authContext = authResult as AuthContext;
-  const body = parseBody(event.body, createReceptionMessageSchema);
+  const body = parseBody(event.body, createReceptionMessageDoctorSchema); // ⭐ Usar schema sin doctorId
   const prisma = getPrismaClient();
   const { randomUUID } = await import('crypto');
 
   const clinicDoctor = await getClinicDoctor(authContext);
-  if (!clinicDoctor || !clinicDoctor.clinic_id) {
+  if (!clinicDoctor || !clinicDoctor.clinic_id || !clinicDoctor.clinics) {
     return notFoundResponse('Doctor is not associated with any clinic');
   }
 
@@ -310,12 +418,30 @@ export async function createReceptionMessage(event: APIGatewayProxyEventV2): Pro
         clinic_id: clinicDoctor.clinic_id,
         doctor_id: clinicDoctor.id,
         message: body.message,
-        sender_type: 'doctor',
+        sender_type: 'doctor', // ⭐ Siempre "doctor" cuando se envía desde médico
         is_read: false,
+      },
+      include: {
+        clinics: {
+          select: {
+            name: true,
+          },
+        },
       },
     });
 
-    return successResponse(message, 201);
+    // ⭐ Retornar con formato correcto incluyendo from: "doctor"
+    return successResponse({
+      id: message.id,
+      clinicId: message.clinic_id || null,
+      doctorId: message.doctor_id || null,
+      doctorName: clinicDoctor.name || 'Médico', // ⭐ REQUERIDO
+      from: 'doctor', // ⭐ Siempre "doctor" cuando se envía desde médico
+      message: message.message,
+      timestamp: message.created_at?.toISOString() || new Date().toISOString(),
+      isRead: false,
+      senderName: clinicDoctor.name || 'Médico', // ⭐ Nombre del médico
+    }, 201);
   } catch (error: any) {
     console.error(`❌ [DOCTORS] Error al crear mensaje:`, error.message);
     logger.error('Error creating reception message', error);

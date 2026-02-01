@@ -16,8 +16,8 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   exposedHeaders: ['Authorization'],
 }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '10mb' })); // ⭐ Aumentar límite para subida de imágenes
+app.use(express.urlencoded({ extended: true, limit: '10mb' })); // ⭐ Aumentar límite para subida de imágenes
 
 // Middleware de logging para todas las requests
 app.use((req, res, next) => {
@@ -227,10 +227,22 @@ app.use('/api/ads', async (req, res) => {
   await handleLambdaResponse(adsHandler, req, res, path);
 });
 
+// Routes - Home
+app.use('/api/home', async (req, res) => {
+  const path = req.originalUrl.split('?')[0];
+  await handleLambdaResponse(homeHandler, req, res, path);
+});
+
 // Routes - Supplies
 app.use('/api/supplies', async (req, res) => {
   const path = req.originalUrl.split('?')[0];
   await handleLambdaResponse(suppliesHandler, req, res, path);
+});
+
+// Routes - Pharmacy Chains (público)
+app.use('/api/pharmacy-chains', async (req, res) => {
+  const path = req.originalUrl.split('?')[0];
+  await handleLambdaResponse(pharmacyChainsHandler, req, res, path);
 });
 
 // Routes - Patients
@@ -250,6 +262,8 @@ if (patientsHandler) {
       message: 'Patients handler not available. Check server logs.' 
     });
   });
+} else {
+  console.warn('⚠️ [PHARMACIES] Handler de farmacias no disponible');
 }
 
 // Routes - Pharmacies

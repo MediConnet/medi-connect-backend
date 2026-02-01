@@ -37,6 +37,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
 
     return errorResponse('Not found', 404, undefined, event);
   } catch (error: any) {
+    console.error(`❌ [LABORATORIES] ${method} ${path} - Error:`, error.message);
     logger.error('Error in laboratories handler', error, { method, path });
     return internalErrorResponse(error.message || 'Internal server error', event);
   }

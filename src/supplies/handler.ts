@@ -20,12 +20,15 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
   }
 
   try {
-    // GET /api/supplies/stores
-    if (method === 'GET' && path === '/api/supplies/stores') {
-      console.log('✅ [SUPPLIES] GET /api/supplies/stores - Obteniendo tiendas');
-      const result = await getStores(event);
-      console.log(`✅ [SUPPLIES] GET /api/supplies/stores - Completado con status ${result.statusCode}`);
-      return result;
+    // GET /api/supplies
+    if (path === '/api/supplies') {
+      if (method === 'GET') return await getSupplies(event);
+    }
+
+    // GET /api/supplies/:id/reviews
+    if (path.startsWith('/api/supplies/') && path.endsWith('/reviews')) {
+      if (method === 'GET') return await getSupplyReviews(event);
+      if (method === 'POST') return await createSupplyReview(event);
     }
 
     // GET /api/supplies/stores/search

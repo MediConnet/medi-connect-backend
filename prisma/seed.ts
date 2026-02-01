@@ -9,10 +9,12 @@ import {
   clinic_doctors,
   clinics,
   patients,
+  pharmacy_chains,
   PrismaClient,
   provider_branches,
   providers,
   service_categories,
+  specialties,
   users
 } from '../src/generated/prisma/client';
 
@@ -169,6 +171,64 @@ async function main() {
   );
 
   console.log('✅ Categorías de servicio creadas');
+
+  // 2.5. Crear las 20 especialidades médicas
+  console.log('🏥 Creando especialidades médicas...');
+  const specialtiesList = [
+    { name: 'Medicina General', description: 'Atención médica general y preventiva', color_hex: '#4CAF50' },
+    { name: 'Cardiología', description: 'Especialidad médica que se encarga del corazón y sistema circulatorio', color_hex: '#F44336' },
+    { name: 'Dermatología', description: 'Especialidad médica que trata enfermedades de la piel', color_hex: '#FF9800' },
+    { name: 'Ginecología', description: 'Especialidad médica que trata la salud reproductiva de la mujer', color_hex: '#E91E63' },
+    { name: 'Pediatría', description: 'Especialidad médica que trata la salud de niños y adolescentes', color_hex: '#00BCD4' },
+    { name: 'Oftalmología', description: 'Especialidad médica que trata enfermedades de los ojos', color_hex: '#2196F3' },
+    { name: 'Traumatología', description: 'Especialidad médica que trata lesiones del sistema musculoesquelético', color_hex: '#9C27B0' },
+    { name: 'Neurología', description: 'Especialidad médica que trata enfermedades del sistema nervioso', color_hex: '#3F51B5' },
+    { name: 'Psiquiatría', description: 'Especialidad médica que trata trastornos mentales y emocionales', color_hex: '#009688' },
+    { name: 'Urología', description: 'Especialidad médica que trata el sistema urinario y reproductor masculino', color_hex: '#795548' },
+    { name: 'Endocrinología', description: 'Especialidad médica que trata enfermedades del sistema endocrino', color_hex: '#FF5722' },
+    { name: 'Gastroenterología', description: 'Especialidad médica que trata enfermedades del sistema digestivo', color_hex: '#607D8B' },
+    { name: 'Neumología', description: 'Especialidad médica que trata enfermedades del sistema respiratorio', color_hex: '#00ACC1' },
+    { name: 'Otorrinolaringología', description: 'Especialidad médica que trata oído, nariz y garganta', color_hex: '#8BC34A' },
+    { name: 'Oncología', description: 'Especialidad médica que trata el cáncer', color_hex: '#E53935' },
+    { name: 'Reumatología', description: 'Especialidad médica que trata enfermedades reumáticas', color_hex: '#AB47BC' },
+    { name: 'Nefrología', description: 'Especialidad médica que trata enfermedades de los riñones', color_hex: '#26A69A' },
+    { name: 'Cirugía General', description: 'Especialidad médica quirúrgica de procedimientos generales', color_hex: '#5C6BC0' },
+    { name: 'Anestesiología', description: 'Especialidad médica que administra anestesia y manejo del dolor', color_hex: '#42A5F5' },
+    { name: 'Odontología', description: 'Especialidad médica que trata la salud bucal y dental', color_hex: '#66BB6A' },
+  ];
+
+  let createdCount = 0;
+  let existingCount = 0;
+  let errorCount = 0;
+  
+  for (const specialty of specialtiesList) {
+    try {
+      const existing = await prisma.specialties.findFirst({
+        where: { name: specialty.name },
+      });
+      
+      if (existing) {
+        console.log(`  ⚠️  Especialidad ya existe: ${specialty.name}`);
+        existingCount++;
+      } else {
+        await prisma.specialties.create({
+          data: {
+            id: randomUUID(),
+            name: specialty.name,
+            description: specialty.description,
+            color_hex: specialty.color_hex,
+          },
+        });
+        console.log(`  ✅ Creada: ${specialty.name}`);
+        createdCount++;
+      }
+    } catch (error: any) {
+      console.error(`  ❌ Error al crear especialidad ${specialty.name}:`, error.message);
+      errorCount++;
+    }
+  }
+  
+  console.log(`✅ Especialidades procesadas: ${createdCount} creadas, ${existingCount} ya existían${errorCount > 0 ? `, ${errorCount} errores` : ''}`);
 
   // 3. Crear usuarios administradores
   console.log('👨‍💼 Creando usuarios administradores...');
@@ -415,7 +475,55 @@ async function main() {
 
   console.log('✅ Doctores creados');
 
-  // 5. Crear farmacias
+  // 5. Crear cadenas de farmacias
+  console.log('🏪 Creando cadenas de farmacias...');
+  const pharmacyChainsData = [
+    {
+      name: 'Fybeca',
+      logoUrl: 'https://scalashopping.com/wp-content/uploads/2018/08/logo-Fybeca-01-1024x683.png',
+      isActive: true,
+    },
+    {
+      name: 'Sana Sana',
+      logoUrl: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSKWAttN0PrToBQ9ZKbVicBbTL9RoFXG2TiKQ&s',
+      isActive: true,
+    },
+    {
+      name: "Pharmacy's",
+      logoUrl: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQj7nO9P5Hx_jBWhln5kKvzrWxn8XCSz_1SSw&s',
+      isActive: true,
+    },
+    {
+      name: 'MegaFarmacias',
+      logoUrl: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQtktD8217ZZ0okM9bxmMokMWFfX9i27xbYgA&s',
+      isActive: true,
+    },
+  ];
+
+  const createdChains: any[] = [];
+  for (const chainData of pharmacyChainsData) {
+    const chain = await prisma.pharmacy_chains.upsert({
+      where: { name: chainData.name },
+      update: {
+        logo_url: chainData.logoUrl,
+        is_active: chainData.isActive,
+        updated_at: new Date(),
+      },
+      create: {
+        id: randomUUID(),
+        name: chainData.name,
+        logo_url: chainData.logoUrl,
+        is_active: chainData.isActive,
+        created_at: new Date(),
+        updated_at: new Date(),
+      },
+    });
+    createdChains.push(chain);
+    console.log(`  ✅ Cadena creada: ${chain.name}`);
+  }
+  console.log(`✅ ${createdChains.length} cadenas de farmacias creadas`);
+
+  // 6. Crear farmacias
   console.log('💊 Creando farmacias...');
   
   // Farmacia Fybeca
@@ -432,6 +540,9 @@ async function main() {
     }
   );
 
+  // Buscar la cadena Fybeca
+  const fybecaChain = createdChains.find((c) => c.name === 'Fybeca');
+  
   const pharmacyProvider = await findOrCreate<providers>(
     prisma.providers,
     { user_id: pharmacyUser.id },
@@ -444,6 +555,7 @@ async function main() {
       description: 'Somos parte de tu vida. Encuentra medicinas, productos de cuidado personal, belleza, maternidad y más. Calidad y servicio garantizado en todo el Ecuador.',
       verification_status: 'APPROVED',
       commission_percentage: 15.0,
+      chain_id: fybecaChain?.id || null, // ⭐ Asociar con la cadena
     }
   );
 
@@ -557,6 +669,240 @@ async function main() {
       commission_percentage: 15.0,
     }
   );
+
+  // Farmacia Kevin (kevinfarmacia@gmail.com) - Asociada a Sana Sana
+  const kevinPharmacyPassword = await bcrypt.hash('kevincata20', 10);
+  const kevinPharmacyUser = await findOrCreate<users>(
+    prisma.users,
+    { email: 'kevinfarmacia@gmail.com' },
+    {
+      id: randomUUID(),
+      email: 'kevinfarmacia@gmail.com',
+      password_hash: kevinPharmacyPassword,
+      role: 'provider',
+      is_active: true,
+    }
+  );
+
+  const sanaSanaChain = createdChains.find((c) => c.name === 'Sana Sana');
+  
+  const kevinPharmacyProvider = await findOrCreate<providers>(
+    prisma.providers,
+    { user_id: kevinPharmacyUser.id },
+    {
+      id: randomUUID(),
+      user_id: kevinPharmacyUser.id,
+      category_id: pharmacyCategory.id,
+      commercial_name: 'Farmacia Kevin',
+      logo_url: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSKWAttN0PrToBQ9ZKbVicBbTL9RoFXG2TiKQ&s',
+      description: 'Farmacia de confianza con amplio surtido de medicamentos y productos de cuidado personal.',
+      verification_status: 'APPROVED',
+      commission_percentage: 15.0,
+      chain_id: sanaSanaChain?.id || null,
+    }
+  );
+
+  const kevinPharmacyBranch = await findOrCreate<provider_branches>(
+    prisma.provider_branches,
+    {
+      provider_id: kevinPharmacyProvider.id,
+      name: 'Farmacia Kevin - Sucursal Principal',
+    },
+    {
+      id: randomUUID(),
+      provider_id: kevinPharmacyProvider.id,
+      city_id: quito.id,
+      name: 'Farmacia Kevin - Sucursal Principal',
+      address_text: 'Av. 6 de Diciembre N24-156, Quito, Ecuador',
+      latitude: -0.1807,
+      longitude: -78.4678,
+      phone_contact: '+593 99 123 4567',
+      email_contact: 'kevinfarmacia@gmail.com',
+      opening_hours_text: 'Lun-Dom: 7:00-23:00',
+      is_24h: false,
+      has_delivery: true,
+      is_main: true,
+      is_active: true,
+    }
+  );
+
+  // Horarios para Farmacia Kevin
+  for (const schedule of pharmacySchedules) {
+    const dayNum = dayToNumber(schedule.day);
+    const existing = await prisma.provider_schedules.findFirst({
+      where: {
+        branch_id: kevinPharmacyBranch.id,
+        day_of_week: dayNum,
+      },
+    });
+    
+    if (!existing) {
+      await prisma.provider_schedules.create({
+        data: {
+          id: randomUUID(),
+          branch_id: kevinPharmacyBranch.id,
+          day_of_week: dayNum,
+          start_time: new Date(`1970-01-01T${schedule.start}`),
+          end_time: new Date(`1970-01-01T${schedule.end}`),
+        },
+      });
+    }
+  }
+
+  // Farmacia Pharmacy's - Asociada a Pharmacy's
+  const pharmacysChain = createdChains.find((c) => c.name === "Pharmacy's");
+  const pharmacysPassword = await bcrypt.hash('pharmacys123', 10);
+  const pharmacysUser = await findOrCreate<users>(
+    prisma.users,
+    { email: 'pharmacys@medicones.com' },
+    {
+      id: randomUUID(),
+      email: 'pharmacys@medicones.com',
+      password_hash: pharmacysPassword,
+      role: 'provider',
+      is_active: true,
+    }
+  );
+
+  const pharmacysProvider = await findOrCreate<providers>(
+    prisma.providers,
+    { user_id: pharmacysUser.id },
+    {
+      id: randomUUID(),
+      user_id: pharmacysUser.id,
+      category_id: pharmacyCategory.id,
+      commercial_name: "Pharmacy's",
+      logo_url: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQj7nO9P5Hx_jBWhln5kKvzrWxn8XCSz_1SSw&s',
+      description: 'Tu farmacia de confianza con los mejores precios y servicio al cliente.',
+      verification_status: 'APPROVED',
+      commission_percentage: 15.0,
+      chain_id: pharmacysChain?.id || null,
+    }
+  );
+
+  const pharmacysBranch = await findOrCreate<provider_branches>(
+    prisma.provider_branches,
+    {
+      provider_id: pharmacysProvider.id,
+      name: "Pharmacy's - Sucursal Centro",
+    },
+    {
+      id: randomUUID(),
+      provider_id: pharmacysProvider.id,
+      city_id: guayaquil.id,
+      name: "Pharmacy's - Sucursal Centro",
+      address_text: 'Av. 9 de Octubre y Malecón, Guayaquil, Ecuador',
+      latitude: -2.1709,
+      longitude: -79.9224,
+      phone_contact: '+593 99 234 5678',
+      email_contact: 'pharmacys@medicones.com',
+      opening_hours_text: 'Lun-Dom: 8:00-21:00',
+      is_24h: false,
+      has_delivery: true,
+      is_main: true,
+      is_active: true,
+    }
+  );
+
+  // Horarios para Pharmacy's
+  for (const schedule of pharmacySchedules) {
+    const dayNum = dayToNumber(schedule.day);
+    const existing = await prisma.provider_schedules.findFirst({
+      where: {
+        branch_id: pharmacysBranch.id,
+        day_of_week: dayNum,
+      },
+    });
+    
+    if (!existing) {
+      await prisma.provider_schedules.create({
+        data: {
+          id: randomUUID(),
+          branch_id: pharmacysBranch.id,
+          day_of_week: dayNum,
+          start_time: new Date(`1970-01-01T${schedule.start}`),
+          end_time: new Date(`1970-01-01T${schedule.end}`),
+        },
+      });
+    }
+  }
+
+  // Farmacia MegaFarmacias - Asociada a MegaFarmacias
+  const megaFarmaciasChain = createdChains.find((c) => c.name === 'MegaFarmacias');
+  const megaFarmaciasPassword = await bcrypt.hash('mega123', 10);
+  const megaFarmaciasUser = await findOrCreate<users>(
+    prisma.users,
+    { email: 'megafarmacias@medicones.com' },
+    {
+      id: randomUUID(),
+      email: 'megafarmacias@medicones.com',
+      password_hash: megaFarmaciasPassword,
+      role: 'provider',
+      is_active: true,
+    }
+  );
+
+  const megaFarmaciasProvider = await findOrCreate<providers>(
+    prisma.providers,
+    { user_id: megaFarmaciasUser.id },
+    {
+      id: randomUUID(),
+      user_id: megaFarmaciasUser.id,
+      category_id: pharmacyCategory.id,
+      commercial_name: 'MegaFarmacias',
+      logo_url: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQtktD8217ZZ0okM9bxmMokMWFfX9i27xbYgA&s',
+      description: 'La cadena de farmacias más grande del país. Medicamentos, productos de belleza y cuidado personal.',
+      verification_status: 'APPROVED',
+      commission_percentage: 15.0,
+      chain_id: megaFarmaciasChain?.id || null,
+    }
+  );
+
+  const megaFarmaciasBranch = await findOrCreate<provider_branches>(
+    prisma.provider_branches,
+    {
+      provider_id: megaFarmaciasProvider.id,
+      name: 'MegaFarmacias - Sucursal Norte',
+    },
+    {
+      id: randomUUID(),
+      provider_id: megaFarmaciasProvider.id,
+      city_id: quito.id,
+      name: 'MegaFarmacias - Sucursal Norte',
+      address_text: 'Av. Naciones Unidas y Av. 6 de Diciembre, Quito, Ecuador',
+      latitude: -0.1807,
+      longitude: -78.4678,
+      phone_contact: '+593 99 345 6789',
+      email_contact: 'megafarmacias@medicones.com',
+      opening_hours_text: 'Lun-Dom: 24 horas',
+      is_24h: true,
+      has_delivery: true,
+      is_main: true,
+      is_active: true,
+    }
+  );
+
+  // Horarios para MegaFarmacias (24 horas)
+  for (let day = 0; day <= 6; day++) {
+    const existing = await prisma.provider_schedules.findFirst({
+      where: {
+        branch_id: megaFarmaciasBranch.id,
+        day_of_week: day,
+      },
+    });
+    
+    if (!existing) {
+      await prisma.provider_schedules.create({
+        data: {
+          id: randomUUID(),
+          branch_id: megaFarmaciasBranch.id,
+          day_of_week: day,
+          start_time: new Date('1970-01-01T00:00:00'),
+          end_time: new Date('1970-01-01T23:59:59'),
+        },
+      });
+    }
+  }
 
   console.log('✅ Farmacias creadas');
 
@@ -1165,7 +1511,8 @@ async function main() {
   console.log('\n📊 Resumen:');
   console.log('  - 2 Administradores');
   console.log('  - 5 Doctores');
-  console.log('  - 3 Farmacias');
+  console.log('  - 4 Cadenas de Farmacias');
+  console.log('  - 6 Farmacias');
   console.log('  - 3 Laboratorios');
   console.log('  - 2 Ambulancias');
   console.log('  - 2 Insumos Médicos');
@@ -1177,6 +1524,7 @@ async function main() {
   console.log('  - Notificaciones de clínica creadas');
   console.log('  - 3 Ciudades');
   console.log('  - 6 Categorías de Servicio');
+  console.log('  - 20 Especialidades Médicas');
 }
 
 main()

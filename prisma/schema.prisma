@@ -251,6 +251,7 @@ model providers {
   verification_status   String?                 @db.VarChar(255)
   commission_percentage Decimal?                @db.Decimal
   years_of_experience   Int?                    @default(0)
+  chain_id              String?                 @db.Uuid // ⭐ Cadena de farmacia (opcional)
   appointments          appointments[]
   medical_history       medical_history[]
   payouts               payouts[]
@@ -328,7 +329,7 @@ model clinics {
   id                   String                 @id @db.Uuid
   user_id              String?                @unique @db.Uuid
   name                 String                 @db.VarChar(255)
-  logo_url             String?                @db.VarChar(500)
+  logo_url             String?                @db.Text // ⭐ Cambiado a Text para soportar imágenes base64
   address              String
   phone                String                 @db.VarChar(20)
   whatsapp             String                 @db.VarChar(20)
@@ -502,4 +503,15 @@ enum ad_status {
   PENDING
   APPROVED
   REJECTED
+}
+
+model pharmacy_chains {
+  id         String      @id @db.Uuid
+  name       String      @db.VarChar(255) @unique
+  logo_url   String?     @db.Text // ⭐ Text para soportar base64
+  description String?    @db.Text // ⭐ Descripción de la cadena
+  is_active  Boolean?    @default(true)
+  created_at DateTime?   @default(now()) @db.Timestamp(6)
+  updated_at DateTime?   @default(now()) @db.Timestamp(6)
+  providers  providers[] // ⭐ Relación con providers (farmacias)
 }
