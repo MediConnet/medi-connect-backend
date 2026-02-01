@@ -5,6 +5,7 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "npm run build:prisma && npm run build:ts && npm run build:layers",
+    "build:render": "npm run build:prisma && npm run build:ts",
     "build:prisma": "prisma generate",
     "build:ts": "tsc",
     "build:layers": "node scripts/build-layers.js",
