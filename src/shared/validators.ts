@@ -300,6 +300,36 @@ export const requestDateBlockSchema = z.object({
   reason: z.string().optional(),
 });
 
+// Review validators
+export const createReviewSchema = z.object({
+  branch_id: z.string().min(1, 'Branch ID is required'),
+  rating: z.number().int().min(1, 'Rating must be at least 1').max(5, 'Rating must be at most 5'),
+  comment: z.string().optional().nullable(),
+  appointment_id: z.string().uuid('Appointment ID must be a valid UUID').optional().nullable(),
+});
+
+// Doctor review validators (simplified, branch_id is obtained from doctor)
+export const createDoctorReviewSchema = z.object({
+  rating: z.number().int().min(1, 'Rating must be at least 1').max(5, 'Rating must be at most 5'),
+  comment: z.string().optional().nullable(),
+  appointment_id: z.string().uuid('Appointment ID must be a valid UUID').optional().nullable(),
+});
+
+// Appointment validators
+export const createAppointmentSchema = z.object({
+  doctorId: z.string().uuid('Doctor ID must be a valid UUID'),
+  clinicId: z.string().uuid('Clinic ID must be a valid UUID').optional().nullable(),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format'),
+  time: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, 'Time must be in HH:MM format'),
+  type: z.enum(['presencial', 'virtual'], {
+    errorMap: () => ({ message: 'Type must be either "presencial" or "virtual"' }),
+  }).optional().default('presencial'),
+  reason: z.string().min(1, 'Reason is required'),
+  paymentMethod: z.enum(['CASH', 'CARD', 'TRANSFER'], {
+    errorMap: () => ({ message: 'Payment method must be CASH, CARD, or TRANSFER' }),
+  }).optional().default('CASH'),
+});
+
 // Helper para extraer ID de la URL
 export function extractIdFromPath(path: string, prefix: string, suffix: string = ''): string {
   const start = prefix.length;

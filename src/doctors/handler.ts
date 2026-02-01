@@ -55,14 +55,10 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       if (method === 'PUT') return await updateAppointmentStatus(event);
     }
 
-    // --- NUEVA RUTA: Create Diagnosis (POST /diagnosis) ---
+    // --- Diagnosis Routes (POST /diagnosis y GET /diagnosis) ---
     if (path.startsWith('/api/doctors/appointments/') && path.endsWith('/diagnosis')) {
       if (method === 'POST') return await createDiagnosis(event);
-    }
-
-    if (path.startsWith('/api/doctors/appointments/') && path.endsWith('/diagnosis')) {
-      if (method === 'POST') return await createDiagnosis(event);
-      if (method === 'GET') return await getDiagnosis(event); 
+      if (method === 'GET') return await getDiagnosis(event);
     }
 
     // --- Patients ---
