@@ -1,4 +1,4 @@
-import { ServerClient } from 'postmark';
+import { Resend } from 'resend';
 import { logger } from './logger';
 
 interface EmailOptions {
@@ -6,50 +6,51 @@ interface EmailOptions {
   subject: string;
   html: string;
   text?: string;
+  from?: string; // Opcional: si no se proporciona, se usa el valor por defecto
 }
 
-// Cliente de Postmark (singleton)
-let postmarkClient: ServerClient | null = null;
+// Cliente de Resend (singleton)
+let resendClient: Resend | null = null;
 
 /**
- * Inicializa el servicio de email con Postmark
+ * Inicializa el servicio de email con Resend
  */
-function initializeEmailService(): ServerClient | null {
-  if (postmarkClient) {
-    return postmarkClient;
+function initializeEmailService(): Resend | null {
+  if (resendClient) {
+    return resendClient;
   }
 
-  // Token de API de Postmark desde variables de entorno
-  const postmarkApiToken = process.env.POSTMARK_API_TOKEN || '72f8532f-fdb7-41e3-96d1-75bf80a1b416';
+  // API Key de Resend desde variables de entorno (soporta ambos nombres por compatibilidad)
+  const resendApiToken = process.env.RESEND_API_KEY || process.env.RESEND_API_TOKEN || 're_SSG1TwXf_7c58f9HHEiPPaHbAverY4DKb';
   
-  // Email desde el que se enviarán los correos (debe estar verificado en Postmark)
-  const fromEmail = process.env.POSTMARK_FROM_EMAIL || process.env.SMTP_FROM || 'bobbie.conroy491@mazun.org';
+  // Email desde el que se enviarán los correos (debe estar verificado en Resend)
+  const fromEmail = process.env.RESEND_FROM_EMAIL || process.env.SMTP_FROM || 'noreply@mediconnect.com';
 
-  // Si no hay token, retornar null (modo desarrollo)
-  if (!postmarkApiToken) {
-    console.log('⚠️ [EMAIL] Token de Postmark no configurado. Usando modo desarrollo (solo logs)');
+  // Si no hay API key, retornar null (modo desarrollo)
+  if (!resendApiToken) {
+    console.log('⚠️ [EMAIL] API Key de Resend no configurada (RESEND_API_KEY). Usando modo desarrollo (solo logs)');
     return null;
   }
 
   try {
-    postmarkClient = new ServerClient(postmarkApiToken);
-    console.log('✅ [EMAIL] Servicio de email Postmark inicializado');
+    resendClient = new Resend(resendApiToken);
+    console.log('✅ [EMAIL] Servicio de email Resend inicializado');
     console.log(`📧 [EMAIL] Email remitente: ${fromEmail}`);
-    return postmarkClient;
+    return resendClient;
   } catch (error: any) {
-    console.error('❌ [EMAIL] Error al inicializar servicio de email Postmark:', error.message);
-    logger.error('Error initializing Postmark email service', error);
+    console.error('❌ [EMAIL] Error al inicializar servicio de email Resend:', error.message);
+    logger.error('Error initializing Resend email service', error);
     return null;
   }
 }
 
 /**
- * Envía un email usando Postmark
+ * Envía un email usando Resend
  */
 export async function sendEmail(options: EmailOptions): Promise<boolean> {
   try {
     const client = initializeEmailService();
-    const fromEmail = process.env.POSTMARK_FROM_EMAIL || process.env.SMTP_FROM || 'noreply@mediconnect.com';
+    const fromEmail = options.from || process.env.RESEND_FROM_EMAIL || process.env.SMTP_FROM || 'noreply@mediconnect.com';
 
     // Si no hay cliente configurado, solo log (modo desarrollo)
     if (!client) {
@@ -61,20 +62,20 @@ export async function sendEmail(options: EmailOptions): Promise<boolean> {
       return true; // Retornar true para no bloquear el flujo
     }
 
-    // Enviar email usando Postmark
-    const response = await client.sendEmail({
-      From: fromEmail,
-      To: options.to,
-      Subject: options.subject,
-      HtmlBody: options.html,
-      TextBody: options.text || options.html.replace(/<[^>]*>/g, ''), // Texto plano sin HTML
+    // Enviar email usando Resend
+    const response = await client.emails.send({
+      from: fromEmail,
+      to: options.to,
+      subject: options.subject,
+      html: options.html,
+      text: options.text || options.html.replace(/<[^>]*>/g, ''), // Texto plano sin HTML
     });
 
-    console.log(`✅ [EMAIL] Email enviado a ${options.to} usando Postmark. MessageID: ${response.MessageID}`);
+    console.log(`✅ [EMAIL] Email enviado a ${options.to} usando Resend. ID: ${response.data?.id || 'N/A'}`);
     return true;
   } catch (error: any) {
     console.error(`❌ [EMAIL] Error al enviar email a ${options.to}:`, error.message);
-    logger.error('Error sending email with Postmark', error, { to: options.to, subject: options.subject });
+    logger.error('Error sending email with Resend', error, { to: options.to, subject: options.subject });
     return false; // Retornar false pero no lanzar error
   }
 }
