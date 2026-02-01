@@ -5,7 +5,7 @@ import { getPrismaClient } from '../shared/prisma';
 import { errorResponse, internalErrorResponse, notFoundResponse, successResponse } from '../shared/response';
 import { parseBody, acceptInvitationSchema, extractIdFromPath } from '../shared/validators';
 import { createHash } from 'crypto';
-import { enum_roles } from '../generated/prisma/client';
+import { enum_roles, PrismaClient } from '../generated/prisma/client';
 import { generateJWT } from '../shared/auth';
 
 // GET /api/clinics/invite/:token
@@ -126,7 +126,7 @@ export async function acceptInvitation(event: APIGatewayProxyEventV2): Promise<A
     }
 
     // TRANSACCIÓN: Crear usuario, provider, actualizar médico e invitación
-    const result = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx: Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>) => {
       // Crear hash de contraseña
       const passwordHash = createHash('sha256').update(body.password).digest('hex');
 

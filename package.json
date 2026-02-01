@@ -55,7 +55,7 @@
     "express": "5.2.1",
     "nodemon": "3.1.11",
     "pg": "8.17.2",
-    "prisma": "6.19.2",
+    "prisma": "7.3.0",
     "serverless": "4.31.2",
     "serverless-esbuild": "1.57.0",
     "serverless-offline": "14.4.0",

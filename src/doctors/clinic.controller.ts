@@ -105,10 +105,10 @@ export async function getClinicProfile(event: APIGatewayProxyEventV2): Promise<A
       logoUrl: clinic.logo_url || null,
     },
     specialty: clinicDoctor.specialty || null,
-    experience: clinicDoctor.experience || null,
-    bio: clinicDoctor.bio || null,
-    education: clinicDoctor.education ? (Array.isArray(clinicDoctor.education) ? clinicDoctor.education : []) : [],
-    certifications: clinicDoctor.certifications ? (Array.isArray(clinicDoctor.certifications) ? clinicDoctor.certifications : []) : [],
+    experience: null, // Campo no existe en el modelo
+    bio: null, // Campo no existe en el modelo
+    education: [], // Campo no existe en el modelo
+    certifications: [], // Campo no existe en el modelo
     profileImageUrl: clinicDoctor.profile_image_url || null,
     phone: clinicDoctor.phone || null,
     whatsapp: clinicDoctor.whatsapp || null,
@@ -137,14 +137,9 @@ export async function updateClinicProfile(event: APIGatewayProxyEventV2): Promis
       updated_at: new Date(),
     };
 
-    // ⭐ Nuevos campos
-    if (body.specialty !== undefined) updateData.specialty = body.specialty;
-    if (body.experience !== undefined) updateData.experience = body.experience;
-    if (body.bio !== undefined) updateData.bio = body.bio || null;
-    if (body.education !== undefined) updateData.education = body.education || null;
-    if (body.certifications !== undefined) updateData.certifications = body.certifications || null;
-    
     // Campos existentes
+    if (body.specialty !== undefined) updateData.specialty = body.specialty;
+    // Nota: experience, bio, education, certifications no existen en el modelo clinic_doctors
     if (body.officeNumber !== undefined) updateData.office_number = body.officeNumber;
     if (body.phone !== undefined) updateData.phone = body.phone;
     if (body.whatsapp !== undefined) updateData.whatsapp = body.whatsapp;
@@ -175,10 +170,10 @@ export async function updateClinicProfile(event: APIGatewayProxyEventV2): Promis
         logoUrl: clinic.logo_url || null,
       } : null,
       specialty: updated.specialty || null,
-      experience: updated.experience || null,
-      bio: updated.bio || null,
-      education: updated.education ? (Array.isArray(updated.education) ? updated.education : []) : [],
-      certifications: updated.certifications ? (Array.isArray(updated.certifications) ? updated.certifications : []) : [],
+      experience: null, // Campo no existe en el modelo
+      bio: null, // Campo no existe en el modelo
+      education: [], // Campo no existe en el modelo
+      certifications: [], // Campo no existe en el modelo
       profileImageUrl: updated.profile_image_url || null,
       phone: updated.phone || null,
       whatsapp: updated.whatsapp || null,
@@ -251,7 +246,7 @@ export async function getClinicAppointments(event: APIGatewayProxyEventV2): Prom
     });
 
     // OCULTAR información financiera
-    return successResponse(appointments.map(apt => ({
+    return successResponse(appointments.map((apt: typeof appointments[0]) => ({
       id: apt.id,
       scheduledFor: apt.scheduled_for,
       status: apt.status,
@@ -372,7 +367,7 @@ export async function getReceptionMessages(event: APIGatewayProxyEventV2): Promi
     });
 
     // Mapear a formato de respuesta con from correcto
-    const messagesData = messages.map((msg) => ({
+    const messagesData = messages.map((msg: typeof messages[0]) => ({
       id: msg.id,
       clinicId: msg.clinic_id || null,
       doctorId: msg.doctor_id || null,
@@ -597,7 +592,7 @@ export async function getClinicNotifications(event: APIGatewayProxyEventV2): Pro
     });
 
     // Filtrar solo notificaciones relevantes para el médico
-    const relevantNotifications = notifications.filter(notif => {
+    const relevantNotifications = notifications.filter((notif: typeof notifications[0]) => {
       const data = notif.data as any;
       return data?.doctor_id === clinicDoctor.id;
     });

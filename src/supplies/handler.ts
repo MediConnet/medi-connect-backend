@@ -135,7 +135,7 @@ async function getStores(event: APIGatewayProxyEventV2): Promise<APIGatewayProxy
       prisma.providers.count({ where }),
     ]);
 
-    const stores = providers.map(provider => {
+    const stores = providers.map((provider: typeof providers[0]) => {
       const mainBranch = provider.provider_branches[0];
       return {
         id: provider.id,
@@ -233,7 +233,7 @@ async function getStore(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyR
     const hours: any = {};
     if (mainBranch?.provider_schedules) {
       const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-      mainBranch.provider_schedules.forEach(schedule => {
+      mainBranch.provider_schedules.forEach((schedule: typeof mainBranch.provider_schedules[0]) => {
         const dayName = days[schedule.day_of_week || 0];
         const startTime = schedule.start_time ? new Date(schedule.start_time).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : '';
         const endTime = schedule.end_time ? new Date(schedule.end_time).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : '';
@@ -341,7 +341,7 @@ async function getProducts(event: APIGatewayProxyEventV2): Promise<APIGatewayPro
       prisma.provider_catalog.count({ where }),
     ]);
 
-    const formattedProducts = products.map(product => ({
+    const formattedProducts = products.map((product: typeof products[0]) => ({
       id: product.id,
       name: product.name || '',
       category: product.type || '',
@@ -447,7 +447,7 @@ async function searchStores(event: APIGatewayProxyEventV2): Promise<APIGatewayPr
       take: 20,
     });
 
-    const stores = providers.map(provider => {
+    const stores = providers.map((provider: typeof providers[0]) => {
       const mainBranch = provider.provider_branches[0];
       return {
         id: provider.id,
@@ -511,7 +511,7 @@ async function getStoreProducts(event: APIGatewayProxyEventV2): Promise<APIGatew
       prisma.provider_catalog.count({ where }),
     ]);
 
-    const formattedProducts = products.map(product => ({
+    const formattedProducts = products.map((product: typeof products[0]) => ({
       id: product.id,
       name: product.name || '',
       category: product.type || '',

@@ -648,7 +648,7 @@ async function getRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayPro
   });
   
   console.log(`📊 [GET_REQUESTS] Total de providers en BD: ${allProviders.length}`);
-  const statusCounts = allProviders.reduce((acc, p) => {
+  const statusCounts = allProviders.reduce((acc: Record<string, number>, p: typeof allProviders[0]) => {
     const status = p.verification_status || 'NULL';
     acc[status] = (acc[status] || 0) + 1;
     return acc;
@@ -696,8 +696,8 @@ async function getRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayPro
 
   // Obtener ciudades para mapear
   const cityIds = providers
-    .flatMap(p => p.provider_branches.map(b => b.city_id))
-    .filter((id): id is string => id !== null);
+    .flatMap((p: typeof providers[0]) => p.provider_branches.map((b: typeof p.provider_branches[0]) => b.city_id))
+    .filter((id: string | null): id is string => id !== null);
   
   const cities = await prisma.cities.findMany({
     where: {
@@ -705,12 +705,16 @@ async function getRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayPro
     },
   });
 
-  const cityMap = new Map(cities.map(c => [c.id, c]));
+  // Crear mapa de ciudades de forma más simple
+  const cityMap: Record<string, { name: string }> = {};
+  cities.forEach((c: { id: string; name: string }) => {
+    cityMap[c.id] = { name: c.name };
+  });
 
   // Mapear a la estructura esperada por el frontend
-  const requests = providers.map((provider) => {
+  const requests = providers.map((provider: typeof providers[0]) => {
     const branch = provider.provider_branches[0];
-    const city = branch?.city_id ? cityMap.get(branch.city_id) : null;
+    const city = branch?.city_id ? cityMap[branch.city_id] : undefined;
 
     return {
       id: provider.id,
@@ -736,7 +740,7 @@ async function getRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayPro
   });
 
     console.log(`✅ [GET_REQUESTS] Retornando ${requests.length} solicitudes`);
-    console.log(`🔍 [GET_REQUESTS] IDs de providers encontrados:`, providers.map(p => ({ id: p.id, name: p.commercial_name, status: p.verification_status })));
+    console.log(`🔍 [GET_REQUESTS] IDs de providers encontrados:`, providers.map((p: typeof providers[0]) => ({ id: p.id, name: p.commercial_name, status: p.verification_status })));
   return successResponse(requests);
 }
 
