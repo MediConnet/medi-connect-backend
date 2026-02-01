@@ -670,6 +670,240 @@ async function main() {
     }
   );
 
+  // Farmacia Kevin (kevinfarmacia@gmail.com) - Asociada a Sana Sana
+  const kevinPharmacyPassword = await bcrypt.hash('kevincata20', 10);
+  const kevinPharmacyUser = await findOrCreate<users>(
+    prisma.users,
+    { email: 'kevinfarmacia@gmail.com' },
+    {
+      id: randomUUID(),
+      email: 'kevinfarmacia@gmail.com',
+      password_hash: kevinPharmacyPassword,
+      role: 'provider',
+      is_active: true,
+    }
+  );
+
+  const sanaSanaChain = createdChains.find((c) => c.name === 'Sana Sana');
+  
+  const kevinPharmacyProvider = await findOrCreate<providers>(
+    prisma.providers,
+    { user_id: kevinPharmacyUser.id },
+    {
+      id: randomUUID(),
+      user_id: kevinPharmacyUser.id,
+      category_id: pharmacyCategory.id,
+      commercial_name: 'Farmacia Kevin',
+      logo_url: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSKWAttN0PrToBQ9ZKbVicBbTL9RoFXG2TiKQ&s',
+      description: 'Farmacia de confianza con amplio surtido de medicamentos y productos de cuidado personal.',
+      verification_status: 'APPROVED',
+      commission_percentage: 15.0,
+      chain_id: sanaSanaChain?.id || null,
+    }
+  );
+
+  const kevinPharmacyBranch = await findOrCreate<provider_branches>(
+    prisma.provider_branches,
+    {
+      provider_id: kevinPharmacyProvider.id,
+      name: 'Farmacia Kevin - Sucursal Principal',
+    },
+    {
+      id: randomUUID(),
+      provider_id: kevinPharmacyProvider.id,
+      city_id: quito.id,
+      name: 'Farmacia Kevin - Sucursal Principal',
+      address_text: 'Av. 6 de Diciembre N24-156, Quito, Ecuador',
+      latitude: -0.1807,
+      longitude: -78.4678,
+      phone_contact: '+593 99 123 4567',
+      email_contact: 'kevinfarmacia@gmail.com',
+      opening_hours_text: 'Lun-Dom: 7:00-23:00',
+      is_24h: false,
+      has_delivery: true,
+      is_main: true,
+      is_active: true,
+    }
+  );
+
+  // Horarios para Farmacia Kevin
+  for (const schedule of pharmacySchedules) {
+    const dayNum = dayToNumber(schedule.day);
+    const existing = await prisma.provider_schedules.findFirst({
+      where: {
+        branch_id: kevinPharmacyBranch.id,
+        day_of_week: dayNum,
+      },
+    });
+    
+    if (!existing) {
+      await prisma.provider_schedules.create({
+        data: {
+          id: randomUUID(),
+          branch_id: kevinPharmacyBranch.id,
+          day_of_week: dayNum,
+          start_time: new Date(`1970-01-01T${schedule.start}`),
+          end_time: new Date(`1970-01-01T${schedule.end}`),
+        },
+      });
+    }
+  }
+
+  // Farmacia Pharmacy's - Asociada a Pharmacy's
+  const pharmacysChain = createdChains.find((c) => c.name === "Pharmacy's");
+  const pharmacysPassword = await bcrypt.hash('pharmacys123', 10);
+  const pharmacysUser = await findOrCreate<users>(
+    prisma.users,
+    { email: 'pharmacys@medicones.com' },
+    {
+      id: randomUUID(),
+      email: 'pharmacys@medicones.com',
+      password_hash: pharmacysPassword,
+      role: 'provider',
+      is_active: true,
+    }
+  );
+
+  const pharmacysProvider = await findOrCreate<providers>(
+    prisma.providers,
+    { user_id: pharmacysUser.id },
+    {
+      id: randomUUID(),
+      user_id: pharmacysUser.id,
+      category_id: pharmacyCategory.id,
+      commercial_name: "Pharmacy's",
+      logo_url: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQj7nO9P5Hx_jBWhln5kKvzrWxn8XCSz_1SSw&s',
+      description: 'Tu farmacia de confianza con los mejores precios y servicio al cliente.',
+      verification_status: 'APPROVED',
+      commission_percentage: 15.0,
+      chain_id: pharmacysChain?.id || null,
+    }
+  );
+
+  const pharmacysBranch = await findOrCreate<provider_branches>(
+    prisma.provider_branches,
+    {
+      provider_id: pharmacysProvider.id,
+      name: "Pharmacy's - Sucursal Centro",
+    },
+    {
+      id: randomUUID(),
+      provider_id: pharmacysProvider.id,
+      city_id: guayaquil.id,
+      name: "Pharmacy's - Sucursal Centro",
+      address_text: 'Av. 9 de Octubre y Malecón, Guayaquil, Ecuador',
+      latitude: -2.1709,
+      longitude: -79.9224,
+      phone_contact: '+593 99 234 5678',
+      email_contact: 'pharmacys@medicones.com',
+      opening_hours_text: 'Lun-Dom: 8:00-21:00',
+      is_24h: false,
+      has_delivery: true,
+      is_main: true,
+      is_active: true,
+    }
+  );
+
+  // Horarios para Pharmacy's
+  for (const schedule of pharmacySchedules) {
+    const dayNum = dayToNumber(schedule.day);
+    const existing = await prisma.provider_schedules.findFirst({
+      where: {
+        branch_id: pharmacysBranch.id,
+        day_of_week: dayNum,
+      },
+    });
+    
+    if (!existing) {
+      await prisma.provider_schedules.create({
+        data: {
+          id: randomUUID(),
+          branch_id: pharmacysBranch.id,
+          day_of_week: dayNum,
+          start_time: new Date(`1970-01-01T${schedule.start}`),
+          end_time: new Date(`1970-01-01T${schedule.end}`),
+        },
+      });
+    }
+  }
+
+  // Farmacia MegaFarmacias - Asociada a MegaFarmacias
+  const megaFarmaciasChain = createdChains.find((c) => c.name === 'MegaFarmacias');
+  const megaFarmaciasPassword = await bcrypt.hash('mega123', 10);
+  const megaFarmaciasUser = await findOrCreate<users>(
+    prisma.users,
+    { email: 'megafarmacias@medicones.com' },
+    {
+      id: randomUUID(),
+      email: 'megafarmacias@medicones.com',
+      password_hash: megaFarmaciasPassword,
+      role: 'provider',
+      is_active: true,
+    }
+  );
+
+  const megaFarmaciasProvider = await findOrCreate<providers>(
+    prisma.providers,
+    { user_id: megaFarmaciasUser.id },
+    {
+      id: randomUUID(),
+      user_id: megaFarmaciasUser.id,
+      category_id: pharmacyCategory.id,
+      commercial_name: 'MegaFarmacias',
+      logo_url: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQtktD8217ZZ0okM9bxmMokMWFfX9i27xbYgA&s',
+      description: 'La cadena de farmacias más grande del país. Medicamentos, productos de belleza y cuidado personal.',
+      verification_status: 'APPROVED',
+      commission_percentage: 15.0,
+      chain_id: megaFarmaciasChain?.id || null,
+    }
+  );
+
+  const megaFarmaciasBranch = await findOrCreate<provider_branches>(
+    prisma.provider_branches,
+    {
+      provider_id: megaFarmaciasProvider.id,
+      name: 'MegaFarmacias - Sucursal Norte',
+    },
+    {
+      id: randomUUID(),
+      provider_id: megaFarmaciasProvider.id,
+      city_id: quito.id,
+      name: 'MegaFarmacias - Sucursal Norte',
+      address_text: 'Av. Naciones Unidas y Av. 6 de Diciembre, Quito, Ecuador',
+      latitude: -0.1807,
+      longitude: -78.4678,
+      phone_contact: '+593 99 345 6789',
+      email_contact: 'megafarmacias@medicones.com',
+      opening_hours_text: 'Lun-Dom: 24 horas',
+      is_24h: true,
+      has_delivery: true,
+      is_main: true,
+      is_active: true,
+    }
+  );
+
+  // Horarios para MegaFarmacias (24 horas)
+  for (let day = 0; day <= 6; day++) {
+    const existing = await prisma.provider_schedules.findFirst({
+      where: {
+        branch_id: megaFarmaciasBranch.id,
+        day_of_week: day,
+      },
+    });
+    
+    if (!existing) {
+      await prisma.provider_schedules.create({
+        data: {
+          id: randomUUID(),
+          branch_id: megaFarmaciasBranch.id,
+          day_of_week: day,
+          start_time: new Date('1970-01-01T00:00:00'),
+          end_time: new Date('1970-01-01T23:59:59'),
+        },
+      });
+    }
+  }
+
   console.log('✅ Farmacias creadas');
 
   // 6. Crear laboratorios
@@ -1278,7 +1512,7 @@ async function main() {
   console.log('  - 2 Administradores');
   console.log('  - 5 Doctores');
   console.log('  - 4 Cadenas de Farmacias');
-  console.log('  - 3 Farmacias');
+  console.log('  - 6 Farmacias');
   console.log('  - 3 Laboratorios');
   console.log('  - 2 Ambulancias');
   console.log('  - 2 Insumos Médicos');

@@ -299,7 +299,7 @@ async function registerProviderRequest(event: APIGatewayProxyEventV2): Promise<A
       password: z.string().min(6, 'Password must be at least 6 characters').max(50, 'Password must be at most 50 characters'),
       phone: z.string().regex(/^\d{10}$/, 'Phone must be exactly 10 digits').optional(),
       whatsapp: z.string().regex(/^\d{10}$/, 'WhatsApp must be exactly 10 digits').optional(),
-      serviceName: z.string().min(1, 'Service name is required'),
+      serviceName: z.string().min(1, 'Service name is required').optional(), // ⭐ Opcional (requerido solo si no hay cadena)
       address: z.string().optional(),
       city: z.string().min(1, 'City is required'),
       price: z.string().optional(), // String vacío "" para todos excepto doctor
@@ -318,6 +318,16 @@ async function registerProviderRequest(event: APIGatewayProxyEventV2): Promise<A
         type: z.enum(['license', 'certificate', 'degree']), // licencia, certificado, titulo
         url: z.string().url('Document URL must be a valid URL'),
       })).optional(),
+    }).refine((data) => {
+      // ⭐ Si es farmacia con cadena, serviceName es opcional
+      if (data.type === 'pharmacy' && data.chainId) {
+        return true; // serviceName no es requerido
+      }
+      // ⭐ Si NO es farmacia con cadena, serviceName es requerido
+      return data.serviceName && data.serviceName.length > 0;
+    }, {
+      message: 'Service name is required when not using a pharmacy chain',
+      path: ['serviceName'], // El error aparecerá en el campo serviceName
     });
 
     const body = parseBody(event.body, registerProviderSchema);
@@ -430,13 +440,24 @@ async function registerProviderRequest(event: APIGatewayProxyEventV2): Promise<A
       console.log(`⚠️ [REGISTER_PROVIDER_REQUEST] Ya existe un provider para este usuario`);
       // Si ya existe pero está rechazado, actualizar a PENDING
       if (existingProvider.verification_status === 'REJECTED') {
+        // ⭐ Verificar si es farmacia con cadena antes de actualizar commercial_name
+        const isPharmacyWithChain = body.type === 'pharmacy' && body.chainId;
+        const updateData: any = {
+          verification_status: 'PENDING', // Usar string directamente
+        };
+        
+        // ⭐ Solo actualizar commercial_name si NO es farmacia con cadena
+        if (!isPharmacyWithChain && body.serviceName) {
+          updateData.commercial_name = body.serviceName;
+        }
+        // ⭐ Solo actualizar description si NO es farmacia con cadena
+        if (!isPharmacyWithChain) {
+          updateData.description = body.description || null;
+        }
+        
         await prisma.providers.update({
           where: { id: existingProvider.id },
-          data: {
-            verification_status: 'PENDING', // Usar string directamente
-            commercial_name: body.serviceName,
-            description: body.description || null,
-          },
+          data: updateData,
         });
         console.log(`✅ [REGISTER_PROVIDER_REQUEST] Provider actualizado a PENDING`);
         return successResponse({ 
@@ -463,16 +484,47 @@ async function registerProviderRequest(event: APIGatewayProxyEventV2): Promise<A
       console.log(`📄 [REGISTER_PROVIDER_REQUEST] Tipos de documentos: ${docTypes}`);
     }
 
-    // 6. Crear provider con estado PENDING
+    // 6. Si es farmacia con cadena, verificar que existe
+    let chainId = null;
+    let chainNameForBranch = body.serviceName || ''; // Para la sucursal
+
+    if (body.type === 'pharmacy' && body.chainId) {
+      console.log(`🏪 [REGISTER_PROVIDER_REQUEST] Farmacia con cadena: ${body.chainId}`);
+      const chain = await prisma.pharmacy_chains.findUnique({
+        where: { id: body.chainId },
+        select: { id: true, name: true },
+      });
+
+      if (chain) {
+        chainId = chain.id;
+        chainNameForBranch = chain.name; // ⭐ Usar nombre de cadena para la sucursal
+        console.log(`✅ [REGISTER_PROVIDER_REQUEST] Cadena encontrada: ${chain.name}`);
+        console.log(`ℹ️ [REGISTER_PROVIDER_REQUEST] Los datos (nombre, logo, descripción) se leerán siempre de la cadena`);
+      } else {
+        console.log(`⚠️ [REGISTER_PROVIDER_REQUEST] Cadena no encontrada, usando datos proporcionados`);
+        // Si la cadena no existe pero se envió chainId, usar serviceName si está disponible
+        if (!body.serviceName) {
+          return errorResponse('Chain not found and service name is required', 400);
+        }
+      }
+    } else if (!body.serviceName) {
+      // Si NO es farmacia con cadena y no viene serviceName, es un error
+      return errorResponse('Service name is required', 400);
+    }
+
+    // 7. Crear provider con estado PENDING
     console.log(`🏥 [REGISTER_PROVIDER_REQUEST] Creando provider con estado PENDING`);
     const provider = await prisma.providers.create({
       data: {
         id: randomUUID(),
         user_id: user.id,
         category_id: category.id,
-        commercial_name: body.serviceName,
-        description: body.description || null,
-        logo_url: body.logoUrl && body.logoUrl !== '' ? body.logoUrl : null,
+        // ⭐ Si tiene cadena, dejar NULL para que siempre se lea de la cadena
+        // ⭐ Si NO tiene cadena, usar los datos proporcionados (serviceName es requerido en este caso)
+        commercial_name: chainId ? null : (body.serviceName || ''),
+        description: chainId ? null : (body.description || null),
+        logo_url: chainId ? null : (body.logoUrl && body.logoUrl !== '' ? body.logoUrl : null),
+        chain_id: chainId, // ⭐ Asignar chain_id si aplica
         verification_status: 'PENDING', // Usar string directamente (el campo es String? en el schema)
         commission_percentage: 15.0,
       },
@@ -490,14 +542,16 @@ async function registerProviderRequest(event: APIGatewayProxyEventV2): Promise<A
       statusType: typeof savedProvider?.verification_status,
     });
 
-    // 7. Crear sucursal principal (siempre se crea, con o sin dirección)
+    // 8. Crear sucursal principal (siempre se crea, con o sin dirección)
     console.log(`🏪 [REGISTER_PROVIDER_REQUEST] Creando sucursal principal`);
+    // ⭐ Asegurar que chainNameForBranch tenga un valor válido
+    const branchName = chainNameForBranch || body.serviceName || 'Sucursal Principal';
     await prisma.provider_branches.create({
       data: {
         id: randomUUID(),
         provider_id: provider.id,
         city_id: city.id,
-        name: body.serviceName,
+        name: branchName, // ⭐ Usar nombre de cadena si aplica, sino serviceName, sino valor por defecto
         address_text: body.address || null,
         phone_contact: body.phone || body.whatsapp || null,
         email_contact: body.email,
@@ -515,10 +569,13 @@ async function registerProviderRequest(event: APIGatewayProxyEventV2): Promise<A
     if (body.type === 'clinic') {
       console.log('🏥 [REGISTER_PROVIDER_REQUEST] Creando registro de clínica');
       
+      // ⭐ Para clínicas, serviceName es siempre requerido (validado en el schema)
+      const clinicName = body.serviceName || 'Clínica sin nombre';
+      
       await prisma.clinics.upsert({
         where: { user_id: user.id },
         update: {
-          name: body.serviceName,
+          name: clinicName,
           address: body.address || 'Dirección no especificada',
           phone: body.phone || body.whatsapp || '0000000000',
           whatsapp: body.whatsapp || body.phone || '0000000000',
@@ -528,7 +585,7 @@ async function registerProviderRequest(event: APIGatewayProxyEventV2): Promise<A
         create: {
           id: randomUUID(),
           user_id: user.id,
-          name: body.serviceName,
+          name: clinicName,
           address: body.address || 'Dirección no especificada',
           phone: body.phone || body.whatsapp || '0000000000',
           whatsapp: body.whatsapp || body.phone || '0000000000',

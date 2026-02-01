@@ -148,8 +148,10 @@ let ambulancesHandler: any;
 
 try {
   pharmaciesHandler = require('../src/pharmacies/handler').handler;
-} catch (e) {
-  // Handler no existe o tiene errores
+  console.log('✅ [PHARMACIES] Handler de farmacias cargado correctamente');
+} catch (e: any) {
+  console.error('❌ [PHARMACIES] Error al cargar handler de farmacias:', e.message);
+  console.error('❌ [PHARMACIES] Stack:', e.stack);
 }
 
 try {
@@ -242,10 +244,13 @@ app.use('/api/patients', async (req, res) => {
 
 // Routes - Pharmacies (si existe)
 if (pharmaciesHandler) {
+  console.log('✅ [PHARMACIES] Registrando rutas de farmacias');
   app.use('/api/pharmacies', async (req, res) => {
     const path = req.originalUrl.split('?')[0];
     await handleLambdaResponse(pharmaciesHandler, req, res, path);
   });
+} else {
+  console.warn('⚠️ [PHARMACIES] Handler de farmacias no disponible');
 }
 
 // Routes - Laboratories (si existe)

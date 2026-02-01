@@ -193,13 +193,32 @@ export async function login(event: APIGatewayProxyEventV2): Promise<APIGatewayPr
           providerInfo = { id: clinic.id, commercialName: clinic.name, logoUrl: clinic.logo_url };
           serviceType = 'clinic';
         } else {
+          // ⭐ Consulta más específica: solo providers aprobados o pendientes, ordenado por más reciente
           const provider = await prisma.providers.findFirst({
-            where: { user_id: user.id },
-            include: { service_categories: { select: { slug: true, name: true } } },
+            where: { 
+              user_id: user.id,
+              verification_status: { in: ['APPROVED', 'PENDING'] }, // Solo aprobados o pendientes
+            },
+            include: { 
+              service_categories: { select: { slug: true, name: true } },
+              pharmacy_chains: true, // ⭐ Incluir relación con cadena
+            },
+            orderBy: { id: 'desc' }, // El más reciente primero
           });
           
           if (provider) {
-            providerInfo = { id: provider.id, commercialName: provider.commercial_name, logoUrl: provider.logo_url };
+            // ⭐ Si pertenece a una cadena, usar datos de la cadena; si no, usar datos del provider
+            const isChainMember = !!provider.chain_id && !!provider.pharmacy_chains;
+            const chain = provider.pharmacy_chains;
+            
+            providerInfo = { 
+              id: provider.id, 
+              commercialName: isChainMember && chain ? chain.name : provider.commercial_name, 
+              logoUrl: isChainMember && chain ? (chain.logo_url || null) : provider.logo_url,
+              isChainMember: isChainMember, // ⭐ NUEVO
+              chainName: isChainMember && chain ? chain.name : null, // ⭐ NUEVO
+              chainLogo: isChainMember && chain ? chain.logo_url : null, // ⭐ NUEVO
+            };
             serviceType = provider.service_categories?.slug || null;
           }
         }
@@ -357,12 +376,34 @@ export async function refresh(event: APIGatewayProxyEventV2): Promise<APIGateway
 
       // Buscar provider info nuevamente para la respuesta
       let serviceType = null;
+      let providerInfo = null;
       if (user.role === enum_roles.provider) {
+         // ⭐ Consulta más específica: solo providers aprobados o pendientes, ordenado por más reciente
          const provider = await prisma.providers.findFirst({
-            where: { user_id: user.id },
-            include: { service_categories: { select: { slug: true } } }
+            where: { 
+              user_id: user.id,
+              verification_status: { in: ['APPROVED', 'PENDING'] }, // Solo aprobados o pendientes
+            },
+            include: { 
+              service_categories: { select: { slug: true } },
+              pharmacy_chains: true, // ⭐ Incluir relación con cadena
+            },
+            orderBy: { id: 'desc' }, // El más reciente primero
          });
-         if (provider) serviceType = provider.service_categories?.slug;
+         if (provider) {
+           serviceType = provider.service_categories?.slug;
+           // ⭐ Si pertenece a una cadena, usar datos de la cadena; si no, usar datos del provider
+           const isChainMember = !!provider.chain_id && !!provider.pharmacy_chains;
+           const chain = provider.pharmacy_chains;
+           providerInfo = {
+             id: provider.id,
+             commercialName: isChainMember && chain ? chain.name : provider.commercial_name,
+             logoUrl: isChainMember && chain ? (chain.logo_url || null) : provider.logo_url,
+             isChainMember: isChainMember,
+             chainName: isChainMember && chain ? chain.name : null,
+             chainLogo: isChainMember && chain ? chain.logo_url : null,
+           };
+         }
       }
       const normalizedServiceType = serviceType ? String(serviceType).toLowerCase() : null;
 
@@ -381,6 +422,11 @@ export async function refresh(event: APIGatewayProxyEventV2): Promise<APIGateway
       if (normalizedServiceType) {
           responseData.user.serviceType = normalizedServiceType;
           responseData.user.tipo = normalizedServiceType;
+      }
+
+      if (providerInfo) {
+        responseData.user.name = providerInfo.commercialName;
+        responseData.user.provider = providerInfo;
       }
 
       return successResponse(responseData);
@@ -431,24 +477,41 @@ export async function me(event: APIGatewayProxyEventV2): Promise<APIGatewayProxy
   };
 
   if (user.role === enum_roles.provider) {
+    // ⭐ Consulta más específica: solo providers aprobados o pendientes, ordenado por más reciente
     const provider = await prisma.providers.findFirst({
-      where: { user_id: user.id },
-      include: { service_categories: { select: { slug: true, name: true } } },
+      where: { 
+        user_id: user.id,
+        verification_status: { in: ['APPROVED', 'PENDING'] }, // Solo aprobados o pendientes
+      },
+      include: { 
+        service_categories: { select: { slug: true, name: true } },
+        pharmacy_chains: true, // ⭐ Incluir relación con cadena
+      },
+      orderBy: { id: 'desc' }, // El más reciente primero
     });
 
     if (provider) {
       const serviceType = provider.service_categories?.slug || null;
       const normalizedServiceType = serviceType ? String(serviceType).toLowerCase() : null;
 
+      // ⭐ Si pertenece a una cadena, usar datos de la cadena; si no, usar datos del provider
+      const isChainMember = !!provider.chain_id && !!provider.pharmacy_chains;
+      const chain = provider.pharmacy_chains;
+      const displayName = isChainMember && chain ? chain.name : provider.commercial_name;
+      const displayLogo = isChainMember && chain ? (chain.logo_url || null) : provider.logo_url;
+
       if (normalizedServiceType) {
         responseData.serviceType = normalizedServiceType;
         responseData.tipo = normalizedServiceType;
       }
-      responseData.name = provider.commercial_name;
+      responseData.name = displayName;
       responseData.provider = {
         id: provider.id,
-        commercialName: provider.commercial_name,
-        logoUrl: provider.logo_url,
+        commercialName: displayName,
+        logoUrl: displayLogo,
+        isChainMember: isChainMember, // ⭐ NUEVO
+        chainName: isChainMember && chain ? chain.name : null, // ⭐ NUEVO
+        chainLogo: isChainMember && chain ? chain.logo_url : null, // ⭐ NUEVO
       };
     }
   }

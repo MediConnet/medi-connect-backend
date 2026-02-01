@@ -29,12 +29,16 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
   const authContext = authResult as AuthContext;
   const prisma = getPrismaClient();
 
-  // Buscar provider con todas las relaciones
+  // ⭐ Buscar provider con todas las relaciones (solo aprobados o pendientes, más reciente primero)
   const profile = await prisma.providers.findFirst({
-    where: { user_id: authContext.user.id },
+    where: { 
+      user_id: authContext.user.id,
+      verification_status: { in: ['APPROVED', 'PENDING'] }, // Solo aprobados o pendientes
+    },
     include: {
       users: { select: { email: true, profile_picture_url: true } },
       service_categories: true,
+      pharmacy_chains: true, // ⭐ Incluir relación con cadena
       provider_branches: {
         where: { is_main: true },
         take: 1,
@@ -51,15 +55,22 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
 
   const mainBranch = profile.provider_branches[0] || null;
   const user = profile.users;
+  const isChainMember = !!(profile.chain_id && profile.pharmacy_chains); // ⭐ Asegurar booleano
+  const chain = profile.pharmacy_chains;
 
+  // ⭐ Si pertenece a una cadena, usar datos de la cadena; si no, usar datos del provider
   const formattedResponse = {
     id: profile.id,
-    full_name: profile.commercial_name || user?.email,
+    full_name: isChainMember && chain ? chain.name : (profile.commercial_name || user?.email),
     email: user?.email,
-    profile_picture_url: user?.profile_picture_url || profile.logo_url,
+    profile_picture_url: isChainMember && chain ? (chain.logo_url || null) : (user?.profile_picture_url || profile.logo_url || null),
+    is_chain_member: isChainMember === true, // ⭐ SIEMPRE booleano (true o false, nunca null/undefined)
+    chain_name: isChainMember && chain ? chain.name : null,
+    chain_logo: isChainMember && chain ? (chain.logo_url || null) : null,
+    chain_description: isChainMember && chain ? (chain.description || null) : null,
     
     category: profile.service_categories?.name || 'Farmacia',
-    description: profile.description || '',
+    description: isChainMember && chain ? (chain.description || '') : (profile.description || ''), // ⭐ Usar descripción de cadena si aplica
     address: mainBranch?.address_text || '',
     phone: mainBranch?.phone_contact || '',
     whatsapp: mainBranch?.phone_contact || '',
@@ -96,21 +107,53 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
     const body = parseBody(event.body || null, updatePharmacyProfileSchema);
     const prisma = getPrismaClient();
 
+    // ⭐ Buscar provider (solo aprobados o pendientes, más reciente primero)
     let profile = await prisma.providers.findFirst({
-      where: { user_id: authContext.user.id },
-      include: { provider_branches: { where: { is_main: true } } }
+      where: { 
+        user_id: authContext.user.id,
+        verification_status: { in: ['APPROVED', 'PENDING'] }, // Solo aprobados o pendientes
+      },
+      include: { 
+        provider_branches: { where: { is_main: true } },
+        pharmacy_chains: true, // ⭐ Incluir relación con cadena
+      }
     });
 
     if (!profile) return notFoundResponse('Pharmacy profile not found for updates');
 
+    // ⭐ Validar: Si pertenece a una cadena, ignorar cambios a nombre, logo ni descripción
+    const isChainMember = !!(profile.chain_id && profile.pharmacy_chains);
+    if (isChainMember) {
+      // ⭐ Ignorar estos campos si vienen en el request (no retornar error, solo ignorar)
+      // El frontend ya los deshabilitará, pero por seguridad los ignoramos aquí
+      if (body.full_name !== undefined) {
+        console.log(`ℹ️ [PHARMACIES] Ignorando full_name porque pertenece a cadena`);
+        delete body.full_name;
+      }
+      if (body.description !== undefined || body.bio !== undefined) {
+        console.log(`ℹ️ [PHARMACIES] Ignorando description/bio porque pertenece a cadena`);
+        delete body.description;
+        delete body.bio;
+      }
+      // Nota: profile_picture_url no está en el schema, pero si el frontend lo envía, se ignorará
+      console.log(`ℹ️ [PHARMACIES] Farmacia pertenece a cadena, ignorando cambios a nombre y descripción`);
+    }
+
     // --- TRANSACCIÓN UNIFICADA ---
     await prisma.$transaction(async (tx) => {
       
-      // A. Actualizar Provider
-      const providerUpdateData: any = {
-        commercial_name: body.full_name,
-        description: body.bio || body.description,
-      };
+      // A. Actualizar Provider (solo si NO pertenece a una cadena)
+      const providerUpdateData: any = {};
+
+      // ⭐ Solo actualizar commercial_name y description si NO pertenece a una cadena
+      if (!isChainMember) {
+        if (body.full_name !== undefined) {
+          providerUpdateData.commercial_name = body.full_name;
+        }
+        if (body.bio !== undefined || body.description !== undefined) {
+          providerUpdateData.description = body.bio || body.description;
+        }
+      }
       
       // Limpieza de undefined
       Object.keys(providerUpdateData).forEach(key => providerUpdateData[key] === undefined && delete providerUpdateData[key]);
@@ -175,6 +218,7 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
       include: {
         users: { select: { email: true, profile_picture_url: true } },
         service_categories: true,
+        pharmacy_chains: true, // ⭐ Incluir relación con cadena
         provider_branches: {
           where: { is_main: true },
           take: 1,
@@ -185,15 +229,22 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
 
     const updatedMainBranch = updatedProfile?.provider_branches[0] || null;
     const updatedUser = updatedProfile?.users;
+    const updatedIsChainMember = !!(updatedProfile?.chain_id && updatedProfile?.pharmacy_chains);
+    const updatedChain = updatedProfile?.pharmacy_chains;
 
+    // ⭐ Si pertenece a una cadena, usar datos de la cadena; si no, usar datos del provider
     const formattedResponse = {
       id: updatedProfile?.id,
-      full_name: updatedProfile?.commercial_name || updatedUser?.email,
+      full_name: updatedIsChainMember && updatedChain ? updatedChain.name : (updatedProfile?.commercial_name || updatedUser?.email),
       email: updatedUser?.email, 
-      profile_picture_url: updatedUser?.profile_picture_url || updatedProfile?.logo_url,
+      profile_picture_url: updatedIsChainMember && updatedChain ? (updatedChain.logo_url || null) : (updatedUser?.profile_picture_url || updatedProfile?.logo_url || null),
+      is_chain_member: updatedIsChainMember === true, // ⭐ SIEMPRE booleano (true o false, nunca null/undefined)
+      chain_name: updatedIsChainMember && updatedChain ? updatedChain.name : null,
+      chain_logo: updatedIsChainMember && updatedChain ? (updatedChain.logo_url || null) : null,
+      chain_description: updatedIsChainMember && updatedChain ? (updatedChain.description || null) : null,
       
       category: updatedProfile?.service_categories?.name || 'Farmacia',
-      description: updatedProfile?.description || '',
+      description: updatedIsChainMember && updatedChain ? (updatedChain.description || '') : (updatedProfile?.description || ''), // ⭐ Usar descripción de cadena si aplica
       address: updatedMainBranch?.address_text || '',
       phone: updatedMainBranch?.phone_contact || '',
       whatsapp: updatedMainBranch?.phone_contact || '',

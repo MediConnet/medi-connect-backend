@@ -34,6 +34,7 @@ export async function getPharmacyChains(event: APIGatewayProxyEventV2): Promise<
       id: chain.id,
       name: chain.name,
       logoUrl: chain.logo_url || null,
+      description: chain.description || null,
       createdAt: chain.created_at?.toISOString() || null,
       updatedAt: chain.updated_at?.toISOString() || null,
       isActive: chain.is_active ?? true,
@@ -76,7 +77,8 @@ export async function createPharmacyChain(event: APIGatewayProxyEventV2): Promis
       data: {
         id: randomUUID(),
         name: body.name,
-        logo_url: body.logoUrl,
+        logo_url: body.logoUrl || null,
+        description: body.description || null,
         is_active: body.isActive ?? true,
         created_at: new Date(),
         updated_at: new Date(),
@@ -89,6 +91,7 @@ export async function createPharmacyChain(event: APIGatewayProxyEventV2): Promis
         id: chain.id,
         name: chain.name,
         logoUrl: chain.logo_url || null,
+        description: chain.description || null,
         createdAt: chain.created_at?.toISOString() || null,
         updatedAt: chain.updated_at?.toISOString() || null,
         isActive: chain.is_active ?? true,
@@ -149,20 +152,64 @@ export async function updatePharmacyChain(event: APIGatewayProxyEventV2): Promis
       updated_at: new Date(),
     };
 
-    if (body.name !== undefined) updateData.name = body.name;
-    if (body.logoUrl !== undefined) updateData.logo_url = body.logoUrl;
+    // Detectar qué campos se están actualizando
+    let nameUpdated = false;
+    let logoUpdated = false;
+    let descriptionUpdated = false;
+
+    if (body.name !== undefined && body.name !== existingChain.name) {
+      updateData.name = body.name;
+      nameUpdated = true;
+    }
+    if (body.logoUrl !== undefined && body.logoUrl !== existingChain.logo_url) {
+      updateData.logo_url = body.logoUrl;
+      logoUpdated = true;
+    }
+    if (body.description !== undefined && body.description !== existingChain.description) {
+      updateData.description = body.description;
+      descriptionUpdated = true;
+    }
     if (body.isActive !== undefined) updateData.is_active = body.isActive;
 
+    // Actualizar la cadena
     const chain = await prisma.pharmacy_chains.update({
       where: { id: chainId },
       data: updateData,
     });
+
+    // ⭐ ACTUALIZACIÓN EN CASCADA: Actualizar todas las farmacias asociadas
+    if (nameUpdated || logoUpdated || descriptionUpdated) {
+      console.log(`🔄 [ADMIN] Actualizando farmacias asociadas a la cadena: ${chain.name}`);
+      
+      const cascadeUpdateData: any = {};
+      if (nameUpdated) {
+        cascadeUpdateData.commercial_name = chain.name; // ⭐ Actualizar nombre
+      }
+      if (logoUpdated) {
+        cascadeUpdateData.logo_url = chain.logo_url; // ⭐ Actualizar logo
+      }
+      if (descriptionUpdated) {
+        cascadeUpdateData.description = chain.description; // ⭐ Actualizar descripción
+      }
+
+      if (Object.keys(cascadeUpdateData).length > 0) {
+        const updatedCount = await prisma.providers.updateMany({
+          where: {
+            chain_id: chainId,
+            verification_status: { in: ['APPROVED', 'PENDING'] }, // Solo aprobadas o pendientes
+          },
+          data: cascadeUpdateData,
+        });
+        console.log(`✅ [ADMIN] ${updatedCount.count} farmacias actualizadas en cascada`);
+      }
+    }
 
     console.log(`✅ [ADMIN] Cadena actualizada: ${chain.name}`);
     return successResponse({
       id: chain.id,
       name: chain.name,
       logoUrl: chain.logo_url || null,
+      description: chain.description || null,
       createdAt: chain.created_at?.toISOString() || null,
       updatedAt: chain.updated_at?.toISOString() || null,
       isActive: chain.is_active ?? true,
@@ -244,8 +291,9 @@ export async function getActivePharmacyChains(_event: APIGatewayProxyEventV2): P
       id: chain.id,
       name: chain.name,
       logoUrl: chain.logo_url || null,
-      createdAt: chain.created_at?.toISOString() || null, // ⭐ Agregado
-      updatedAt: chain.updated_at?.toISOString() || null, // ⭐ Agregado
+      description: chain.description || null,
+      createdAt: chain.created_at?.toISOString() || null,
+      updatedAt: chain.updated_at?.toISOString() || null,
       isActive: chain.is_active ?? true,
     }));
 
