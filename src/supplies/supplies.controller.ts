@@ -1,17 +1,74 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResult } from 'aws-lambda';
-import { getPrismaClient } from '../shared/prisma';
-import { successResponse, errorResponse, notFoundResponse, internalErrorResponse, unauthorizedResponse } from '../shared/response';
-import { requireRole } from '../shared/auth';
-import { enum_roles } from '../generated/prisma/client';
-import { extractIdFromPath } from '../shared/validators';
-import { logger } from '../shared/logger';
 import { z } from 'zod';
+import { enum_roles } from '../generated/prisma/client';
+import { requireRole } from '../shared/auth';
+import { logger } from '../shared/logger';
+import { getPrismaClient } from '../shared/prisma';
+import { errorResponse, internalErrorResponse, notFoundResponse, successResponse, unauthorizedResponse } from '../shared/response';
+import { extractIdFromPath } from '../shared/validators';
 
 // Schema para crear reseña
 const createReviewSchema = z.object({
   rating: z.number().int().min(1).max(5),
   comment: z.string().min(1).max(1000).optional(),
 });
+
+// --- HELPER: Formateo de Horarios ---
+// Recibe un objeto Date (ej: 1970-01-01T09:00:00.000Z) y devuelve "09:00"
+function formatTime(date: Date): string {
+  if (!date) return '';
+  return date.toISOString().substring(11, 16);
+}
+
+// Calcula el resumen del horario para mostrar en tarjetas
+function calculateScheduleSummary(schedules: any[]): string {
+  if (!schedules || schedules.length === 0) return 'Horario no disponible';
+
+  const activeSchedules = schedules.filter(s => s.is_active);
+  if (activeSchedules.length === 0) return 'Cerrado temporalmente';
+
+  const daysMap = new Map<number, { start: string, end: string }>();
+  
+  activeSchedules.forEach(s => {
+    if (s.start_time && s.end_time && s.day_of_week !== null) {
+      daysMap.set(s.day_of_week, { 
+        start: formatTime(s.start_time), 
+        end: formatTime(s.end_time) 
+      });
+    }
+  });
+
+  const weekDays = [1, 2, 3, 4, 5];
+  const firstDay = daysMap.get(1); 
+  
+  if (firstDay) {
+    const isMonToFriSame = weekDays.every(d => {
+      const day = daysMap.get(d);
+      return day && day.start === firstDay.start && day.end === firstDay.end;
+    });
+
+    if (isMonToFriSame) {
+      const sat = daysMap.get(6);
+      if (sat && sat.start === firstDay.start && sat.end === firstDay.end) {
+        return `Lun - Sáb: ${firstDay.start} - ${firstDay.end}`;
+      }
+      return `Lun - Vie: ${firstDay.start} - ${firstDay.end}`;
+    }
+  }
+
+  const todayDate = new Date();
+  let todayIndex = todayDate.getDay(); 
+  const dbDay = todayIndex === 0 ? 7 : todayIndex;
+  
+  const todaySchedule = daysMap.get(dbDay);
+  if (todaySchedule) {
+    return `Hoy: ${todaySchedule.start} - ${todaySchedule.end}`;
+  }
+
+  return 'Horarios Variados';
+}
+
+// --- CONTROLLERS ---
 
 // GET /api/supplies
 export async function getSupplies(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
@@ -20,7 +77,6 @@ export async function getSupplies(event: APIGatewayProxyEventV2): Promise<APIGat
   const prisma = getPrismaClient();
   
   try {
-    // Buscar providers con categoría "supplies" o "insumos"
     const suppliesCategory = await prisma.service_categories.findFirst({
       where: {
         OR: [
@@ -32,7 +88,6 @@ export async function getSupplies(event: APIGatewayProxyEventV2): Promise<APIGat
     });
 
     if (!suppliesCategory) {
-      console.warn('⚠️ [SUPPLIES] No se encontró categoría de insumos, retornando array vacío');
       return successResponse([]);
     }
 
@@ -44,10 +99,14 @@ export async function getSupplies(event: APIGatewayProxyEventV2): Promise<APIGat
       include: {
         provider_branches: {
           where: { is_active: true },
-          take: 1,
+          take: 1, 
+          include: {
+            provider_schedules: true 
+          }
         },
-        service_categories: {
-          select: { name: true, slug: true },
+        provider_catalog: {
+          where: { is_available: true },
+          take: 10,
         },
       },
       take: 50,
@@ -55,14 +114,27 @@ export async function getSupplies(event: APIGatewayProxyEventV2): Promise<APIGat
 
     const supplies = providers.map(provider => {
       const branch = provider.provider_branches[0];
+      
+      const horarioTexto = branch 
+        ? calculateScheduleSummary(branch.provider_schedules) 
+        : 'Horario no disponible';
+
       return {
         id: provider.id,
         name: provider.commercial_name || 'Tienda de Insumos',
         description: provider.description || null,
-        address: branch?.address_text || null,
+        address: branch?.address_text || null, // 
         phone: branch?.phone_contact || null,
         rating: Number(branch?.rating_cache || 0),
         imageUrl: branch?.image_url || provider.logo_url || null,
+        horarioAtencion: horarioTexto, // 
+        products: provider.provider_catalog.map(prod => ({
+            id: prod.id,
+            name: prod.name,
+            price: Number(prod.price),
+            imageUrl: prod.image_url,
+            description: prod.description
+        }))
       };
     });
 
@@ -76,14 +148,10 @@ export async function getSupplies(event: APIGatewayProxyEventV2): Promise<APIGat
 
 // GET /api/supplies/:id
 export async function getSupplyById(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('✅ [SUPPLIES] GET /api/supplies/:id - Obteniendo detalle de tienda');
-  
   const prisma = getPrismaClient();
   const supplyId = extractIdFromPath(event.requestContext.http.path, '/api/supplies/');
   
-  if (!supplyId) {
-    return errorResponse('Supply ID is required', 400);
-  }
+  if (!supplyId) return errorResponse('Supply ID is required', 400);
 
   try {
     const provider = await prisma.providers.findFirst({
@@ -92,10 +160,13 @@ export async function getSupplyById(event: APIGatewayProxyEventV2): Promise<APIG
         provider_branches: {
           where: { is_active: true },
           take: 1,
+          include: {
+            provider_schedules: true 
+          }
         },
-        service_categories: {
-          select: { name: true, slug: true },
-        },
+        provider_catalog: {
+            where: { is_available: true }
+        }
       },
     });
 
@@ -104,6 +175,11 @@ export async function getSupplyById(event: APIGatewayProxyEventV2): Promise<APIG
     }
 
     const branch = provider.provider_branches[0];
+    
+    const horarioTexto = branch 
+        ? calculateScheduleSummary(branch.provider_schedules) 
+        : 'Horario no disponible';
+
     return successResponse({
       id: provider.id,
       name: provider.commercial_name || 'Tienda de Insumos',
@@ -112,53 +188,44 @@ export async function getSupplyById(event: APIGatewayProxyEventV2): Promise<APIG
       phone: branch?.phone_contact || null,
       rating: Number(branch?.rating_cache || 0),
       imageUrl: branch?.image_url || provider.logo_url || null,
+      horarioAtencion: horarioTexto, 
+      products: provider.provider_catalog.map(prod => ({
+        id: prod.id,
+        name: prod.name,
+        price: Number(prod.price),
+        imageUrl: prod.image_url,
+        description: prod.description
+      }))
     });
   } catch (error: any) {
-    console.error(`❌ [SUPPLIES] Error al obtener tienda:`, error.message);
-    logger.error('Error getting supply by id', error);
     return internalErrorResponse('Failed to get supply');
   }
 }
 
 // GET /api/supplies/:id/reviews
 export async function getSupplyReviews(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('✅ [SUPPLIES] GET /api/supplies/:id/reviews - Obteniendo reseñas');
-  
   const prisma = getPrismaClient();
   const supplyId = extractIdFromPath(event.requestContext.http.path, '/api/supplies/');
   
-  if (!supplyId) {
-    return errorResponse('Supply ID is required', 400);
-  }
+  if (!supplyId) return errorResponse('Supply ID is required', 400);
 
   try {
-    // Buscar reviews de las branches del provider
     const provider = await prisma.providers.findFirst({
       where: { id: supplyId },
       include: {
-        provider_branches: {
-          select: { id: true },
-        },
+        provider_branches: { select: { id: true } },
       },
     });
 
-    if (!provider) {
-      return notFoundResponse('Supply store not found');
-    }
+    if (!provider) return notFoundResponse('Supply store not found');
 
     const branchIds = provider.provider_branches.map(b => b.id);
 
     const reviews = await prisma.reviews.findMany({
-      where: {
-        branch_id: { in: branchIds },
-      },
+      where: { branch_id: { in: branchIds } },
       include: {
         patients: {
-          include: {
-            users: {
-              select: { email: true },
-            },
-          },
+          include: { users: { select: { email: true } } },
         },
       },
       orderBy: { created_at: 'desc' },
@@ -177,16 +244,12 @@ export async function getSupplyReviews(event: APIGatewayProxyEventV2): Promise<A
 
     return successResponse(reviewsData);
   } catch (error: any) {
-    console.error(`❌ [SUPPLIES] Error al obtener reseñas:`, error.message);
-    logger.error('Error getting supply reviews', error);
     return internalErrorResponse('Failed to get reviews');
   }
 }
 
 // POST /api/supplies/:id/reviews
 export async function createSupplyReview(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('✅ [SUPPLIES] POST /api/supplies/:id/reviews - Creando reseña');
-  
   const authResult = await requireRole(event, [enum_roles.patient]);
   if ('statusCode' in authResult) return authResult;
 
@@ -194,22 +257,16 @@ export async function createSupplyReview(event: APIGatewayProxyEventV2): Promise
   const { randomUUID } = await import('crypto');
   const supplyId = extractIdFromPath(event.requestContext.http.path, '/api/supplies/');
   
-  if (!supplyId) {
-    return errorResponse('Supply ID is required', 400);
-  }
+  if (!supplyId) return errorResponse('Supply ID is required', 400);
 
   try {
     const body = JSON.parse(event.body || '{}');
     const validated = createReviewSchema.parse(body);
 
-    // Buscar provider y su branch principal
     const provider = await prisma.providers.findFirst({
       where: { id: supplyId },
       include: {
-        provider_branches: {
-          where: { is_active: true },
-          take: 1,
-        },
+        provider_branches: { where: { is_active: true }, take: 1 },
       },
     });
 
@@ -218,15 +275,11 @@ export async function createSupplyReview(event: APIGatewayProxyEventV2): Promise
     }
 
     const branch = provider.provider_branches[0];
-
-    // Buscar paciente del usuario autenticado
     const patient = await prisma.patients.findFirst({
       where: { user_id: authResult.user.id },
     });
 
-    if (!patient) {
-      return notFoundResponse('Patient profile not found');
-    }
+    if (!patient) return notFoundResponse('Patient profile not found');
 
     const review = await prisma.reviews.create({
       data: {
@@ -237,13 +290,7 @@ export async function createSupplyReview(event: APIGatewayProxyEventV2): Promise
         comment: validated.comment || null,
       },
       include: {
-        patients: {
-          include: {
-            users: {
-              select: { email: true },
-            },
-          },
-        },
+        patients: { include: { users: { select: { email: true } } } },
       },
     });
 
@@ -257,61 +304,39 @@ export async function createSupplyReview(event: APIGatewayProxyEventV2): Promise
       createdAt: review.created_at?.toISOString() || new Date().toISOString(),
     }, 201);
   } catch (error: any) {
-    if (error instanceof z.ZodError) {
-      return errorResponse(error.errors[0].message, 400);
-    }
-    console.error(`❌ [SUPPLIES] Error al crear reseña:`, error.message);
-    logger.error('Error creating supply review', error);
+    if (error instanceof z.ZodError) return errorResponse(error.errors[0].message, 400);
     return internalErrorResponse('Failed to create review');
   }
 }
 
 // GET /api/supplies/:userId/dashboard
 export async function getSupplyDashboard(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('✅ [SUPPLIES] GET /api/supplies/:userId/dashboard - Obteniendo dashboard');
-  
   const authResult = await requireRole(event, [enum_roles.provider]);
   if ('statusCode' in authResult) return authResult;
 
   const prisma = getPrismaClient();
   const path = event.requestContext.http.path;
-  // Extraer userId del path: /api/supplies/{userId}/dashboard
   const pathParts = path.split('/');
   const userIdIndex = pathParts.indexOf('supplies') + 1;
   const userId = pathParts[userIdIndex];
 
-  // Verificar que el userId coincida con el usuario autenticado
-  if (userId !== authResult.user.id) {
-    return unauthorizedResponse('Unauthorized');
-  }
+  if (userId !== authResult.user.id) return unauthorizedResponse('Unauthorized');
 
   try {
-    // Buscar provider del usuario
     const provider = await prisma.providers.findFirst({
-      where: {
-        user_id: authResult.user.id,
-      },
+      where: { user_id: authResult.user.id },
       include: {
-        provider_branches: {
-          where: { is_active: true },
-          take: 1,
-        },
-        service_categories: {
-          select: { name: true, slug: true },
-        },
+        provider_branches: { where: { is_active: true }, take: 1 },
+        service_categories: { select: { name: true, slug: true } },
       },
     });
 
-    if (!provider) {
-      return notFoundResponse('Supply store not found');
-    }
+    if (!provider) return notFoundResponse('Supply store not found');
 
     const branch = provider.provider_branches[0];
-
-    // Obtener estadísticas (mock por ahora, ya que no hay tabla de productos/órdenes)
     const stats = {
-      totalProducts: 0, // TODO: Implementar cuando haya tabla de productos
-      totalOrders: 0, // TODO: Implementar cuando haya tabla de órdenes
+      totalProducts: 0,
+      totalOrders: 0,
       pendingOrders: 0,
       completedOrders: 0,
     };
@@ -326,12 +351,10 @@ export async function getSupplyDashboard(event: APIGatewayProxyEventV2): Promise
         whatsapp: branch?.phone_contact || null,
       },
       stats,
-      recentOrders: [], // TODO: Implementar cuando haya tabla de órdenes
-      products: [], // TODO: Implementar cuando haya tabla de productos
+      recentOrders: [],
+      products: [],
     });
   } catch (error: any) {
-    console.error(`❌ [SUPPLIES] Error al obtener dashboard:`, error.message);
-    logger.error('Error getting supply dashboard', error);
     return internalErrorResponse('Failed to get dashboard');
   }
 }
