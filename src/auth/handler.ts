@@ -1,7 +1,6 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResult } from 'aws-lambda';
 import { logger } from '../shared/logger';
 import { errorResponse, internalErrorResponse } from '../shared/response';
-// Importamos todas las funciones del controller
 import * as authController from './auth.controller';
 
 export async function handler(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
@@ -10,7 +9,6 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
 
   logger.info('Auth handler invoked', { method, path });
 
-  // Manejar preflight CORS
   if (method === 'OPTIONS') {
     const { optionsResponse } = await import('../shared/response');
     return optionsResponse(event);
@@ -19,12 +17,12 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
   try {
     // --- RUTAS DE AUTENTICACIÓN ---
 
-    // 1. Registro
+    // 1. Registro (Unificado para Pacientes y Profesionales)
     if (method === 'POST' && path === '/api/auth/register') {
       return await authController.register(event);
     }
 
-    // 2. Login (Devuelve user + tokens + tipo)
+    // 2. Login
     if (method === 'POST' && path === '/api/auth/login') {
       return await authController.login(event);
     }
@@ -44,33 +42,17 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       return await authController.changePassword(event);
     }
 
-    // 6. Recuperación de Contraseña (Forgot)
+    // 6. Recuperación de Contraseña
     if (method === 'POST' && path === '/api/auth/forgot-password') {
       return await authController.forgotPassword(event);
     }
 
-    // 7. Reseteo de Contraseña (Reset)
+    // 7. Reseteo de Contraseña
     if (method === 'POST' && path === '/api/auth/reset-password') {
       return await authController.resetPassword(event);
     }
 
-    // 8. Registro Profesional (Proxy a Admin Handler)
-    if (method === 'POST' && path === '/api/auth/register-professional') {
-      console.log('✅ [AUTH] Proxying to /api/providers/register');
-      const { handler: adminHandler } = await import('../admin/handler');
-      
-      const proxiedEvent = {
-        ...event,
-        requestContext: {
-          ...event.requestContext,
-          http: { ...event.requestContext.http, path: '/api/providers/register' },
-        },
-      } as APIGatewayProxyEventV2;
-      
-      return await adminHandler(proxiedEvent);
-    }
-
-    // 9. Logout (NUEVO - Cierre de sesión)
+    // 8. Logout
     if (method === 'POST' && path === '/api/auth/logout') {
       return await authController.logout(event);
     }
