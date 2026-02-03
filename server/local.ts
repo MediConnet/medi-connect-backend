@@ -151,6 +151,7 @@ import { handler as doctorsHandler } from '../src/doctors/handler';
 import { handler as suppliesHandler } from '../src/supplies/handler';
 import { handler as pharmaciesHandler } from '../src/pharmacies/handler';
 import { handler as publicHandler } from '../src/public/handler';
+import { handler as pharmacyChainsHandler } from '../src/pharmacy-chains/handler';
 
 // Importar otros handlers si existen
 let laboratoriesHandler: any;
@@ -242,7 +243,7 @@ app.use('/api/supplies', async (req, res) => {
 // Routes - Pharmacy Chains (público)
 app.use('/api/pharmacy-chains', async (req, res) => {
   const path = req.originalUrl.split('?')[0];
-  await handleLambdaResponse(pharmaciesHandler, req, res, path);
+  await handleLambdaResponse(pharmacyChainsHandler, req, res, path);
 });
 
 // Routes - Patients

@@ -8,22 +8,7 @@ import { successResponse, errorResponse } from '../shared/response';
  */
 export async function getHomeContent(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   try {
-    const prisma = getPrismaClient();
-
-    // Intentar obtener contenido de la base de datos
-    const content = await prisma.home_content.findFirst({
-      where: {
-        section: 'main',
-        is_active: true,
-      },
-    });
-
-    // Si existe contenido en BD, retornarlo
-    if (content && content.content) {
-      return successResponse(content.content);
-    }
-
-    // Si no existe, retornar valores por defecto
+    // Retornar valores por defecto (las tablas home_content no están implementadas aún)
     const defaultContent = {
       hero: {
         title: 'Tu Salud es Nuestra Prioridad',
@@ -68,31 +53,7 @@ export async function getHomeContent(event: APIGatewayProxyEventV2): Promise<API
  */
 export async function getHomeFeatures(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   try {
-    const prisma = getPrismaClient();
-
-    const features = await prisma.home_features.findMany({
-      where: {
-        is_active: true,
-      },
-      orderBy: {
-        order: 'asc',
-      },
-    });
-
-    // Si existen features en BD, retornarlas
-    if (features.length > 0) {
-      const formattedFeatures = features.map((feature) => ({
-        id: feature.id,
-        icon: feature.icon,
-        title: feature.title,
-        description: feature.description,
-        order: feature.order,
-      }));
-
-      return successResponse(formattedFeatures);
-    }
-
-    // Si no existen, retornar valores por defecto
+    // Retornar valores por defecto (las tablas home_features no están implementadas aún)
     const defaultFeatures = [
       {
         id: '1',

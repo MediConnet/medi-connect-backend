@@ -15,33 +15,40 @@ export async function getAmbulanceProfile(event: APIGatewayProxyEventV2): Promis
     }
     const authContext = authResult as AuthContext;
 
-    if (authContext.user.role !== 'ambulance') {
+    if (authContext.user.role !== 'ambulance' && authContext.user.role !== 'provider') {
       return errorResponse('No autorizado. Debe ser proveedor de ambulancia', 403);
     }
 
     const prisma = getPrismaClient();
 
-    const ambulance = await prisma.ambulances.findFirst({
+    const provider = await prisma.providers.findFirst({
       where: { user_id: authContext.user.id },
+      include: {
+        provider_branches: {
+          where: { is_active: true },
+        },
+      },
     });
 
-    if (!ambulance) {
+    if (!provider) {
       return errorResponse('Ambulancia no encontrada', 404);
     }
 
-    // Calcular total de viajes
-    const totalTrips = await prisma.ambulance_trips.count({
-      where: { ambulance_id: ambulance.id },
+    const mainBranch = provider.provider_branches.find((b) => b.is_main) || provider.provider_branches[0];
+
+    // Calcular total de viajes (usando appointments como viajes)
+    const totalTrips = await prisma.appointments.count({
+      where: { provider_id: provider.id },
     });
 
     return successResponse({
-      id: ambulance.id,
-      name: ambulance.name,
-      description: ambulance.description,
-      phone: ambulance.phone,
-      whatsapp: ambulance.whatsapp,
-      address: ambulance.address,
-      rating: ambulance.rating_cache || 0,
+      id: provider.id,
+      name: provider.commercial_name || 'Servicio de Ambulancia',
+      description: provider.description,
+      phone: mainBranch?.phone_contact || '',
+      whatsapp: mainBranch?.phone_contact || '',
+      address: mainBranch?.address_text || '',
+      rating: mainBranch?.rating_cache ? parseFloat(mainBranch.rating_cache.toString()) : 0,
       totalTrips,
     });
   } catch (error: any) {
@@ -62,7 +69,7 @@ export async function updateAmbulanceProfile(event: APIGatewayProxyEventV2): Pro
     }
     const authContext = authResult as AuthContext;
 
-    if (authContext.user.role !== 'ambulance') {
+    if (authContext.user.role !== 'ambulance' && authContext.user.role !== 'provider') {
       return errorResponse('No autorizado. Debe ser proveedor de ambulancia', 403);
     }
 
@@ -71,39 +78,58 @@ export async function updateAmbulanceProfile(event: APIGatewayProxyEventV2): Pro
 
     const prisma = getPrismaClient();
 
-    const ambulance = await prisma.ambulances.findFirst({
+    const provider = await prisma.providers.findFirst({
       where: { user_id: authContext.user.id },
-    });
-
-    if (!ambulance) {
-      return errorResponse('Ambulancia no encontrada', 404);
-    }
-
-    const updated = await prisma.ambulances.update({
-      where: { id: ambulance.id },
-      data: {
-        name,
-        description,
-        phone,
-        whatsapp,
-        address,
-        updated_at: new Date(),
+      include: {
+        provider_branches: {
+          where: { is_active: true },
+        },
       },
     });
 
+    if (!provider) {
+      return errorResponse('Ambulancia no encontrada', 404);
+    }
+
+    // Actualizar proveedor
+    const updatedProvider = await prisma.providers.update({
+      where: { id: provider.id },
+      data: {
+        commercial_name: name,
+        description,
+      },
+    });
+
+    // Actualizar sucursal principal
+    const mainBranch = provider.provider_branches.find((b) => b.is_main) || provider.provider_branches[0];
+    if (mainBranch) {
+      await prisma.provider_branches.update({
+        where: { id: mainBranch.id },
+        data: {
+          phone_contact: phone,
+          address_text: address,
+        },
+      });
+    }
+
     // Calcular total de viajes
-    const totalTrips = await prisma.ambulance_trips.count({
-      where: { ambulance_id: updated.id },
+    const totalTrips = await prisma.appointments.count({
+      where: { provider_id: updatedProvider.id },
+    });
+
+    // Obtener sucursal actualizada
+    const updatedBranch = await prisma.provider_branches.findUnique({
+      where: { id: mainBranch?.id },
     });
 
     return successResponse({
-      id: updated.id,
-      name: updated.name,
-      description: updated.description,
-      phone: updated.phone,
-      whatsapp: updated.whatsapp,
-      address: updated.address,
-      rating: updated.rating_cache || 0,
+      id: updatedProvider.id,
+      name: updatedProvider.commercial_name || 'Servicio de Ambulancia',
+      description: updatedProvider.description,
+      phone: updatedBranch?.phone_contact || '',
+      whatsapp: updatedBranch?.phone_contact || '',
+      address: updatedBranch?.address_text || '',
+      rating: updatedBranch?.rating_cache ? parseFloat(updatedBranch.rating_cache.toString()) : 0,
       totalTrips,
     });
   } catch (error: any) {
@@ -124,31 +150,35 @@ export async function getAmbulanceReviews(event: APIGatewayProxyEventV2): Promis
     }
     const authContext = authResult as AuthContext;
 
-    if (authContext.user.role !== 'ambulance') {
+    if (authContext.user.role !== 'ambulance' && authContext.user.role !== 'provider') {
       return errorResponse('No autorizado. Debe ser proveedor de ambulancia', 403);
     }
 
     const prisma = getPrismaClient();
 
-    const ambulance = await prisma.ambulances.findFirst({
+    const provider = await prisma.providers.findFirst({
       where: { user_id: authContext.user.id },
     });
 
-    if (!ambulance) {
+    if (!provider) {
       return errorResponse('Ambulancia no encontrada', 404);
     }
 
-    const reviews = await prisma.ambulance_reviews.findMany({
-      where: { ambulance_id: ambulance.id },
+    // Obtener las sucursales del proveedor
+    const branches = await prisma.provider_branches.findMany({
+      where: { provider_id: provider.id },
+      select: { id: true },
+    });
+
+    const branchIds = branches.map((b) => b.id);
+
+    // Obtener reseñas de todas las sucursales
+    const reviews = await prisma.reviews.findMany({
+      where: { branch_id: { in: branchIds } },
       include: {
-        users: {
+        patients: {
           select: {
-            email: true,
-            patients: {
-              select: {
-                full_name: true,
-              },
-            },
+            full_name: true,
           },
         },
       },
@@ -159,9 +189,9 @@ export async function getAmbulanceReviews(event: APIGatewayProxyEventV2): Promis
 
     const formattedReviews = reviews.map((review) => ({
       id: review.id,
-      rating: review.rating,
+      rating: review.rating || 0,
       comment: review.comment,
-      patientName: review.users?.patients?.[0]?.full_name || review.users?.email || 'Paciente',
+      patientName: review.patients?.full_name || 'Paciente',
       date: review.created_at,
     }));
 
@@ -184,7 +214,7 @@ export async function getAmbulanceSettings(event: APIGatewayProxyEventV2): Promi
     }
     const authContext = authResult as AuthContext;
 
-    if (authContext.user.role !== 'ambulance') {
+    if (authContext.user.role !== 'ambulance' && authContext.user.role !== 'provider') {
       return errorResponse('No autorizado. Debe ser proveedor de ambulancia', 403);
     }
 
@@ -209,7 +239,6 @@ export async function getAmbulanceSettings(event: APIGatewayProxyEventV2): Promi
   }
 }
 
-
 /**
  * GET /api/ambulances
  * Listar todas las ambulancias (público)
@@ -218,33 +247,44 @@ export async function getAllAmbulances(event: APIGatewayProxyEventV2): Promise<A
   try {
     const prisma = getPrismaClient();
 
-    const ambulances = await prisma.ambulances.findMany({
+    // Obtener la categoría de ambulancias
+    const ambulanceCategory = await prisma.service_categories.findFirst({
+      where: { slug: 'ambulance' },
+    });
+
+    if (!ambulanceCategory) {
+      return errorResponse('Categoría de ambulancias no encontrada', 404);
+    }
+
+    // Obtener proveedores de tipo ambulancia con sus sucursales principales
+    const providers = await prisma.providers.findMany({
       where: {
-        is_active: true,
+        category_id: ambulanceCategory.id,
+        verification_status: 'APPROVED',
       },
-      select: {
-        id: true,
-        name: true,
-        description: true,
-        address: true,
-        phone: true,
-        image_url: true,
-        rating_cache: true,
-      },
-      orderBy: {
-        rating_cache: 'desc',
+      include: {
+        provider_branches: {
+          where: {
+            is_active: true,
+            is_main: true,
+          },
+          take: 1,
+        },
       },
     });
 
-    const formattedAmbulances = ambulances.map((ambulance) => ({
-      id: ambulance.id,
-      name: ambulance.name,
-      description: ambulance.description,
-      address: ambulance.address,
-      phone: ambulance.phone,
-      rating: ambulance.rating_cache || 0,
-      imageUrl: ambulance.image_url,
-    }));
+    const formattedAmbulances = providers.map((provider) => {
+      const mainBranch = provider.provider_branches[0];
+      return {
+        id: provider.id,
+        name: provider.commercial_name || 'Servicio de Ambulancia',
+        description: provider.description,
+        address: mainBranch?.address_text || '',
+        phone: mainBranch?.phone_contact || '',
+        rating: mainBranch?.rating_cache ? parseFloat(mainBranch.rating_cache.toString()) : 0,
+        imageUrl: provider.logo_url,
+      };
+    });
 
     return successResponse(formattedAmbulances);
   } catch (error: any) {
@@ -266,24 +306,31 @@ export async function getAmbulanceById(event: APIGatewayProxyEventV2): Promise<A
 
     const prisma = getPrismaClient();
 
-    const ambulance = await prisma.ambulances.findUnique({
+    const provider = await prisma.providers.findUnique({
       where: { id: ambulanceId },
+      include: {
+        provider_branches: {
+          where: { is_active: true },
+        },
+      },
     });
 
-    if (!ambulance) {
+    if (!provider) {
       return errorResponse('Ambulancia no encontrada', 404);
     }
 
+    const mainBranch = provider.provider_branches.find((b) => b.is_main) || provider.provider_branches[0];
+
     return successResponse({
-      id: ambulance.id,
-      name: ambulance.name,
-      description: ambulance.description,
-      address: ambulance.address,
-      phone: ambulance.phone,
-      whatsapp: ambulance.whatsapp,
-      email: ambulance.email,
-      rating: ambulance.rating_cache || 0,
-      imageUrl: ambulance.image_url,
+      id: provider.id,
+      name: provider.commercial_name || 'Servicio de Ambulancia',
+      description: provider.description,
+      address: mainBranch?.address_text || '',
+      phone: mainBranch?.phone_contact || '',
+      whatsapp: mainBranch?.phone_contact || '',
+      email: mainBranch?.email_contact || '',
+      rating: mainBranch?.rating_cache ? parseFloat(mainBranch.rating_cache.toString()) : 0,
+      imageUrl: provider.logo_url,
     });
   } catch (error: any) {
     console.error('Error getting ambulance:', error);
@@ -301,39 +348,49 @@ export async function searchAmbulances(event: APIGatewayProxyEventV2): Promise<A
 
     const prisma = getPrismaClient();
 
-    const ambulances = await prisma.ambulances.findMany({
+    // Obtener la categoría de ambulancias
+    const ambulanceCategory = await prisma.service_categories.findFirst({
+      where: { slug: 'ambulance' },
+    });
+
+    if (!ambulanceCategory) {
+      return errorResponse('Categoría de ambulancias no encontrada', 404);
+    }
+
+    // Buscar proveedores de tipo ambulancia
+    const providers = await prisma.providers.findMany({
       where: {
-        is_active: true,
+        category_id: ambulanceCategory.id,
+        verification_status: 'APPROVED',
         OR: [
-          { name: { contains: query, mode: 'insensitive' } },
+          { commercial_name: { contains: query, mode: 'insensitive' } },
           { description: { contains: query, mode: 'insensitive' } },
-          { address: { contains: query, mode: 'insensitive' } },
         ],
       },
-      select: {
-        id: true,
-        name: true,
-        description: true,
-        address: true,
-        phone: true,
-        image_url: true,
-        rating_cache: true,
-      },
-      orderBy: {
-        rating_cache: 'desc',
+      include: {
+        provider_branches: {
+          where: {
+            is_active: true,
+            is_main: true,
+          },
+          take: 1,
+        },
       },
       take: 20,
     });
 
-    const formattedAmbulances = ambulances.map((ambulance) => ({
-      id: ambulance.id,
-      name: ambulance.name,
-      description: ambulance.description,
-      address: ambulance.address,
-      phone: ambulance.phone,
-      rating: ambulance.rating_cache || 0,
-      imageUrl: ambulance.image_url,
-    }));
+    const formattedAmbulances = providers.map((provider) => {
+      const mainBranch = provider.provider_branches[0];
+      return {
+        id: provider.id,
+        name: provider.commercial_name || 'Servicio de Ambulancia',
+        description: provider.description,
+        address: mainBranch?.address_text || '',
+        phone: mainBranch?.phone_contact || '',
+        rating: mainBranch?.rating_cache ? parseFloat(mainBranch.rating_cache.toString()) : 0,
+        imageUrl: provider.logo_url,
+      };
+    });
 
     return successResponse(formattedAmbulances);
   } catch (error: any) {

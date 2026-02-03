@@ -12,33 +12,44 @@ export async function getSupplyStores(event: APIGatewayProxyEventV2): Promise<AP
   try {
     const prisma = getPrismaClient();
 
-    const stores = await prisma.supply_stores.findMany({
+    // Obtener la categoría de insumos
+    const suppliesCategory = await prisma.service_categories.findFirst({
+      where: { slug: 'supplies' },
+    });
+
+    if (!suppliesCategory) {
+      return errorResponse('Categoría de insumos no encontrada', 404);
+    }
+
+    // Obtener proveedores de tipo insumos con sus sucursales principales
+    const providers = await prisma.providers.findMany({
       where: {
-        is_active: true,
+        category_id: suppliesCategory.id,
+        verification_status: 'APPROVED',
       },
-      select: {
-        id: true,
-        name: true,
-        description: true,
-        address: true,
-        phone: true,
-        image_url: true,
-        rating_cache: true,
-      },
-      orderBy: {
-        rating_cache: 'desc',
+      include: {
+        provider_branches: {
+          where: {
+            is_active: true,
+            is_main: true,
+          },
+          take: 1,
+        },
       },
     });
 
-    const formattedStores = stores.map((store) => ({
-      id: store.id,
-      name: store.name,
-      description: store.description,
-      address: store.address,
-      phone: store.phone,
-      rating: store.rating_cache || 0,
-      imageUrl: store.image_url,
-    }));
+    const formattedStores = providers.map((provider) => {
+      const mainBranch = provider.provider_branches[0];
+      return {
+        id: provider.id,
+        name: provider.commercial_name || 'Tienda de Insumos',
+        description: provider.description,
+        address: mainBranch?.address_text || '',
+        phone: mainBranch?.phone_contact || '',
+        rating: mainBranch?.rating_cache ? parseFloat(mainBranch.rating_cache.toString()) : 0,
+        imageUrl: provider.logo_url,
+      };
+    });
 
     return successResponse(formattedStores);
   } catch (error: any) {
@@ -60,39 +71,33 @@ export async function getSupplyStoreById(event: APIGatewayProxyEventV2): Promise
 
     const prisma = getPrismaClient();
 
-    const store = await prisma.supply_stores.findUnique({
+    const provider = await prisma.providers.findUnique({
       where: { id: storeId },
-      select: {
-        id: true,
-        name: true,
-        description: true,
-        address: true,
-        phone: true,
-        whatsapp: true,
-        email: true,
-        image_url: true,
-        rating_cache: true,
-        latitude: true,
-        longitude: true,
+      include: {
+        provider_branches: {
+          where: { is_active: true },
+        },
       },
     });
 
-    if (!store) {
+    if (!provider) {
       return errorResponse('Tienda no encontrada', 404);
     }
 
+    const mainBranch = provider.provider_branches.find((b) => b.is_main) || provider.provider_branches[0];
+
     return successResponse({
-      id: store.id,
-      name: store.name,
-      description: store.description,
-      address: store.address,
-      phone: store.phone,
-      whatsapp: store.whatsapp,
-      email: store.email,
-      rating: store.rating_cache || 0,
-      imageUrl: store.image_url,
-      latitude: store.latitude ? parseFloat(store.latitude.toString()) : null,
-      longitude: store.longitude ? parseFloat(store.longitude.toString()) : null,
+      id: provider.id,
+      name: provider.commercial_name || 'Tienda de Insumos',
+      description: provider.description,
+      address: mainBranch?.address_text || '',
+      phone: mainBranch?.phone_contact || '',
+      whatsapp: mainBranch?.phone_contact || '',
+      email: mainBranch?.email_contact || '',
+      rating: mainBranch?.rating_cache ? parseFloat(mainBranch.rating_cache.toString()) : 0,
+      imageUrl: provider.logo_url,
+      latitude: mainBranch?.latitude ? parseFloat(mainBranch.latitude.toString()) : null,
+      longitude: mainBranch?.longitude ? parseFloat(mainBranch.longitude.toString()) : null,
     });
   } catch (error: any) {
     console.error('Error getting supply store:', error);
@@ -113,17 +118,21 @@ export async function getSupplyStoreReviews(event: APIGatewayProxyEventV2): Prom
 
     const prisma = getPrismaClient();
 
-    const reviews = await prisma.supply_reviews.findMany({
-      where: { store_id: storeId },
+    // Obtener las sucursales del proveedor
+    const branches = await prisma.provider_branches.findMany({
+      where: { provider_id: storeId },
+      select: { id: true },
+    });
+
+    const branchIds = branches.map((b) => b.id);
+
+    // Obtener reseñas de todas las sucursales
+    const reviews = await prisma.reviews.findMany({
+      where: { branch_id: { in: branchIds } },
       include: {
-        users: {
+        patients: {
           select: {
-            email: true,
-            patients: {
-              select: {
-                full_name: true,
-              },
-            },
+            full_name: true,
           },
         },
       },
@@ -134,10 +143,10 @@ export async function getSupplyStoreReviews(event: APIGatewayProxyEventV2): Prom
 
     const formattedReviews = reviews.map((review) => ({
       id: review.id,
-      supplyStoreId: review.store_id,
-      userId: review.user_id,
-      userName: review.users?.patients?.[0]?.full_name || review.users?.email || 'Usuario',
-      rating: review.rating,
+      supplyStoreId: storeId,
+      userId: review.patient_id,
+      userName: review.patients?.full_name || 'Usuario',
+      rating: review.rating || 0,
       comment: review.comment,
       createdAt: review.created_at,
     }));
@@ -175,56 +184,68 @@ export async function createSupplyStoreReview(event: APIGatewayProxyEventV2): Pr
 
     const prisma = getPrismaClient();
 
-    // Verificar que la tienda existe
-    const store = await prisma.supply_stores.findUnique({
+    // Verificar que el proveedor existe
+    const provider = await prisma.providers.findUnique({
       where: { id: storeId },
+      include: {
+        provider_branches: {
+          where: { is_main: true },
+          take: 1,
+        },
+      },
     });
 
-    if (!store) {
+    if (!provider || provider.provider_branches.length === 0) {
       return errorResponse('Tienda no encontrada', 404);
     }
 
+    const mainBranch = provider.provider_branches[0];
+
+    // Obtener el paciente del usuario
+    const patient = await prisma.patients.findFirst({
+      where: { user_id: authContext.user.id },
+    });
+
+    if (!patient) {
+      return errorResponse('Paciente no encontrado', 404);
+    }
+
     // Crear reseña
-    const review = await prisma.supply_reviews.create({
+    const review = await prisma.reviews.create({
       data: {
         id: randomUUID(),
-        store_id: storeId,
-        user_id: authContext.user.id,
+        branch_id: mainBranch.id,
+        patient_id: patient.id,
         rating,
         comment: comment || null,
         created_at: new Date(),
       },
       include: {
-        users: {
+        patients: {
           select: {
-            email: true,
-            patients: {
-              select: {
-                full_name: true,
-              },
-            },
+            full_name: true,
           },
         },
       },
     });
 
-    // Actualizar rating promedio de la tienda
-    const avgRating = await prisma.supply_reviews.aggregate({
-      where: { store_id: storeId },
+    // Actualizar rating promedio de la sucursal
+    const avgRating = await prisma.reviews.aggregate({
+      where: { branch_id: mainBranch.id },
       _avg: { rating: true },
     });
 
-    await prisma.supply_stores.update({
-      where: { id: storeId },
+    await prisma.provider_branches.update({
+      where: { id: mainBranch.id },
       data: { rating_cache: avgRating._avg.rating || 0 },
     });
 
     return successResponse({
       id: review.id,
-      supplyStoreId: review.store_id,
-      userId: review.user_id,
-      userName: review.users?.patients?.[0]?.full_name || review.users?.email || 'Usuario',
-      rating: review.rating,
+      supplyStoreId: storeId,
+      userId: patient.id,
+      userName: review.patients?.full_name || 'Usuario',
+      rating: review.rating || 0,
       comment: review.comment,
       createdAt: review.created_at,
     }, 201);
@@ -246,63 +267,52 @@ export async function getSupplyStoreDashboard(event: APIGatewayProxyEventV2): Pr
     }
     const authContext = authResult as AuthContext;
 
-    if (authContext.user.role !== 'supplies') {
+    if (authContext.user.role !== 'supplies' && authContext.user.role !== 'provider') {
       return errorResponse('No autorizado. Debe ser proveedor de insumos', 403);
     }
 
     const prisma = getPrismaClient();
 
-    // Buscar tienda del usuario
-    const store = await prisma.supply_stores.findFirst({
+    // Buscar proveedor del usuario
+    const provider = await prisma.providers.findFirst({
       where: { user_id: authContext.user.id },
       include: {
-        supply_products: {
+        provider_branches: {
+          where: { is_active: true },
+        },
+        provider_catalog: {
           where: { is_available: true },
           take: 10,
-          orderBy: { created_at: 'desc' },
-        },
-        supply_orders: {
-          take: 10,
-          orderBy: { created_at: 'desc' },
+          orderBy: { name: 'asc' },
         },
       },
     });
 
-    if (!store) {
+    if (!provider) {
       return errorResponse('Tienda no encontrada', 404);
     }
 
+    const mainBranch = provider.provider_branches.find((b) => b.is_main) || provider.provider_branches[0];
+
     // Calcular estadísticas
-    const totalProducts = await prisma.supply_products.count({
-      where: { store_id: store.id },
+    const totalProducts = await prisma.provider_catalog.count({
+      where: { provider_id: provider.id },
     });
 
-    const totalOrders = await prisma.supply_orders.count({
-      where: { store_id: store.id },
-    });
-
-    const pendingOrders = await prisma.supply_orders.count({
-      where: {
-        store_id: store.id,
-        status: 'pending',
-      },
-    });
-
-    const completedOrders = await prisma.supply_orders.count({
-      where: {
-        store_id: store.id,
-        status: 'completed',
-      },
-    });
+    // Por ahora, las órdenes no están implementadas en el sistema
+    // Se pueden agregar más adelante cuando se implemente el módulo de pedidos
+    const totalOrders = 0;
+    const pendingOrders = 0;
+    const completedOrders = 0;
 
     return successResponse({
       store: {
-        id: store.id,
-        name: store.name,
-        description: store.description,
-        address: store.address,
-        phone: store.phone,
-        whatsapp: store.whatsapp,
+        id: provider.id,
+        name: provider.commercial_name || 'Tienda de Insumos',
+        description: provider.description,
+        address: mainBranch?.address_text || '',
+        phone: mainBranch?.phone_contact || '',
+        whatsapp: mainBranch?.phone_contact || '',
       },
       stats: {
         totalProducts,
@@ -310,17 +320,12 @@ export async function getSupplyStoreDashboard(event: APIGatewayProxyEventV2): Pr
         pendingOrders,
         completedOrders,
       },
-      recentOrders: store.supply_orders.map((order) => ({
-        id: order.id,
-        status: order.status,
-        totalAmount: parseFloat(order.total_amount.toString()),
-        createdAt: order.created_at,
-      })),
-      products: store.supply_products.map((product) => ({
+      recentOrders: [],
+      products: provider.provider_catalog.map((product) => ({
         id: product.id,
-        name: product.name,
-        price: parseFloat(product.price.toString()),
-        stock: product.stock,
+        name: product.name || '',
+        price: product.price ? parseFloat(product.price.toString()) : 0,
+        stock: 0, // El campo stock no existe en provider_catalog
         imageUrl: product.image_url,
       })),
     });

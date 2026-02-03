@@ -15,24 +15,26 @@ export async function getLaboratoryDashboard(event: APIGatewayProxyEventV2): Pro
     }
     const authContext = authResult as AuthContext;
 
-    if (authContext.user.role !== 'lab') {
+    if (authContext.user.role !== 'lab' && authContext.user.role !== 'provider') {
       return errorResponse('No autorizado. Debe ser proveedor de laboratorio', 403);
     }
 
     const prisma = getPrismaClient();
 
-    // Buscar laboratorio del usuario
-    const laboratory = await prisma.laboratories.findFirst({
+    // Buscar proveedor del usuario
+    const provider = await prisma.providers.findFirst({
       where: { user_id: authContext.user.id },
       include: {
-        laboratory_exams: {
+        provider_branches: {
+          where: { is_active: true },
+        },
+        provider_catalog: {
           where: { is_available: true },
           take: 10,
-          orderBy: { created_at: 'desc' },
         },
-        laboratory_appointments: {
+        appointments: {
           take: 10,
-          orderBy: { created_at: 'desc' },
+          orderBy: { scheduled_for: 'desc' },
           include: {
             patients: {
               select: {
@@ -45,58 +47,60 @@ export async function getLaboratoryDashboard(event: APIGatewayProxyEventV2): Pro
       },
     });
 
-    if (!laboratory) {
+    if (!provider) {
       return errorResponse('Laboratorio no encontrado', 404);
     }
 
+    const mainBranch = provider.provider_branches.find((b) => b.is_main) || provider.provider_branches[0];
+
     // Calcular estadísticas
-    const totalAppointments = await prisma.laboratory_appointments.count({
-      where: { laboratory_id: laboratory.id },
+    const totalAppointments = await prisma.appointments.count({
+      where: { provider_id: provider.id },
     });
 
-    const pendingAppointments = await prisma.laboratory_appointments.count({
+    const pendingAppointments = await prisma.appointments.count({
       where: {
-        laboratory_id: laboratory.id,
-        status: 'pending',
+        provider_id: provider.id,
+        status: 'CONFIRMED',
       },
     });
 
-    const completedAppointments = await prisma.laboratory_appointments.count({
+    const completedAppointments = await prisma.appointments.count({
       where: {
-        laboratory_id: laboratory.id,
-        status: 'completed',
+        provider_id: provider.id,
+        status: 'COMPLETED',
       },
     });
 
     return successResponse({
       laboratory: {
-        id: laboratory.id,
-        name: laboratory.name,
-        description: laboratory.description,
-        address: laboratory.address,
-        phone: laboratory.phone,
-        whatsapp: laboratory.whatsapp,
+        id: provider.id,
+        name: provider.commercial_name || 'Laboratorio',
+        description: provider.description,
+        address: mainBranch?.address_text || '',
+        phone: mainBranch?.phone_contact || '',
+        whatsapp: mainBranch?.phone_contact || '',
       },
       stats: {
         totalAppointments,
         pendingAppointments,
         completedAppointments,
       },
-      recentAppointments: laboratory.laboratory_appointments.map((apt) => ({
+      recentAppointments: provider.appointments.map((apt) => ({
         id: apt.id,
         patientName: apt.patients?.full_name || 'Paciente',
         patientPhone: apt.patients?.phone || '',
-        examName: apt.exam_name,
+        examName: apt.reason || 'Examen',
         scheduledFor: apt.scheduled_for,
         status: apt.status,
-        createdAt: apt.created_at,
+        createdAt: apt.scheduled_for,
       })),
-      availableExams: laboratory.laboratory_exams.map((exam) => ({
+      availableExams: provider.provider_catalog.map((exam) => ({
         id: exam.id,
-        name: exam.name,
+        name: exam.name || '',
         description: exam.description,
-        price: parseFloat(exam.price.toString()),
-        preparation: exam.preparation,
+        price: exam.price ? parseFloat(exam.price.toString()) : 0,
+        preparation: exam.description, // Usar description como preparation
       })),
     });
   } catch (error: any) {
@@ -104,7 +108,6 @@ export async function getLaboratoryDashboard(event: APIGatewayProxyEventV2): Pro
     return errorResponse(error.message || 'Error al obtener dashboard', 500);
   }
 }
-
 
 /**
  * GET /api/laboratories
@@ -114,33 +117,44 @@ export async function getAllLaboratories(event: APIGatewayProxyEventV2): Promise
   try {
     const prisma = getPrismaClient();
 
-    const laboratories = await prisma.laboratories.findMany({
+    // Obtener la categoría de laboratorios
+    const laboratoryCategory = await prisma.service_categories.findFirst({
+      where: { slug: 'laboratory' },
+    });
+
+    if (!laboratoryCategory) {
+      return errorResponse('Categoría de laboratorios no encontrada', 404);
+    }
+
+    // Obtener proveedores de tipo laboratorio con sus sucursales principales
+    const providers = await prisma.providers.findMany({
       where: {
-        is_active: true,
+        category_id: laboratoryCategory.id,
+        verification_status: 'APPROVED',
       },
-      select: {
-        id: true,
-        name: true,
-        description: true,
-        address: true,
-        phone: true,
-        image_url: true,
-        rating_cache: true,
-      },
-      orderBy: {
-        rating_cache: 'desc',
+      include: {
+        provider_branches: {
+          where: {
+            is_active: true,
+            is_main: true,
+          },
+          take: 1,
+        },
       },
     });
 
-    const formattedLaboratories = laboratories.map((lab) => ({
-      id: lab.id,
-      name: lab.name,
-      description: lab.description,
-      address: lab.address,
-      phone: lab.phone,
-      rating: lab.rating_cache || 0,
-      imageUrl: lab.image_url,
-    }));
+    const formattedLaboratories = providers.map((provider) => {
+      const mainBranch = provider.provider_branches[0];
+      return {
+        id: provider.id,
+        name: provider.commercial_name || 'Laboratorio',
+        description: provider.description,
+        address: mainBranch?.address_text || '',
+        phone: mainBranch?.phone_contact || '',
+        rating: mainBranch?.rating_cache ? parseFloat(mainBranch.rating_cache.toString()) : 0,
+        imageUrl: provider.logo_url,
+      };
+    });
 
     return successResponse(formattedLaboratories);
   } catch (error: any) {
@@ -162,34 +176,39 @@ export async function getLaboratoryById(event: APIGatewayProxyEventV2): Promise<
 
     const prisma = getPrismaClient();
 
-    const laboratory = await prisma.laboratories.findUnique({
+    const provider = await prisma.providers.findUnique({
       where: { id: laboratoryId },
       include: {
-        laboratory_exams: {
+        provider_branches: {
+          where: { is_active: true },
+        },
+        provider_catalog: {
           where: { is_available: true },
         },
       },
     });
 
-    if (!laboratory) {
+    if (!provider) {
       return errorResponse('Laboratorio no encontrado', 404);
     }
 
+    const mainBranch = provider.provider_branches.find((b) => b.is_main) || provider.provider_branches[0];
+
     return successResponse({
-      id: laboratory.id,
-      name: laboratory.name,
-      description: laboratory.description,
-      address: laboratory.address,
-      phone: laboratory.phone,
-      whatsapp: laboratory.whatsapp,
-      email: laboratory.email,
-      rating: laboratory.rating_cache || 0,
-      imageUrl: laboratory.image_url,
-      exams: laboratory.laboratory_exams.map((exam) => ({
+      id: provider.id,
+      name: provider.commercial_name || 'Laboratorio',
+      description: provider.description,
+      address: mainBranch?.address_text || '',
+      phone: mainBranch?.phone_contact || '',
+      whatsapp: mainBranch?.phone_contact || '',
+      email: mainBranch?.email_contact || '',
+      rating: mainBranch?.rating_cache ? parseFloat(mainBranch.rating_cache.toString()) : 0,
+      imageUrl: provider.logo_url,
+      exams: provider.provider_catalog.map((exam) => ({
         id: exam.id,
-        name: exam.name,
+        name: exam.name || '',
         description: exam.description,
-        price: parseFloat(exam.price.toString()),
+        price: exam.price ? parseFloat(exam.price.toString()) : 0,
       })),
     });
   } catch (error: any) {
@@ -208,39 +227,49 @@ export async function searchLaboratories(event: APIGatewayProxyEventV2): Promise
 
     const prisma = getPrismaClient();
 
-    const laboratories = await prisma.laboratories.findMany({
+    // Obtener la categoría de laboratorios
+    const laboratoryCategory = await prisma.service_categories.findFirst({
+      where: { slug: 'laboratory' },
+    });
+
+    if (!laboratoryCategory) {
+      return errorResponse('Categoría de laboratorios no encontrada', 404);
+    }
+
+    // Buscar proveedores de tipo laboratorio
+    const providers = await prisma.providers.findMany({
       where: {
-        is_active: true,
+        category_id: laboratoryCategory.id,
+        verification_status: 'APPROVED',
         OR: [
-          { name: { contains: query, mode: 'insensitive' } },
+          { commercial_name: { contains: query, mode: 'insensitive' } },
           { description: { contains: query, mode: 'insensitive' } },
-          { address: { contains: query, mode: 'insensitive' } },
         ],
       },
-      select: {
-        id: true,
-        name: true,
-        description: true,
-        address: true,
-        phone: true,
-        image_url: true,
-        rating_cache: true,
-      },
-      orderBy: {
-        rating_cache: 'desc',
+      include: {
+        provider_branches: {
+          where: {
+            is_active: true,
+            is_main: true,
+          },
+          take: 1,
+        },
       },
       take: 20,
     });
 
-    const formattedLaboratories = laboratories.map((lab) => ({
-      id: lab.id,
-      name: lab.name,
-      description: lab.description,
-      address: lab.address,
-      phone: lab.phone,
-      rating: lab.rating_cache || 0,
-      imageUrl: lab.image_url,
-    }));
+    const formattedLaboratories = providers.map((provider) => {
+      const mainBranch = provider.provider_branches[0];
+      return {
+        id: provider.id,
+        name: provider.commercial_name || 'Laboratorio',
+        description: provider.description,
+        address: mainBranch?.address_text || '',
+        phone: mainBranch?.phone_contact || '',
+        rating: mainBranch?.rating_cache ? parseFloat(mainBranch.rating_cache.toString()) : 0,
+        imageUrl: provider.logo_url,
+      };
+    });
 
     return successResponse(formattedLaboratories);
   } catch (error: any) {

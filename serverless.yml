@@ -406,3 +406,11 @@ functions:
       - httpApi:
           path: /api/pharmacies/payments/income
           method: GET
+
+  # Pharmacy Chains (Public)
+  pharmacyChainsHandler:
+    handler: src/pharmacy-chains/handler.handler
+    events:
+      - httpApi:
+          path: /api/pharmacy-chains
+          method: GET
