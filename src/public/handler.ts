@@ -1,10 +1,11 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResult } from 'aws-lambda';
 import { logger } from '../shared/logger';
 import { errorResponse, internalErrorResponse, optionsResponse } from '../shared/response';
-import { getAllDoctors, getDoctorById, searchDoctors } from './doctors.controller';
-import { getDoctorReviews, createDoctorReview } from './doctors-reviews.controller';
-import { getAllPharmacies, getPharmacyBrands, getPharmacyBranches, getPharmacyBranchById } from './pharmacies.controller';
 import { getAllAmbulances, getAmbulanceById, searchAmbulances } from './ambulances.controller';
+import { createDoctorReview, getDoctorReviews } from './doctors-reviews.controller';
+import { getAllDoctors, getDoctorById, searchDoctors } from './doctors.controller';
+import { getAllPharmacies, getPharmacyBranchById, getPharmacyBranches, getPharmacyBrands } from './pharmacies.controller';
+import { getCities } from './public.controller';
 
 export async function handler(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   const method = event.requestContext.http.method;
@@ -18,6 +19,13 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
   }
 
   try {
+    // --- RUTAS GENERALES / UTILITARIAS ---
+    
+    // Listar ciudades
+    if (path === '/api/public/cities' && method === 'GET') {
+      return await getCities(event);
+    }
+
     // --- RUTAS PÚBLICAS DE MÉDICOS ---
     
     // GET /api/public/doctors - Listar médicos
@@ -104,5 +112,3 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     return internalErrorResponse(error.message || 'Internal server error', event);
   }
 }
-
-

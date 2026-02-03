@@ -3,12 +3,30 @@ import { z } from 'zod';
 import { enum_appt_status } from '../generated/prisma/client';
 // Auth validators
 export const registerSchema = z.object({
-  email: z.string().email('Invalid email format'),
-  password: z.string().min(8, 'Password must be at least 8 characters'),
-  phone: z.string().optional(),
+  email: z.string().email(),
+  password: z.string().min(6),
+  
+  // Datos del Representante / Persona
   firstName: z.string().optional(),
   lastName: z.string().optional(),
-  role: z.enum(['PATIENT', 'DOCTOR', 'PHARMACY', 'LABORATORY', 'AMBULANCE']).optional(),
+  name: z.string().optional(), // Fallback
+  
+  // Datos del Negocio
+  serviceName: z.string().optional(), 
+  
+  // Nuevo campo
+  yearsOfExperience: z.union([z.string(), z.number()]).optional(),
+  specialties: z.array(z.string()).optional(),
+
+  phone: z.string().optional(),
+  role: z.enum(['PATIENT', 'DOCTOR', 'PHARMACY', 'LABORATORY', 'AMBULANCE', 'CLINIC', 'PROVIDER']).optional(),
+  address: z.string().optional(),
+  cityId: z.string().uuid().optional(),
+  city: z.string().optional(),
+  description: z.string().optional(),
+  price: z.union([z.string(), z.number()]).optional(),
+  chainId: z.string().optional(),
+  type: z.string().optional(),
 });
 
 export const loginSchema = z.object({
