@@ -1,7 +1,15 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResult } from 'aws-lambda';
 import { successResponse, errorResponse, internalErrorResponse, optionsResponse } from '../shared/response';
 import { logger } from '../shared/logger';
-import { getAllAmbulances, getAmbulanceById, searchAmbulances } from './ambulances.controller';
+import {
+  getAllAmbulances,
+  getAmbulanceById,
+  searchAmbulances,
+  getAmbulanceProfile,
+  updateAmbulanceProfile,
+  getAmbulanceReviews,
+  getAmbulanceSettings,
+} from './ambulances.controller';
 
 export async function handler(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   const method = event.requestContext.http.method;
@@ -15,6 +23,26 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
   }
 
   try {
+    // GET /api/ambulances/profile - Obtener perfil
+    if (path === '/api/ambulances/profile' && method === 'GET') {
+      return await getAmbulanceProfile(event);
+    }
+
+    // PUT /api/ambulances/profile - Actualizar perfil
+    if (path === '/api/ambulances/profile' && method === 'PUT') {
+      return await updateAmbulanceProfile(event);
+    }
+
+    // GET /api/ambulances/reviews - Obtener reseñas
+    if (path === '/api/ambulances/reviews' && method === 'GET') {
+      return await getAmbulanceReviews(event);
+    }
+
+    // GET /api/ambulances/settings - Obtener configuración
+    if (path === '/api/ambulances/settings' && method === 'GET') {
+      return await getAmbulanceSettings(event);
+    }
+
     // GET /api/ambulances - Listar ambulancias
     if (path === '/api/ambulances' && method === 'GET') {
       return await getAllAmbulances(event);
@@ -29,8 +57,8 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     if (path.startsWith('/api/ambulances/') && method === 'GET') {
       const pathParts = path.split('/');
       const lastPart = pathParts[pathParts.length - 1];
-      // Si no es "search", es un ID
-      if (lastPart !== 'search') {
+      // Si no es "search", "profile", "reviews", "settings", es un ID
+      if (!['search', 'profile', 'reviews', 'settings'].includes(lastPart)) {
         return await getAmbulanceById(event);
       }
     }

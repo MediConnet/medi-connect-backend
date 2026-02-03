@@ -1,13 +1,14 @@
 const express = require('express');
 const dotenv = require('dotenv');
 const { Resend } = require('resend');
+const cors = require('cors');  // Requiere el paquete CORS
 
 dotenv.config();
 
 const app = express();
-const port = 5173;
+const port = process.env.PORT || 5173;  // El puerto de Render se maneja automáticamente
 
-const API_KEY = process.env.RESEND_API_KEY; 
+const API_KEY = process.env.RESEND_API_KEY;
 
 if (!API_KEY) {
   console.error('Set RESEND_API_KEY in .env or environment');
@@ -15,6 +16,14 @@ if (!API_KEY) {
 }
 
 const resend = new Resend(API_KEY);
+
+// Habilitar CORS para tu frontend de producción
+const allowedOrigins = process.env.CORS_ORIGINS.split(',');  // Lee desde el .env
+app.use(cors({
+  origin: allowedOrigins,  // Solo permite solicitudes de estos orígenes
+}));
+
+app.use(express.json());  // Para poder leer datos en formato JSON
 
 app.post('/send-email', async (req, res) => {
   try {
@@ -37,5 +46,5 @@ app.post('/send-email', async (req, res) => {
 });
 
 app.listen(port, () => {
-  console.log(`Server running on http://localhost:${port}`);
+  console.log(`Server running on https://medi-connect-backend-f162.onrender.com`);
 });

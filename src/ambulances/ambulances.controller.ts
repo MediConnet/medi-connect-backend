@@ -1,372 +1,343 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResult } from 'aws-lambda';
-import { logger } from '../shared/logger';
 import { getPrismaClient } from '../shared/prisma';
-import { errorResponse, internalErrorResponse, successResponse } from '../shared/response';
-import { extractIdFromPath } from '../shared/validators';
+import { successResponse, errorResponse } from '../shared/response';
+import { requireAuth, AuthContext } from '../shared/auth';
 
 /**
- * Listar ambulancias
- * GET /api/ambulances
+ * GET /api/ambulances/profile
+ * Obtener perfil de ambulancia (requiere autenticación)
  */
-export async function getAllAmbulances(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('✅ [AMBULANCES] GET /api/ambulances - Listando ambulancias');
-  
+export async function getAmbulanceProfile(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   try {
+    const authResult = await requireAuth(event);
+    if ('statusCode' in authResult) {
+      return authResult;
+    }
+    const authContext = authResult as AuthContext;
+
+    if (authContext.user.role !== 'ambulance') {
+      return errorResponse('No autorizado. Debe ser proveedor de ambulancia', 403);
+    }
+
     const prisma = getPrismaClient();
-    const queryParams = event.queryStringParameters || {};
-    
-    const page = parseInt(queryParams.page || '1', 10);
-    const limit = parseInt(queryParams.limit || '20', 10);
-    const offset = (page - 1) * limit;
-    const city = queryParams.city;
-    const available = queryParams.available === 'true';
-    const search = queryParams.search;
-    
-    // Construir where
-    const where: any = {
-      category_id: 4, // Ambulancias (category_id = 4)
-      verification_status: 'APPROVED',
-      users: {
-        is_active: true,
-      },
-      provider_branches: {
-        some: {
-          is_active: true,
-        },
-      },
-    };
-    
-    if (city) {
-      where.provider_branches = {
-        some: {
-          is_active: true,
-          cities: {
-            name: {
-              contains: city,
-              mode: 'insensitive',
-            },
-          },
-        },
-      };
-    }
-    
-    // El filtro de available ya está cubierto por el filtro inicial de branches activas
-    
-    if (search) {
-      where.OR = [
-        {
-          commercial_name: {
-            contains: search,
-            mode: 'insensitive',
-          },
-        },
-        {
-          description: {
-            contains: search,
-            mode: 'insensitive',
-          },
-        },
-        {
-          provider_branches: {
-            some: {
-              address_text: {
-                contains: search,
-                mode: 'insensitive',
-              },
-            },
-          },
-        },
-      ];
-    }
-    
-    const [ambulances, total] = await Promise.all([
-      prisma.providers.findMany({
-        where,
-        include: {
-          users: {
-            select: {
-              email: true,
-            },
-          },
-          provider_branches: {
-            where: {
-              is_main: true,
-              is_active: true,
-            },
-            take: 1,
-            include: {
-              cities: {
-                select: {
-                  id: true,
-                  name: true,
-                },
-              },
-            },
-          },
-        },
-        orderBy: {
-          commercial_name: 'asc',
-        },
-        take: limit,
-        skip: offset,
-      }),
-      prisma.providers.count({ where }),
-    ]);
-    
-    const formattedAmbulances = ambulances.map(ambulance => {
-      const mainBranch = ambulance.provider_branches[0];
-      
-      const horarioAtencion = mainBranch?.opening_hours_text || '24 horas';
-      const disponible24h = horarioAtencion.toLowerCase().includes('24') || horarioAtencion.toLowerCase().includes('24 horas');
-      
-      return {
-        id: ambulance.id,
-        nombre: ambulance.commercial_name || '',
-        descripcion: ambulance.description || '',
-        direccion: mainBranch?.address_text || '',
-        ciudad: mainBranch?.cities?.name || '',
-        codigoPostal: '',
-        telefono: mainBranch?.phone_contact || '',
-        email: ambulance.users?.email || mainBranch?.email_contact || '',
-        horarioAtencion: horarioAtencion,
-        latitud: mainBranch?.latitude || null,
-        longitud: mainBranch?.longitude || null,
-        imagen: ambulance.logo_url || mainBranch?.image_url || '',
-        calificacion: mainBranch?.rating_cache || 0,
-        disponible24h: disponible24h,
-        tipo: 'Ambulancia', // Tipo de ambulancia
-        zonaCobertura: mainBranch?.cities?.name ? `Área metropolitana de ${mainBranch.cities.name}` : 'Área metropolitana',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
+
+    const ambulance = await prisma.ambulances.findFirst({
+      where: { user_id: authContext.user.id },
     });
-    
-    console.log(`✅ [AMBULANCES] Se encontraron ${formattedAmbulances.length} ambulancias (total: ${total})`);
-    
+
+    if (!ambulance) {
+      return errorResponse('Ambulancia no encontrada', 404);
+    }
+
+    // Calcular total de viajes
+    const totalTrips = await prisma.ambulance_trips.count({
+      where: { ambulance_id: ambulance.id },
+    });
+
     return successResponse({
-      ambulances: formattedAmbulances,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
-    }, 200, event);
+      id: ambulance.id,
+      name: ambulance.name,
+      description: ambulance.description,
+      phone: ambulance.phone,
+      whatsapp: ambulance.whatsapp,
+      address: ambulance.address,
+      rating: ambulance.rating_cache || 0,
+      totalTrips,
+    });
   } catch (error: any) {
-    console.error('❌ [AMBULANCES] Error al listar ambulancias:', error.message);
-    logger.error('Error fetching ambulances', error);
-    return internalErrorResponse('Failed to fetch ambulances', event);
+    console.error('Error getting ambulance profile:', error);
+    return errorResponse(error.message || 'Error al obtener perfil', 500);
   }
 }
 
 /**
- * Obtener ambulancia por ID
- * GET /api/ambulances/{id}
+ * PUT /api/ambulances/profile
+ * Actualizar perfil de ambulancia (requiere autenticación)
  */
-export async function getAmbulanceById(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('✅ [AMBULANCES] GET /api/ambulances/{id} - Obteniendo ambulancia');
-  
+export async function updateAmbulanceProfile(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   try {
-    const ambulanceId = extractIdFromPath(event.requestContext.http.path, '/api/ambulances/');
-    
-    if (!ambulanceId) {
-      return errorResponse('Ambulance ID is required', 400, undefined, event);
+    const authResult = await requireAuth(event);
+    if ('statusCode' in authResult) {
+      return authResult;
     }
-    
+    const authContext = authResult as AuthContext;
+
+    if (authContext.user.role !== 'ambulance') {
+      return errorResponse('No autorizado. Debe ser proveedor de ambulancia', 403);
+    }
+
+    const body = JSON.parse(event.body || '{}');
+    const { name, description, phone, whatsapp, address } = body;
+
     const prisma = getPrismaClient();
-    
-    const ambulance = await prisma.providers.findFirst({
-      where: {
-        id: ambulanceId,
-        category_id: 4, // Ambulancias (category_id = 4)
-        verification_status: 'APPROVED',
-        users: {
-          is_active: true,
-        },
-        provider_branches: {
-          some: {
-            is_active: true,
-          },
-        },
+
+    const ambulance = await prisma.ambulances.findFirst({
+      where: { user_id: authContext.user.id },
+    });
+
+    if (!ambulance) {
+      return errorResponse('Ambulancia no encontrada', 404);
+    }
+
+    const updated = await prisma.ambulances.update({
+      where: { id: ambulance.id },
+      data: {
+        name,
+        description,
+        phone,
+        whatsapp,
+        address,
+        updated_at: new Date(),
       },
+    });
+
+    // Calcular total de viajes
+    const totalTrips = await prisma.ambulance_trips.count({
+      where: { ambulance_id: updated.id },
+    });
+
+    return successResponse({
+      id: updated.id,
+      name: updated.name,
+      description: updated.description,
+      phone: updated.phone,
+      whatsapp: updated.whatsapp,
+      address: updated.address,
+      rating: updated.rating_cache || 0,
+      totalTrips,
+    });
+  } catch (error: any) {
+    console.error('Error updating ambulance profile:', error);
+    return errorResponse(error.message || 'Error al actualizar perfil', 500);
+  }
+}
+
+/**
+ * GET /api/ambulances/reviews
+ * Obtener reseñas de ambulancia (requiere autenticación)
+ */
+export async function getAmbulanceReviews(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  try {
+    const authResult = await requireAuth(event);
+    if ('statusCode' in authResult) {
+      return authResult;
+    }
+    const authContext = authResult as AuthContext;
+
+    if (authContext.user.role !== 'ambulance') {
+      return errorResponse('No autorizado. Debe ser proveedor de ambulancia', 403);
+    }
+
+    const prisma = getPrismaClient();
+
+    const ambulance = await prisma.ambulances.findFirst({
+      where: { user_id: authContext.user.id },
+    });
+
+    if (!ambulance) {
+      return errorResponse('Ambulancia no encontrada', 404);
+    }
+
+    const reviews = await prisma.ambulance_reviews.findMany({
+      where: { ambulance_id: ambulance.id },
       include: {
         users: {
           select: {
             email: true,
-          },
-        },
-        provider_branches: {
-          where: {
-            is_main: true,
-            is_active: true,
-          },
-          take: 1,
-          include: {
-            cities: {
+            patients: {
               select: {
-                id: true,
-                name: true,
-                state: true,
+                full_name: true,
               },
             },
           },
         },
       },
+      orderBy: {
+        created_at: 'desc',
+      },
     });
-    
-    if (!ambulance) {
-      return errorResponse('Ambulance not found', 404, undefined, event);
-    }
-    
-    const mainBranch = ambulance.provider_branches[0];
-    
-    const horarioAtencion = mainBranch?.opening_hours_text || '24 horas';
-    const disponible24h = horarioAtencion.toLowerCase().includes('24') || horarioAtencion.toLowerCase().includes('24 horas');
-    
-    const formattedAmbulance = {
-      id: ambulance.id,
-      nombre: ambulance.commercial_name || '',
-      descripcion: ambulance.description || '',
-      direccion: mainBranch?.address_text || '',
-      ciudad: mainBranch?.cities?.name || '',
-      codigoPostal: '',
-      telefono: mainBranch?.phone_contact || '',
-      email: ambulance.users?.email || mainBranch?.email_contact || '',
-      horarioAtencion: horarioAtencion,
-      latitud: mainBranch?.latitude || null,
-      longitud: mainBranch?.longitude || null,
-      imagen: ambulance.logo_url || mainBranch?.image_url || '',
-      calificacion: mainBranch?.rating_cache || 0,
-      disponible24h: disponible24h,
-      tipo: 'Ambulancia',
-      zonaCobertura: mainBranch?.cities?.name ? `Área metropolitana de ${mainBranch.cities.name}` : 'Área metropolitana',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-    
-    console.log(`✅ [AMBULANCES] Ambulancia encontrada: ${formattedAmbulance.nombre}`);
-    return successResponse(formattedAmbulance, 200, event);
+
+    const formattedReviews = reviews.map((review) => ({
+      id: review.id,
+      rating: review.rating,
+      comment: review.comment,
+      patientName: review.users?.patients?.[0]?.full_name || review.users?.email || 'Paciente',
+      date: review.created_at,
+    }));
+
+    return successResponse(formattedReviews);
   } catch (error: any) {
-    console.error('❌ [AMBULANCES] Error al obtener ambulancia:', error.message);
-    logger.error('Error fetching ambulance by id', error);
-    return internalErrorResponse('Failed to fetch ambulance', event);
+    console.error('Error getting ambulance reviews:', error);
+    return errorResponse(error.message || 'Error al obtener reseñas', 500);
   }
 }
 
 /**
- * Buscar ambulancias
- * GET /api/ambulances/search?q={query}
+ * GET /api/ambulances/settings
+ * Obtener configuración de ambulancia (requiere autenticación)
  */
-export async function searchAmbulances(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('✅ [AMBULANCES] GET /api/ambulances/search - Buscando ambulancias');
-  
+export async function getAmbulanceSettings(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   try {
-    const queryParams = event.queryStringParameters || {};
-    const query = queryParams.q || queryParams.query || '';
-    
-    if (!query || query.trim().length === 0) {
-      return errorResponse('Search query is required', 400, undefined, event);
+    const authResult = await requireAuth(event);
+    if ('statusCode' in authResult) {
+      return authResult;
     }
-    
-    const prisma = getPrismaClient();
-    
-    const ambulances = await prisma.providers.findMany({
-      where: {
-        category_id: 4, // Ambulancias (category_id = 4)
-        verification_status: 'APPROVED',
-        users: {
-          is_active: true,
-        },
-        provider_branches: {
-          some: {
-            is_active: true,
-          },
-        },
-        OR: [
-          {
-            commercial_name: {
-              contains: query,
-              mode: 'insensitive',
-            },
-          },
-          {
-            description: {
-              contains: query,
-              mode: 'insensitive',
-            },
-          },
-          {
-            provider_branches: {
-              some: {
-                address_text: {
-                  contains: query,
-                  mode: 'insensitive',
-                },
-              },
-            },
-          },
-          {
-            provider_branches: {
-              some: {
-                cities: {
-                  name: {
-                    contains: query,
-                    mode: 'insensitive',
-                  },
-                },
-              },
-            },
-          },
-        ],
+    const authContext = authResult as AuthContext;
+
+    if (authContext.user.role !== 'ambulance') {
+      return errorResponse('No autorizado. Debe ser proveedor de ambulancia', 403);
+    }
+
+    // Por ahora retornamos configuración por defecto
+    // Se puede implementar una tabla específica para configuraciones
+    const defaultSettings = {
+      notifications: {
+        email: true,
+        sms: false,
+        push: true,
       },
-      include: {
-        provider_branches: {
-          where: {
-            is_main: true,
-            is_active: true,
-          },
-          take: 1,
-          include: {
-            cities: {
-              select: {
-                name: true,
-              },
-            },
-          },
-        },
+      privacy: {
+        showPhone: true,
+        showAddress: false,
       },
-      take: 20,
-    });
-    
-    const formattedAmbulances = ambulances.map(ambulance => {
-      const mainBranch = ambulance.provider_branches[0];
-      const horarioAtencion = mainBranch?.opening_hours_text || '24 horas';
-      const disponible24h = horarioAtencion.toLowerCase().includes('24') || horarioAtencion.toLowerCase().includes('24 horas');
-      
-      return {
-        id: ambulance.id,
-        nombre: ambulance.commercial_name || '',
-        descripcion: ambulance.description || '',
-        direccion: mainBranch?.address_text || '',
-        ciudad: mainBranch?.cities?.name || '',
-        telefono: mainBranch?.phone_contact || '',
-        horarioAtencion: horarioAtencion,
-        imagen: ambulance.logo_url || mainBranch?.image_url || '',
-        calificacion: mainBranch?.rating_cache || 0,
-        disponible24h: disponible24h,
-        tipo: 'Ambulancia',
-        zonaCobertura: mainBranch?.cities?.name ? `Área metropolitana de ${mainBranch.cities.name}` : 'Área metropolitana',
-      };
-    });
-    
-    console.log(`✅ [AMBULANCES] Se encontraron ${formattedAmbulances.length} ambulancias para "${query}"`);
-    return successResponse({
-      ambulances: formattedAmbulances,
-    }, 200, event);
+    };
+
+    return successResponse(defaultSettings);
   } catch (error: any) {
-    console.error('❌ [AMBULANCES] Error al buscar ambulancias:', error.message);
-    logger.error('Error searching ambulances', error);
-    return internalErrorResponse('Failed to search ambulances', event);
+    console.error('Error getting ambulance settings:', error);
+    return errorResponse(error.message || 'Error al obtener configuración', 500);
   }
 }
 
+
+/**
+ * GET /api/ambulances
+ * Listar todas las ambulancias (público)
+ */
+export async function getAllAmbulances(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  try {
+    const prisma = getPrismaClient();
+
+    const ambulances = await prisma.ambulances.findMany({
+      where: {
+        is_active: true,
+      },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        address: true,
+        phone: true,
+        image_url: true,
+        rating_cache: true,
+      },
+      orderBy: {
+        rating_cache: 'desc',
+      },
+    });
+
+    const formattedAmbulances = ambulances.map((ambulance) => ({
+      id: ambulance.id,
+      name: ambulance.name,
+      description: ambulance.description,
+      address: ambulance.address,
+      phone: ambulance.phone,
+      rating: ambulance.rating_cache || 0,
+      imageUrl: ambulance.image_url,
+    }));
+
+    return successResponse(formattedAmbulances);
+  } catch (error: any) {
+    console.error('Error getting ambulances:', error);
+    return errorResponse(error.message || 'Error al obtener ambulancias', 500);
+  }
+}
+
+/**
+ * GET /api/ambulances/:id
+ * Obtener detalle de una ambulancia (público)
+ */
+export async function getAmbulanceById(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  try {
+    const ambulanceId = event.pathParameters?.id;
+    if (!ambulanceId) {
+      return errorResponse('ID de ambulancia requerido', 400);
+    }
+
+    const prisma = getPrismaClient();
+
+    const ambulance = await prisma.ambulances.findUnique({
+      where: { id: ambulanceId },
+    });
+
+    if (!ambulance) {
+      return errorResponse('Ambulancia no encontrada', 404);
+    }
+
+    return successResponse({
+      id: ambulance.id,
+      name: ambulance.name,
+      description: ambulance.description,
+      address: ambulance.address,
+      phone: ambulance.phone,
+      whatsapp: ambulance.whatsapp,
+      email: ambulance.email,
+      rating: ambulance.rating_cache || 0,
+      imageUrl: ambulance.image_url,
+    });
+  } catch (error: any) {
+    console.error('Error getting ambulance:', error);
+    return errorResponse(error.message || 'Error al obtener ambulancia', 500);
+  }
+}
+
+/**
+ * GET /api/ambulances/search
+ * Buscar ambulancias (público)
+ */
+export async function searchAmbulances(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  try {
+    const query = event.queryStringParameters?.q || '';
+
+    const prisma = getPrismaClient();
+
+    const ambulances = await prisma.ambulances.findMany({
+      where: {
+        is_active: true,
+        OR: [
+          { name: { contains: query, mode: 'insensitive' } },
+          { description: { contains: query, mode: 'insensitive' } },
+          { address: { contains: query, mode: 'insensitive' } },
+        ],
+      },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        address: true,
+        phone: true,
+        image_url: true,
+        rating_cache: true,
+      },
+      orderBy: {
+        rating_cache: 'desc',
+      },
+      take: 20,
+    });
+
+    const formattedAmbulances = ambulances.map((ambulance) => ({
+      id: ambulance.id,
+      name: ambulance.name,
+      description: ambulance.description,
+      address: ambulance.address,
+      phone: ambulance.phone,
+      rating: ambulance.rating_cache || 0,
+      imageUrl: ambulance.image_url,
+    }));
+
+    return successResponse(formattedAmbulances);
+  } catch (error: any) {
+    console.error('Error searching ambulances:', error);
+    return errorResponse(error.message || 'Error al buscar ambulancias', 500);
+  }
+}
