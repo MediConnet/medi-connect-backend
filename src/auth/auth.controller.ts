@@ -1,10 +1,10 @@
 import {
-    ChangePasswordCommand,
-    CognitoIdentityProviderClient,
-    ConfirmForgotPasswordCommand,
-    ForgotPasswordCommand,
-    InitiateAuthCommand,
-    SignUpCommand,
+  ChangePasswordCommand,
+  CognitoIdentityProviderClient,
+  ConfirmForgotPasswordCommand,
+  ForgotPasswordCommand,
+  InitiateAuthCommand,
+  SignUpCommand,
 } from '@aws-sdk/client-cognito-identity-provider';
 import { APIGatewayProxyEventV2, APIGatewayProxyResult } from 'aws-lambda';
 import * as bcrypt from 'bcrypt';
@@ -15,21 +15,21 @@ import { requireAuth } from '../shared/auth';
 import { logger } from '../shared/logger';
 import { getPrismaClient } from '../shared/prisma';
 import {
-    errorResponse,
-    internalErrorResponse,
-    notFoundResponse,
-    successResponse,
-    unauthorizedResponse,
+  errorResponse,
+  internalErrorResponse,
+  notFoundResponse,
+  successResponse,
+  unauthorizedResponse,
 } from '../shared/response';
 import { validatePayloadSize } from '../shared/security';
 import {
-    changePasswordSchema,
-    forgotPasswordSchema,
-    loginSchema,
-    parseBody,
-    refreshTokenSchema,
-    registerSchema,
-    resetPasswordSchema,
+  changePasswordSchema,
+  forgotPasswordSchema,
+  loginSchema,
+  parseBody,
+  refreshTokenSchema,
+  registerSchema,
+  resetPasswordSchema,
 } from '../shared/validators';
 
 // --- CONFIGURACIÓN ---
@@ -39,46 +39,19 @@ const CLIENT_ID = process.env.COGNITO_USER_POOL_CLIENT_ID || '';
 
 // --- HELPERS ---
 
-/**
- * Helper para obtener User-Agent del evento
- */
 const getDeviceInfo = (event: APIGatewayProxyEventV2): string => {
   return event.headers['user-agent'] || event.headers['User-Agent'] || 'Unknown Device';
 };
 
-/**
- * Genera un JWT real para desarrollo local
- */
 function generateLocalJWT(payload: { sub: string; email: string; role: string | null }): string {
   const header = { alg: 'HS256', typ: 'JWT' };
-
-  const base64UrlEncode = (str: string): string => {
-    return Buffer.from(str).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-  };
-
+  const base64UrlEncode = (str: string): string => Buffer.from(str).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
   const encodedHeader = base64UrlEncode(JSON.stringify(header));
   const now = Math.floor(Date.now() / 1000);
-  
-  const jwtPayload = {
-    sub: payload.sub,
-    userId: payload.sub,
-    email: payload.email,
-    role: payload.role,
-    iat: now,
-    exp: now + 3600, // 1 hora
-  };
-  
+  const jwtPayload = { sub: payload.sub, userId: payload.sub, email: payload.email, role: payload.role, iat: now, exp: now + 3600 };
   const encodedPayload = base64UrlEncode(JSON.stringify(jwtPayload));
   const secret = process.env.JWT_SECRET || 'local-dev-secret-key';
-  
-  const signature = crypto
-    .createHmac('sha256', secret)
-    .update(`${encodedHeader}.${encodedPayload}`)
-    .digest('base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=/g, '');
-
+  const signature = crypto.createHmac('sha256', secret).update(`${encodedHeader}.${encodedPayload}`).digest('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
   return `${encodedHeader}.${encodedPayload}.${signature}`;
 }
 
@@ -89,6 +62,8 @@ function mapRoleToEnum(role: string): enum_roles {
     'PHARMACY': enum_roles.provider,
     'LABORATORY': enum_roles.provider,
     'AMBULANCE': enum_roles.provider,
+    'CLINIC': enum_roles.provider,
+    'PROVIDER': enum_roles.provider,
     'patient': enum_roles.patient,
     'doctor': enum_roles.provider,
     'provider': enum_roles.provider,
@@ -98,49 +73,169 @@ function mapRoleToEnum(role: string): enum_roles {
   return roleMap[role.toUpperCase()] || roleMap[role.toLowerCase()] || enum_roles.patient;
 }
 
+// HELPER: Crea el perfil de proveedor
+async function createProviderProfile(prisma: any, userId: string, body: any) {
+  const providerId = randomUUID();
+  
+  let representativeName = body.name;
+  if (!representativeName && (body.firstName || body.lastName)) {
+      representativeName = [body.firstName, body.lastName].filter(Boolean).join(' ');
+  }
+  if (!representativeName) representativeName = 'Usuario Proveedor';
+
+  let businessName = body.serviceName;
+  if (!businessName) businessName = representativeName;
+
+  const typeToSlug: Record<string, string> = {
+    'doctor': 'doctor',
+    'pharmacy': 'pharmacy',
+    'lab': 'laboratory',
+    'laboratory': 'laboratory',
+    'ambulance': 'ambulance',
+    'supplies': 'supplies',
+    'clinic': 'clinic',
+  };
+  const categorySlug = body.type ? (typeToSlug[body.type] || 'doctor') : 'doctor';
+  
+  const category = await prisma.service_categories.findFirst({
+    where: { slug: categorySlug },
+    select: { id: true }
+  });
+  const categoryId = category ? category.id : null; 
+
+  // Parsear experiencia para la tabla providers
+  let yearsExp = 0;
+  if (body.yearsOfExperience) {
+      const parsedExp = parseInt(body.yearsOfExperience.toString(), 10);
+      if (!isNaN(parsedExp)) yearsExp = parsedExp;
+  }
+
+  let specialtiesConnect = {};
+  if (body.specialties && Array.isArray(body.specialties) && body.specialties.length > 0) {
+    specialtiesConnect = {
+      connect: body.specialties.map((specialtyId: string) => ({ id: specialtyId }))
+    };
+  }
+
+  // Crear Provider (Entidad Legal / Persona)
+  await prisma.providers.create({
+    data: {
+      id: providerId,
+      users: { connect: { id: userId } },
+      
+      commercial_name: representativeName, // Nombre de la persona
+      verification_status: 'PENDING',
+      description: body.description || 'Perfil profesional',
+      logo_url: null,
+      
+      ...(categoryId ? { service_categories: { connect: { id: categoryId } } } : {}),
+      
+      commission_percentage: 15.0,
+      
+      years_of_experience: yearsExp, 
+
+      specialties: specialtiesConnect,
+    }
+  });
+
+  // Datos Adicionales para la Sucursal
+  let cityName = '';
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  const isValidCityId = body.cityId && uuidRegex.test(body.cityId);
+
+  if (isValidCityId) {
+      const cityRecord = await prisma.cities.findUnique({ where: { id: body.cityId } });
+      if (cityRecord) cityName = cityRecord.name;
+  } else if (body.city) {
+      cityName = body.city; 
+  }
+
+  const fullAddress = body.address 
+    ? (cityName ? `${body.address}, ${cityName}` : body.address)
+    : 'Sin dirección registrada';
+
+  let fee = null;
+  if (body.price) {
+      const parsed = parseFloat(body.price.toString());
+      if (!isNaN(parsed)) fee = parsed;
+  }
+
+  // Crear Sucursal (Local Físico)
+  await prisma.provider_branches.create({
+    data: {
+      id: randomUUID(),
+      
+      providers: { connect: { id: providerId } },
+      
+      ...(isValidCityId ? { cities: { connect: { id: body.cityId } } } : {}),
+      
+      name: businessName, // Nombre del negocio
+      address_text: fullAddress,
+      description: body.description || null,
+      consultation_fee: fee,
+      
+      phone_contact: body.phone || body.whatsapp || null,
+      email_contact: body.email,
+      is_main: true,
+      is_active: true, 
+    }
+  });
+
+  // Lógica Clínicas 
+  if (body.type === 'clinic') {
+      await prisma.clinics.create({
+          data: {
+              id: randomUUID(),
+              user_id: userId,
+              name: businessName,
+              address: fullAddress,
+              phone: body.phone || '0000000000',
+              is_active: false
+          }
+      });
+  }
+
+  console.log(`✅ [HELPER] Proveedor "${representativeName}" creado con éxito con ${body.specialties?.length || 0} especialidades.`);
+}
+
 // --- CONTROLLERS ---
 
 export async function register(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   try {
     console.log('📝 [REGISTER] Procesando registro de usuario');
     validatePayloadSize(event);
+    
     const body = parseBody(event.body, registerSchema);
     const prisma = getPrismaClient();
     
     const isLocalDev = process.env.STAGE === 'dev' || process.env.NODE_ENV === 'development' || !CLIENT_ID || !USER_POOL_ID;
 
-    // --- MODO DESARROLLO / FALLBACK LOCAL ---
+    // ==========================================
+    // 🛠️ MODO DESARROLLO / FALLBACK LOCAL
+    // ==========================================
     if (isLocalDev) {
-      console.log('🔧 [REGISTER] Modo desarrollo local - Registro directo en BD');
+      console.log('🔧 [REGISTER] Modo desarrollo local');
       
-      // Verificar si el usuario ya existe
       const existingUser = await prisma.users.findFirst({ where: { email: body.email } });
       if (existingUser) {
-        console.error('❌ [REGISTER] Usuario ya existe:', body.email);
         return errorResponse('User already exists', 409);
       }
 
-      // Hashear contraseña
       const passwordHash = await bcrypt.hash(body.password, 10);
-      
-      // Determinar el rol
       const userRole = body.role ? mapRoleToEnum(body.role) : enum_roles.patient;
       
-      // Crear usuario en DB
       const user = await prisma.users.create({
         data: {
           id: randomUUID(),
           email: body.email,
           password_hash: passwordHash,
           role: userRole,
-          is_active: true, // Activar automáticamente en desarrollo
+          is_active: true,
         },
       });
 
-      // Si es un paciente, crear el registro en la tabla patients
       if (userRole === enum_roles.patient) {
         const fullName = [body.firstName, body.lastName].filter(Boolean).join(' ') || body.email;
-        
         await prisma.patients.create({
           data: {
             id: randomUUID(),
@@ -149,10 +244,10 @@ export async function register(event: APIGatewayProxyEventV2): Promise<APIGatewa
             phone: body.phone || null,
           },
         });
-        console.log('✅ [REGISTER] Perfil de paciente creado');
+      } else if (userRole === enum_roles.provider) {
+        await createProviderProfile(prisma, user.id, body);
       }
 
-      console.log('✅ [REGISTER] Usuario registrado exitosamente:', user.email);
       return successResponse({
         userId: user.id,
         email: user.email,
@@ -160,8 +255,9 @@ export async function register(event: APIGatewayProxyEventV2): Promise<APIGatewa
       }, 201);
     }
 
-    // --- MODO PRODUCCIÓN CON COGNITO ---
-    // Registrar en Cognito
+    // ==========================================
+    // ☁️ MODO PRODUCCIÓN (COGNITO)
+    // ==========================================
     const signUpCommand = new SignUpCommand({
       ClientId: CLIENT_ID,
       Username: body.email,
@@ -169,32 +265,44 @@ export async function register(event: APIGatewayProxyEventV2): Promise<APIGatewa
       UserAttributes: [
         { Name: 'email', Value: body.email },
         ...(body.phone ? [{ Name: 'phone_number', Value: body.phone }] : []),
-        ...(body.firstName ? [{ Name: 'given_name', Value: body.firstName }] : []),
-        ...(body.lastName ? [{ Name: 'family_name', Value: body.lastName }] : []),
       ],
     });
 
     const cognitoResponse = await cognitoClient.send(signUpCommand);
+    const cognitoSub = cognitoResponse.UserSub || randomUUID();
+    const userRole = body.role ? mapRoleToEnum(body.role) : enum_roles.patient;
 
-    // Crear usuario en DB
     const user = await prisma.users.create({
-      data: {
-        id: cognitoResponse.UserSub || randomUUID(),
-        email: body.email,
-        password_hash: '', 
-        role: body.role ? mapRoleToEnum(body.role) : enum_roles.patient,
-      },
+        data: {
+          id: cognitoSub,
+          email: body.email,
+          password_hash: '', 
+          role: userRole,
+        },
     });
 
-    console.log('✅ [REGISTER] Usuario registrado exitosamente:', user.email);
+    if (userRole === enum_roles.patient) {
+        const fullName = [body.firstName, body.lastName].filter(Boolean).join(' ') || body.email;
+        await prisma.patients.create({
+          data: {
+            id: randomUUID(),
+            user_id: user.id,
+            full_name: fullName,
+            phone: body.phone || null,
+          },
+        });
+    } else if (userRole === enum_roles.provider) {
+        await createProviderProfile(prisma, user.id, body);
+    }
+
     return successResponse({
       userId: user.id,
       email: user.email,
       message: 'User registered successfully. Please confirm your email.',
     }, 201);
+
   } catch (error: any) {
     console.error('❌ [REGISTER] Error al registrar usuario:', error.message);
-    logger.error('Error in register', error);
     if (error.message.includes('Validation error')) return errorResponse(error.message, 400);
     if (error.name === 'UsernameExistsException') return errorResponse('User already exists', 409);
     if (error.code === 'P2002') return errorResponse('User already exists', 409);
@@ -208,19 +316,14 @@ export async function login(event: APIGatewayProxyEventV2): Promise<APIGatewayPr
     const body = parseBody(event.body, loginSchema);
     const isLocalDev = process.env.STAGE === 'dev' || process.env.NODE_ENV === 'development' || !CLIENT_ID || !USER_POOL_ID;
 
-    // --- MODO DESARROLLO / FALLBACK LOCAL ---
     if (isLocalDev) {
-      console.log('🔧 [LOGIN] Modo desarrollo local - Autenticación directa contra BD');
+      console.log('🔧 [LOGIN] Modo desarrollo local');
       const prisma = getPrismaClient();
       
       const user = await prisma.users.findFirst({ where: { email: body.email } });
 
-      if (!user) {
-        console.error('❌ [LOGIN] Usuario no encontrado:', body.email);
-        return unauthorizedResponse('Invalid credentials');
-      }
+      if (!user) return unauthorizedResponse('Invalid credentials');
 
-      // Verificaciones de estado y contraseña
       const isProduction = process.env.STAGE === 'prod' || process.env.NODE_ENV === 'production';
       const isDevelopment = !isProduction;
       
@@ -229,12 +332,8 @@ export async function login(event: APIGatewayProxyEventV2): Promise<APIGatewayPr
 
       const passwordMatch = await bcrypt.compare(body.password, user.password_hash);
       
-      if (!passwordMatch) {
-        console.error('❌ [LOGIN] Contraseña incorrecta');
-        return unauthorizedResponse('Invalid credentials');
-      }
+      if (!passwordMatch) return unauthorizedResponse('Invalid credentials');
 
-      // Obtener info del paciente si existe
       let patientInfo = null;
       if (user.role === enum_roles.patient) {
         patientInfo = await prisma.patients.findFirst({
@@ -243,7 +342,6 @@ export async function login(event: APIGatewayProxyEventV2): Promise<APIGatewayPr
         });
       }
 
-      // Obtener info del provider
       let providerInfo = null;
       let serviceType = null;
       
@@ -257,21 +355,19 @@ export async function login(event: APIGatewayProxyEventV2): Promise<APIGatewayPr
           providerInfo = { id: clinic.id, commercialName: clinic.name, logoUrl: clinic.logo_url };
           serviceType = 'clinic';
         } else {
-          // ⭐ Consulta más específica: solo providers aprobados o pendientes, ordenado por más reciente
           const provider = await prisma.providers.findFirst({
             where: { 
               user_id: user.id,
-              verification_status: { in: ['APPROVED', 'PENDING'] }, // Solo aprobados o pendientes
+              verification_status: { in: ['APPROVED', 'PENDING'] }, 
             },
             include: { 
               service_categories: { select: { slug: true, name: true } },
-              pharmacy_chains: true, // ⭐ Incluir relación con cadena
+              pharmacy_chains: true, 
             },
-            orderBy: { id: 'desc' }, // El más reciente primero
+            orderBy: { id: 'desc' }, 
           });
           
           if (provider) {
-            // ⭐ Si pertenece a una cadena, usar datos de la cadena; si no, usar datos del provider
             const isChainMember = !!provider.chain_id && !!provider.pharmacy_chains;
             const chain = provider.pharmacy_chains;
             
@@ -279,9 +375,9 @@ export async function login(event: APIGatewayProxyEventV2): Promise<APIGatewayPr
               id: provider.id, 
               commercialName: isChainMember && chain ? chain.name : provider.commercial_name, 
               logoUrl: isChainMember && chain ? (chain.logo_url || null) : provider.logo_url,
-              isChainMember: isChainMember, // ⭐ NUEVO
-              chainName: isChainMember && chain ? chain.name : null, // ⭐ NUEVO
-              chainLogo: isChainMember && chain ? chain.logo_url : null, // ⭐ NUEVO
+              isChainMember: isChainMember, 
+              chainName: isChainMember && chain ? chain.name : null, 
+              chainLogo: isChainMember && chain ? chain.logo_url : null, 
             };
             serviceType = provider.service_categories?.slug || null;
           }
@@ -294,14 +390,10 @@ export async function login(event: APIGatewayProxyEventV2): Promise<APIGatewayPr
         role: user.role,
       });
 
-      // ============================================================
-      // 🚀 GESTIÓN DE SESIONES PROFESIONAL 
-      // ============================================================
       try {
         const expiresAt = new Date();
-        expiresAt.setHours(expiresAt.getHours() + 1); // 1 hora de validez
+        expiresAt.setHours(expiresAt.getHours() + 1); 
 
-        // 1. Guardar nueva sesión
         await prisma.sessions.create({
           data: {
             id: randomUUID(),
@@ -311,29 +403,21 @@ export async function login(event: APIGatewayProxyEventV2): Promise<APIGatewayPr
             expires_at: expiresAt,
           },
         });
-        console.log('✅ [LOGIN] Sesión guardada en DB');
-
-        // 2. MANTENIMIENTO AUTOMÁTICO (Fire & Forget)
-        // Borramos sesiones que expiraron hace más de 30 días para no saturar la BD
+        
         const thirtyDaysAgo = new Date();
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
         
         prisma.sessions.deleteMany({
-          where: {
-            expires_at: { lt: thirtyDaysAgo }
-          }
-        }).catch(err => console.error('⚠️ [LOGIN] Error en limpieza de sesiones viejas:', err));
+          where: { expires_at: { lt: thirtyDaysAgo } }
+        }).catch(err => console.error('⚠️ [LOGIN] Error limpieza:', err));
 
       } catch (sessionError) {
-        console.error('❌ [LOGIN] Error guardando sesión (no bloqueante):', sessionError);
+        console.error('❌ [LOGIN] Error guardando sesión:', sessionError);
       }
-      // ============================================================
 
-      // Normalización para el Frontend
       const normalizedRole = user.role ? String(user.role).toLowerCase() : 'patient';
       const normalizedServiceType = serviceType ? String(serviceType).toLowerCase() : null;
       
-      // Extraer nombre y apellido del full_name del paciente si existe
       let firstName = '';
       let lastName = '';
       if (patientInfo && patientInfo.full_name) {
@@ -366,7 +450,6 @@ export async function login(event: APIGatewayProxyEventV2): Promise<APIGatewayPr
         responseData.user.provider = providerInfo;
       }
 
-      // IMPORTANTE: Mapeo de tipos para los Guards del Frontend
       if (normalizedServiceType) {
         responseData.user.serviceType = normalizedServiceType;
         responseData.user.tipo = normalizedServiceType; 
@@ -375,7 +458,6 @@ export async function login(event: APIGatewayProxyEventV2): Promise<APIGatewayPr
       return successResponse(responseData);
     }
 
-    // --- MODO PRODUCCIÓN (COGNITO) ---
     console.log('🔐 [LOGIN] Autenticando con Cognito');
     const authCommand = new InitiateAuthCommand({
       ClientId: CLIENT_ID,
@@ -398,40 +480,29 @@ export async function login(event: APIGatewayProxyEventV2): Promise<APIGatewayPr
   }
 }
 
-//  LOGOUT: MARCAR COMO REVOCADO
 export async function logout(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   try {
     const token = event.headers.authorization?.replace('Bearer ', '');
-    
     if (token) {
       const prisma = getPrismaClient();
-      
-      // Soft Delete: Marcamos revocada con la fecha actual
       await prisma.sessions.updateMany({
         where: { token: token },
         data: { revoked_at: new Date() }
       });
-      
-      console.log('👋 [LOGOUT] Sesión revocada exitosamente');
     }
-
     return successResponse({ message: 'Logged out successfully' });
   } catch (error) {
-    console.error('Error in logout', error);
-    // Respondemos éxito igual para no romper el frontend
     return successResponse({ message: 'Logged out' }); 
   }
 }
 
 export async function refresh(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   try {
-    console.log('🔄 [REFRESH] Procesando refresh token');
     const body = parseBody(event.body, refreshTokenSchema);
     const refreshToken = body.refreshToken;
     const isLocalDev = process.env.STAGE === 'dev' || process.env.NODE_ENV === 'development' || !CLIENT_ID || !USER_POOL_ID;
 
     if (isLocalDev) {
-      
       const parts = refreshToken.split('.');
       if (parts.length !== 3) return unauthorizedResponse('Invalid refresh token format');
       
@@ -447,29 +518,25 @@ export async function refresh(event: APIGatewayProxyEventV2): Promise<APIGateway
 
       if (!user) return unauthorizedResponse('User not found');
 
-      // Regenerar tokens
       const normalizedRole = user.role ? String(user.role).toLowerCase() : 'patient';
       const newToken = generateLocalJWT({ sub: user.id, email: user.email, role: user.role });
 
-      // Buscar provider info nuevamente para la respuesta
       let serviceType = null;
       let providerInfo = null;
       if (user.role === enum_roles.provider) {
-         // ⭐ Consulta más específica: solo providers aprobados o pendientes, ordenado por más reciente
          const provider = await prisma.providers.findFirst({
-            where: { 
-              user_id: user.id,
-              verification_status: { in: ['APPROVED', 'PENDING'] }, // Solo aprobados o pendientes
-            },
-            include: { 
-              service_categories: { select: { slug: true } },
-              pharmacy_chains: true, // ⭐ Incluir relación con cadena
-            },
-            orderBy: { id: 'desc' }, // El más reciente primero
+           where: { 
+             user_id: user.id,
+             verification_status: { in: ['APPROVED', 'PENDING'] }, 
+           },
+           include: { 
+             service_categories: { select: { slug: true } },
+             pharmacy_chains: true, 
+           },
+           orderBy: { id: 'desc' }, 
          });
          if (provider) {
            serviceType = provider.service_categories?.slug;
-           // ⭐ Si pertenece a una cadena, usar datos de la cadena; si no, usar datos del provider
            const isChainMember = !!provider.chain_id && !!provider.pharmacy_chains;
            const chain = provider.pharmacy_chains;
            providerInfo = {
@@ -509,7 +576,6 @@ export async function refresh(event: APIGatewayProxyEventV2): Promise<APIGateway
       return successResponse(responseData);
     }
 
-    // Cognito Refresh
     const authCommand = new InitiateAuthCommand({
       ClientId: CLIENT_ID,
       AuthFlow: 'REFRESH_TOKEN_AUTH',
@@ -554,24 +620,22 @@ export async function me(event: APIGatewayProxyEventV2): Promise<APIGatewayProxy
   };
 
   if (user.role === enum_roles.provider) {
-    // ⭐ Consulta más específica: solo providers aprobados o pendientes, ordenado por más reciente
     const provider = await prisma.providers.findFirst({
       where: { 
         user_id: user.id,
-        verification_status: { in: ['APPROVED', 'PENDING'] }, // Solo aprobados o pendientes
+        verification_status: { in: ['APPROVED', 'PENDING'] }, 
       },
       include: { 
         service_categories: { select: { slug: true, name: true } },
-        pharmacy_chains: true, // ⭐ Incluir relación con cadena
+        pharmacy_chains: true, 
       },
-      orderBy: { id: 'desc' }, // El más reciente primero
+      orderBy: { id: 'desc' }, 
     });
 
     if (provider) {
       const serviceType = provider.service_categories?.slug || null;
       const normalizedServiceType = serviceType ? String(serviceType).toLowerCase() : null;
 
-      // ⭐ Si pertenece a una cadena, usar datos de la cadena; si no, usar datos del provider
       const isChainMember = !!provider.chain_id && !!provider.pharmacy_chains;
       const chain = provider.pharmacy_chains;
       const displayName = isChainMember && chain ? chain.name : provider.commercial_name;
@@ -586,9 +650,9 @@ export async function me(event: APIGatewayProxyEventV2): Promise<APIGatewayProxy
         id: provider.id,
         commercialName: displayName,
         logoUrl: displayLogo,
-        isChainMember: isChainMember, // ⭐ NUEVO
-        chainName: isChainMember && chain ? chain.name : null, // ⭐ NUEVO
-        chainLogo: isChainMember && chain ? chain.logo_url : null, // ⭐ NUEVO
+        isChainMember: isChainMember, 
+        chainName: isChainMember && chain ? chain.name : null, 
+        chainLogo: isChainMember && chain ? chain.logo_url : null, 
       };
     }
   }
@@ -610,7 +674,6 @@ export async function changePassword(event: APIGatewayProxyEventV2): Promise<API
     await cognitoClient.send(cmd);
     return successResponse({ message: 'Password changed successfully' });
   } catch (error: any) {
-    logger.error('Error in changePassword', error);
     return internalErrorResponse('Failed to change password');
   }
 }
