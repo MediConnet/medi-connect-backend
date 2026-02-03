@@ -1,373 +1,250 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResult } from 'aws-lambda';
-import { logger } from '../shared/logger';
 import { getPrismaClient } from '../shared/prisma';
-import { errorResponse, internalErrorResponse, successResponse } from '../shared/response';
-import { extractIdFromPath } from '../shared/validators';
+import { successResponse, errorResponse } from '../shared/response';
+import { requireAuth, AuthContext } from '../shared/auth';
 
 /**
- * Listar laboratorios
+ * GET /api/laboratories/:userId/dashboard
+ * Obtener dashboard de un laboratorio (requiere autenticación)
+ */
+export async function getLaboratoryDashboard(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  try {
+    const authResult = await requireAuth(event);
+    if ('statusCode' in authResult) {
+      return authResult;
+    }
+    const authContext = authResult as AuthContext;
+
+    if (authContext.user.role !== 'lab') {
+      return errorResponse('No autorizado. Debe ser proveedor de laboratorio', 403);
+    }
+
+    const prisma = getPrismaClient();
+
+    // Buscar laboratorio del usuario
+    const laboratory = await prisma.laboratories.findFirst({
+      where: { user_id: authContext.user.id },
+      include: {
+        laboratory_exams: {
+          where: { is_available: true },
+          take: 10,
+          orderBy: { created_at: 'desc' },
+        },
+        laboratory_appointments: {
+          take: 10,
+          orderBy: { created_at: 'desc' },
+          include: {
+            patients: {
+              select: {
+                full_name: true,
+                phone: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!laboratory) {
+      return errorResponse('Laboratorio no encontrado', 404);
+    }
+
+    // Calcular estadísticas
+    const totalAppointments = await prisma.laboratory_appointments.count({
+      where: { laboratory_id: laboratory.id },
+    });
+
+    const pendingAppointments = await prisma.laboratory_appointments.count({
+      where: {
+        laboratory_id: laboratory.id,
+        status: 'pending',
+      },
+    });
+
+    const completedAppointments = await prisma.laboratory_appointments.count({
+      where: {
+        laboratory_id: laboratory.id,
+        status: 'completed',
+      },
+    });
+
+    return successResponse({
+      laboratory: {
+        id: laboratory.id,
+        name: laboratory.name,
+        description: laboratory.description,
+        address: laboratory.address,
+        phone: laboratory.phone,
+        whatsapp: laboratory.whatsapp,
+      },
+      stats: {
+        totalAppointments,
+        pendingAppointments,
+        completedAppointments,
+      },
+      recentAppointments: laboratory.laboratory_appointments.map((apt) => ({
+        id: apt.id,
+        patientName: apt.patients?.full_name || 'Paciente',
+        patientPhone: apt.patients?.phone || '',
+        examName: apt.exam_name,
+        scheduledFor: apt.scheduled_for,
+        status: apt.status,
+        createdAt: apt.created_at,
+      })),
+      availableExams: laboratory.laboratory_exams.map((exam) => ({
+        id: exam.id,
+        name: exam.name,
+        description: exam.description,
+        price: parseFloat(exam.price.toString()),
+        preparation: exam.preparation,
+      })),
+    });
+  } catch (error: any) {
+    console.error('Error getting laboratory dashboard:', error);
+    return errorResponse(error.message || 'Error al obtener dashboard', 500);
+  }
+}
+
+
+/**
  * GET /api/laboratories
+ * Listar todos los laboratorios (público)
  */
 export async function getAllLaboratories(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('✅ [LABORATORIES] GET /api/laboratories - Listando laboratorios');
-  
   try {
     const prisma = getPrismaClient();
-    const queryParams = event.queryStringParameters || {};
-    
-    const page = parseInt(queryParams.page || '1', 10);
-    const limit = parseInt(queryParams.limit || '20', 10);
-    const offset = (page - 1) * limit;
-    const city = queryParams.city;
-    const search = queryParams.search;
-    
-    // Construir where
-    const where: any = {
-      category_id: 3, // Laboratorios (category_id = 3)
-      verification_status: 'APPROVED',
-      users: {
+
+    const laboratories = await prisma.laboratories.findMany({
+      where: {
         is_active: true,
       },
-      // Removido filtro de provider_branches para permitir laboratorios sin sucursales
-    };
-    
-    if (city) {
-      where.provider_branches = {
-        some: {
-          is_active: true,
-          cities: {
-            name: {
-              contains: city,
-              mode: 'insensitive',
-            },
-          },
-        },
-      };
-    }
-    
-    if (search) {
-      where.OR = [
-        {
-          commercial_name: {
-            contains: search,
-            mode: 'insensitive',
-          },
-        },
-        {
-          description: {
-            contains: search,
-            mode: 'insensitive',
-          },
-        },
-        {
-          provider_branches: {
-            some: {
-              address_text: {
-                contains: search,
-                mode: 'insensitive',
-              },
-            },
-          },
-        },
-      ];
-    }
-    
-    const [laboratories, total] = await Promise.all([
-      prisma.providers.findMany({
-        where,
-        include: {
-          users: {
-            select: {
-              email: true,
-            },
-          },
-          provider_branches: {
-            where: {
-              is_active: true,
-            },
-            orderBy: [
-              { is_main: 'desc' }, // Priorizar sucursal principal
-            ],
-            take: 1,
-            include: {
-              cities: {
-                select: {
-                  id: true,
-                  name: true,
-                },
-              },
-            },
-          },
-        },
-        orderBy: {
-          commercial_name: 'asc',
-        },
-        take: limit,
-        skip: offset,
-      }),
-      prisma.providers.count({ where }),
-    ]);
-    
-    const formattedLaboratories = laboratories.map(lab => {
-      const mainBranch = lab.provider_branches[0];
-      
-      return {
-        id: lab.id,
-        nombre: lab.commercial_name || '',
-        descripcion: lab.description || '',
-        direccion: mainBranch?.address_text || '',
-        ciudad: mainBranch?.cities?.name || '',
-        codigoPostal: '',
-        telefono: mainBranch?.phone_contact || '',
-        email: lab.users?.email || mainBranch?.email_contact || '',
-        horarioAtencion: mainBranch?.opening_hours_text || '',
-        latitud: mainBranch?.latitude || null,
-        longitud: mainBranch?.longitude || null,
-        imagen: lab.logo_url || mainBranch?.image_url || '',
-        calificacion: mainBranch?.rating_cache || 0,
-        servicios: [], // Se puede obtener de provider_catalog si es necesario
-        examenes: [], // Se puede obtener de provider_catalog si es necesario
-        whatsapp: mainBranch?.phone_contact || '',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-    });
-    
-    console.log(`✅ [LABORATORIES] Se encontraron ${formattedLaboratories.length} laboratorios (total: ${total})`);
-    
-    return successResponse({
-      laboratories: formattedLaboratories,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        address: true,
+        phone: true,
+        image_url: true,
+        rating_cache: true,
       },
-    }, 200, event);
+      orderBy: {
+        rating_cache: 'desc',
+      },
+    });
+
+    const formattedLaboratories = laboratories.map((lab) => ({
+      id: lab.id,
+      name: lab.name,
+      description: lab.description,
+      address: lab.address,
+      phone: lab.phone,
+      rating: lab.rating_cache || 0,
+      imageUrl: lab.image_url,
+    }));
+
+    return successResponse(formattedLaboratories);
   } catch (error: any) {
-    console.error('❌ [LABORATORIES] Error al listar laboratorios:', error.message);
-    logger.error('Error fetching laboratories', error);
-    return internalErrorResponse('Failed to fetch laboratories', event);
+    console.error('Error getting laboratories:', error);
+    return errorResponse(error.message || 'Error al obtener laboratorios', 500);
   }
 }
 
 /**
- * Obtener laboratorio por ID
- * GET /api/laboratories/{id}
+ * GET /api/laboratories/:id
+ * Obtener detalle de un laboratorio (público)
  */
 export async function getLaboratoryById(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('✅ [LABORATORIES] GET /api/laboratories/{id} - Obteniendo laboratorio');
-  
   try {
-    const laboratoryId = extractIdFromPath(event.requestContext.http.path, '/api/laboratories/');
-    
+    const laboratoryId = event.pathParameters?.id;
     if (!laboratoryId) {
-      return errorResponse('Laboratory ID is required', 400, undefined, event);
+      return errorResponse('ID de laboratorio requerido', 400);
     }
-    
+
     const prisma = getPrismaClient();
-    
-    const laboratory = await prisma.providers.findFirst({
-      where: {
-        id: laboratoryId,
-        category_id: 3, // Laboratorios (category_id = 3)
-        verification_status: 'APPROVED',
-        users: {
-          is_active: true,
-        },
-        // Removido filtro de provider_branches para permitir laboratorios sin sucursales
-      },
+
+    const laboratory = await prisma.laboratories.findUnique({
+      where: { id: laboratoryId },
       include: {
-        users: {
-          select: {
-            email: true,
-          },
-        },
-        provider_branches: {
-          where: {
-            is_active: true,
-          },
-          orderBy: [
-            { is_main: 'desc' }, // Priorizar sucursal principal
-          ],
-          take: 1,
-          include: {
-            cities: {
-              select: {
-                id: true,
-                name: true,
-                state: true,
-              },
-            },
-          },
-        },
-        provider_catalog: {
-          where: {
-            is_available: true,
-          },
-          select: {
-            id: true,
-            name: true,
-            description: true,
-            price: true,
-            type: true,
-          },
+        laboratory_exams: {
+          where: { is_available: true },
         },
       },
     });
-    
+
     if (!laboratory) {
-      return errorResponse('Laboratory not found', 404, undefined, event);
+      return errorResponse('Laboratorio no encontrado', 404);
     }
-    
-    const mainBranch = laboratory.provider_branches[0];
-    
-    // Separar servicios y exámenes del catálogo
-    const servicios: string[] = [];
-    const examenes: string[] = [];
-    
-    laboratory.provider_catalog.forEach(item => {
-      if (item.type === 'service') {
-        servicios.push(item.name || '');
-      } else if (item.type === 'exam' || item.type === 'test') {
-        examenes.push(item.name || '');
-      }
-    });
-    
-    const formattedLaboratory = {
+
+    return successResponse({
       id: laboratory.id,
-      nombre: laboratory.commercial_name || '',
-      descripcion: laboratory.description || '',
-      direccion: mainBranch?.address_text || '',
-      ciudad: mainBranch?.cities?.name || '',
-      codigoPostal: '',
-      telefono: mainBranch?.phone_contact || '',
-      email: laboratory.users?.email || mainBranch?.email_contact || '',
-      horarioAtencion: mainBranch?.opening_hours_text || '',
-      latitud: mainBranch?.latitude || null,
-      longitud: mainBranch?.longitude || null,
-      imagen: laboratory.logo_url || mainBranch?.image_url || '',
-      calificacion: mainBranch?.rating_cache || 0,
-      servicios,
-      examenes,
-      whatsapp: mainBranch?.phone_contact || '',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-    
-    console.log(`✅ [LABORATORIES] Laboratorio encontrado: ${formattedLaboratory.nombre}`);
-    return successResponse(formattedLaboratory, 200, event);
+      name: laboratory.name,
+      description: laboratory.description,
+      address: laboratory.address,
+      phone: laboratory.phone,
+      whatsapp: laboratory.whatsapp,
+      email: laboratory.email,
+      rating: laboratory.rating_cache || 0,
+      imageUrl: laboratory.image_url,
+      exams: laboratory.laboratory_exams.map((exam) => ({
+        id: exam.id,
+        name: exam.name,
+        description: exam.description,
+        price: parseFloat(exam.price.toString()),
+      })),
+    });
   } catch (error: any) {
-    console.error('❌ [LABORATORIES] Error al obtener laboratorio:', error.message);
-    logger.error('Error fetching laboratory by id', error);
-    return internalErrorResponse('Failed to fetch laboratory', event);
+    console.error('Error getting laboratory:', error);
+    return errorResponse(error.message || 'Error al obtener laboratorio', 500);
   }
 }
 
 /**
- * Buscar laboratorios
- * GET /api/laboratories/search?q={query}
+ * GET /api/laboratories/search
+ * Buscar laboratorios (público)
  */
 export async function searchLaboratories(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('✅ [LABORATORIES] GET /api/laboratories/search - Buscando laboratorios');
-  
   try {
-    const queryParams = event.queryStringParameters || {};
-    const query = queryParams.q || queryParams.query || '';
-    
-    if (!query || query.trim().length === 0) {
-      return errorResponse('Search query is required', 400, undefined, event);
-    }
-    
+    const query = event.queryStringParameters?.q || '';
+
     const prisma = getPrismaClient();
-    
-    const laboratories = await prisma.providers.findMany({
+
+    const laboratories = await prisma.laboratories.findMany({
       where: {
-        category_id: 3, // Laboratorios (category_id = 3)
-        verification_status: 'APPROVED',
-        users: {
-          is_active: true,
-        },
-        // Removido filtro de provider_branches para permitir laboratorios sin sucursales
+        is_active: true,
         OR: [
-          {
-            commercial_name: {
-              contains: query,
-              mode: 'insensitive',
-            },
-          },
-          {
-            description: {
-              contains: query,
-              mode: 'insensitive',
-            },
-          },
-          {
-            provider_branches: {
-              some: {
-                address_text: {
-                  contains: query,
-                  mode: 'insensitive',
-                },
-              },
-            },
-          },
-          {
-            provider_branches: {
-              some: {
-                cities: {
-                  name: {
-                    contains: query,
-                    mode: 'insensitive',
-                  },
-                },
-              },
-            },
-          },
+          { name: { contains: query, mode: 'insensitive' } },
+          { description: { contains: query, mode: 'insensitive' } },
+          { address: { contains: query, mode: 'insensitive' } },
         ],
       },
-      include: {
-        provider_branches: {
-          where: {
-            is_active: true,
-          },
-          orderBy: [
-            { is_main: 'desc' }, // Priorizar sucursal principal
-          ],
-          take: 1,
-          include: {
-            cities: {
-              select: {
-                name: true,
-              },
-            },
-          },
-        },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        address: true,
+        phone: true,
+        image_url: true,
+        rating_cache: true,
+      },
+      orderBy: {
+        rating_cache: 'desc',
       },
       take: 20,
     });
-    
-    const formattedLaboratories = laboratories.map(lab => {
-      const mainBranch = lab.provider_branches[0];
-      return {
-        id: lab.id,
-        nombre: lab.commercial_name || '',
-        descripcion: lab.description || '',
-        direccion: mainBranch?.address_text || '',
-        ciudad: mainBranch?.cities?.name || '',
-        telefono: mainBranch?.phone_contact || '',
-        horarioAtencion: mainBranch?.opening_hours_text || '',
-        imagen: lab.logo_url || mainBranch?.image_url || '',
-        calificacion: mainBranch?.rating_cache || 0,
-      };
-    });
-    
-    console.log(`✅ [LABORATORIES] Se encontraron ${formattedLaboratories.length} laboratorios para "${query}"`);
-    return successResponse(formattedLaboratories, 200, event);
+
+    const formattedLaboratories = laboratories.map((lab) => ({
+      id: lab.id,
+      name: lab.name,
+      description: lab.description,
+      address: lab.address,
+      phone: lab.phone,
+      rating: lab.rating_cache || 0,
+      imageUrl: lab.image_url,
+    }));
+
+    return successResponse(formattedLaboratories);
   } catch (error: any) {
-    console.error('❌ [LABORATORIES] Error al buscar laboratorios:', error.message);
-    logger.error('Error searching laboratories', error);
-    return internalErrorResponse('Failed to search laboratories', event);
+    console.error('Error searching laboratories:', error);
+    return errorResponse(error.message || 'Error al buscar laboratorios', 500);
   }
 }
-

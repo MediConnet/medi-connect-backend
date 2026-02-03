@@ -1,606 +1,655 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResult } from 'aws-lambda';
-import { enum_roles } from '../generated/prisma/client';
-import { AuthContext, requireRole } from '../shared/auth';
 import { getPrismaClient } from '../shared/prisma';
-import { successResponse, errorResponse, notFoundResponse, internalErrorResponse } from '../shared/response';
-import { parseBody, extractIdFromPath, updateClinicProfileDoctorSchema, createReceptionMessageDoctorSchema, requestDateBlockSchema, updateAppointmentStatusSchema } from '../shared/validators';
-import { getClinicDoctor, validateClinicDoctorAccess, validateAppointmentAccess } from '../shared/clinic-doctor-helpers';
-import { logger } from '../shared/logger';
+import { successResponse, errorResponse } from '../shared/response';
+import { requireAuth, AuthContext } from '../shared/auth';
+import { randomUUID } from 'crypto';
 
-// GET /api/doctors/clinic-info
+/**
+ * GET /api/doctors/clinic-info
+ * Obtener información básica de la clínica a la que está asociado el médico
+ */
 export async function getClinicInfo(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('✅ [DOCTORS] GET /api/doctors/clinic-info - Obteniendo información de clínica');
-  
-  const authResult = await requireRole(event, [enum_roles.provider]);
-  if ('statusCode' in authResult) return authResult;
-
-  const authContext = authResult as AuthContext;
-  const clinicDoctor = await getClinicDoctor(authContext);
-
-  // ⭐ En lugar de retornar 404, retornar objeto con campos null para evitar errores en frontend
-  if (!clinicDoctor || !clinicDoctor.clinics) {
-    console.warn(`⚠️ [DOCTORS] Doctor ${authContext.user.id} no está asociado a ninguna clínica - retornando objeto vacío`);
-    return successResponse({
-      id: null,
-      name: null,
-      address: null,
-      phone: null,
-      whatsapp: null,
-      logoUrl: null,
-    });
-  }
-
-  const clinic = clinicDoctor.clinics;
-
-  console.log(`✅ [DOCTORS] Doctor está asociado a clínica: ${clinicDoctor.clinic_id}`);
-
-  // ⭐ Retornar estructura esperada por el frontend (solo campos de clínica)
-  return successResponse({
-    id: clinic.id,
-    name: clinic.name || null,
-    address: clinic.address || null,
-    phone: clinic.phone || null,
-    whatsapp: clinic.whatsapp || null,
-    logoUrl: clinic.logo_url || null,
-  });
-}
-
-// GET /api/doctors/clinic/profile
-export async function getClinicProfile(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('✅ [DOCTORS] GET /api/doctors/clinic/profile - Obteniendo perfil de clínica');
-  
-  const authResult = await requireRole(event, [enum_roles.provider]);
-  if ('statusCode' in authResult) return authResult;
-
-  const authContext = authResult as AuthContext;
-  const prisma = getPrismaClient();
-  
-  // ⭐ Obtener clinicDoctor con relaciones necesarias
-  const clinicDoctor = await prisma.clinic_doctors.findFirst({
-    where: {
-      user_id: authContext.user.id,
-      is_active: true,
-      is_invited: false,
-      clinic_id: { not: null },
-    },
-    include: {
-      clinics: true,
-      users: {
-        select: { email: true },
-      },
-    },
-  });
-
-  // ⭐ En lugar de retornar 404, retornar objeto con campos null para evitar errores en frontend
-  if (!clinicDoctor || !clinicDoctor.clinics) {
-    console.warn('⚠️ [DOCTORS] Doctor no está asociado a ninguna clínica - retornando objeto vacío');
-    return successResponse({
-      id: null,
-      clinicId: null,
-      clinicInfo: null,
-      specialty: null,
-      experience: null,
-      bio: null,
-      education: [],
-      certifications: [],
-      profileImageUrl: null,
-      phone: null,
-      whatsapp: null,
-      email: null,
-    });
-  }
-
-  const clinic = clinicDoctor.clinics;
-
-  // ⭐ Retornar estructura esperada por el frontend
-  return successResponse({
-    id: clinicDoctor.id, // ⭐ ID del doctor, no de la clínica
-    clinicId: clinicDoctor.clinic_id || null,
-    clinicInfo: {
-      id: clinic.id,
-      name: clinic.name || null,
-      address: clinic.address || null,
-      phone: clinic.phone || null,
-      whatsapp: clinic.whatsapp || null,
-      logoUrl: clinic.logo_url || null,
-    },
-    specialty: clinicDoctor.specialty || null,
-    experience: null, // Campo no existe en el modelo
-    bio: null, // Campo no existe en el modelo
-    education: [], // Campo no existe en el modelo
-    certifications: [], // Campo no existe en el modelo
-    profileImageUrl: clinicDoctor.profile_image_url || null,
-    phone: clinicDoctor.phone || null,
-    whatsapp: clinicDoctor.whatsapp || null,
-    email: clinicDoctor.users?.email || clinicDoctor.email || null,
-  });
-}
-
-// PUT /api/doctors/clinic/profile
-export async function updateClinicProfile(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('✅ [DOCTORS] PUT /api/doctors/clinic/profile - Actualizando perfil de médico en clínica');
-  
-  const authResult = await requireRole(event, [enum_roles.provider]);
-  if ('statusCode' in authResult) return authResult;
-
-  const authContext = authResult as AuthContext;
-  const body = parseBody(event.body, updateClinicProfileDoctorSchema);
-  const prisma = getPrismaClient();
-
-  const clinicDoctor = await getClinicDoctor(authContext);
-  if (!clinicDoctor) {
-    return notFoundResponse('Doctor is not associated with any clinic');
-  }
-
   try {
-    const updateData: any = {
-      updated_at: new Date(),
-    };
+    const authResult = await requireAuth(event);
+    if ('statusCode' in authResult) {
+      return authResult;
+    }
+    const authContext = authResult as AuthContext;
 
-    // Campos existentes
-    if (body.specialty !== undefined) updateData.specialty = body.specialty;
-    // Nota: experience, bio, education, certifications no existen en el modelo clinic_doctors
-    if (body.officeNumber !== undefined) updateData.office_number = body.officeNumber;
-    if (body.phone !== undefined) updateData.phone = body.phone;
-    if (body.whatsapp !== undefined) updateData.whatsapp = body.whatsapp;
-    if (body.profileImageUrl !== undefined) updateData.profile_image_url = body.profileImageUrl || null;
+    const prisma = getPrismaClient();
 
-    const updated = await prisma.clinic_doctors.update({
-      where: { id: clinicDoctor.id },
-      data: updateData,
+    const doctorAssociation = await prisma.clinic_doctors.findFirst({
+      where: {
+        user_id: authContext.user.id,
+        is_active: true,
+      },
       include: {
         clinics: true,
-        users: {
-          select: { email: true },
-        },
       },
     });
 
-    // ⭐ Retornar estructura esperada por el frontend
-    const clinic = updated.clinics;
+    if (!doctorAssociation || !doctorAssociation.clinics) {
+      return errorResponse('No estás asociado a ninguna clínica', 404);
+    }
+
+    const clinic = doctorAssociation.clinics;
+
     return successResponse({
-      id: updated.id,
-      clinicId: updated.clinic_id || null,
-      clinicInfo: clinic ? {
-        id: clinic.id,
-        name: clinic.name || null,
-        address: clinic.address || null,
-        phone: clinic.phone || null,
-        whatsapp: clinic.whatsapp || null,
-        logoUrl: clinic.logo_url || null,
-      } : null,
-      specialty: updated.specialty || null,
-      experience: null, // Campo no existe en el modelo
-      bio: null, // Campo no existe en el modelo
-      education: [], // Campo no existe en el modelo
-      certifications: [], // Campo no existe en el modelo
-      profileImageUrl: updated.profile_image_url || null,
-      phone: updated.phone || null,
-      whatsapp: updated.whatsapp || null,
-      email: updated.users?.email || updated.email || null,
+      id: clinic.id,
+      name: clinic.name,
+      address: clinic.address,
+      phone: clinic.phone,
+      whatsapp: clinic.whatsapp,
+      logoUrl: clinic.logo_url,
     });
   } catch (error: any) {
-    console.error(`❌ [DOCTORS] Error al actualizar perfil:`, error.message);
-    logger.error('Error updating clinic doctor profile', error);
-    return internalErrorResponse('Failed to update profile');
+    console.error('Error getting clinic info:', error);
+    return errorResponse(error.message || 'Error al obtener información de la clínica', 500);
   }
 }
 
-// GET /api/doctors/clinic/appointments
-export async function getClinicAppointments(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('✅ [DOCTORS] GET /api/doctors/clinic/appointments - Obteniendo citas de clínica');
-  
-  const authResult = await requireRole(event, [enum_roles.provider]);
-  if ('statusCode' in authResult) return authResult;
-
-  const authContext = authResult as AuthContext;
-  const clinicDoctor = await getClinicDoctor(authContext);
-
-  if (!clinicDoctor || !clinicDoctor.clinic_id) {
-    return notFoundResponse('Doctor is not associated with any clinic');
-  }
-
-  const prisma = getPrismaClient();
-  const queryParams = event.queryStringParameters || {};
-
+/**
+ * GET /api/doctors/clinic/profile
+ * Obtener perfil profesional del médico asociado a una clínica
+ */
+export async function getClinicProfile(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   try {
-    const where: any = {
-      clinic_id: clinicDoctor.clinic_id,
-      provider_id: clinicDoctor.user_id,
-    };
+    const authResult = await requireAuth(event);
+    if ('statusCode' in authResult) {
+      return authResult;
+    }
+    const authContext = authResult as AuthContext;
 
-    // Filtros opcionales
-    if (queryParams.date) {
-      const date = new Date(queryParams.date);
-      const nextDay = new Date(date);
-      nextDay.setDate(nextDay.getDate() + 1);
-      where.scheduled_for = {
-        gte: date,
-        lt: nextDay,
-      };
+    const prisma = getPrismaClient();
+
+    const doctorAssociation = await prisma.clinic_doctors.findFirst({
+      where: {
+        user_id: authContext.user.id,
+        is_active: true,
+      },
+      include: {
+        clinics: true,
+      },
+    });
+
+    if (!doctorAssociation || !doctorAssociation.clinics) {
+      return errorResponse('No estás asociado a ninguna clínica', 404);
     }
 
-    if (queryParams.status) {
-      where.status = queryParams.status.toUpperCase();
+    const clinic = doctorAssociation.clinics;
+
+    return successResponse({
+      id: doctorAssociation.id,
+      clinicId: clinic.id,
+      clinicInfo: {
+        id: clinic.id,
+        name: clinic.name,
+        address: clinic.address,
+        phone: clinic.phone,
+        whatsapp: clinic.whatsapp,
+        logoUrl: clinic.logo_url,
+      },
+      specialty: doctorAssociation.specialty,
+      experience: doctorAssociation.experience,
+      bio: doctorAssociation.bio,
+      education: doctorAssociation.education,
+      certifications: doctorAssociation.certifications,
+      profileImageUrl: doctorAssociation.profile_image_url,
+      phone: doctorAssociation.phone,
+      whatsapp: doctorAssociation.whatsapp,
+      email: doctorAssociation.email,
+    });
+  } catch (error: any) {
+    console.error('Error getting clinic profile:', error);
+    return errorResponse(error.message || 'Error al obtener perfil', 500);
+  }
+}
+
+/**
+ * PUT /api/doctors/clinic/profile
+ * Actualizar perfil profesional del médico asociado
+ */
+export async function updateClinicProfile(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  try {
+    const authResult = await requireAuth(event);
+    if ('statusCode' in authResult) {
+      return authResult;
+    }
+    const authContext = authResult as AuthContext;
+
+    const body = JSON.parse(event.body || '{}');
+    const { specialty, experience, bio, education, certifications, phone, whatsapp } = body;
+
+    const prisma = getPrismaClient();
+
+    const doctorAssociation = await prisma.clinic_doctors.findFirst({
+      where: {
+        user_id: authContext.user.id,
+        is_active: true,
+      },
+    });
+
+    if (!doctorAssociation) {
+      return errorResponse('No estás asociado a ninguna clínica', 404);
+    }
+
+    const updated = await prisma.clinic_doctors.update({
+      where: { id: doctorAssociation.id },
+      data: {
+        specialty,
+        bio,
+        education,
+        certifications,
+        phone,
+        whatsapp,
+        updated_at: new Date(),
+      },
+      include: {
+        clinics: true,
+      },
+    });
+
+    if (!updated.clinics) {
+      return errorResponse('Error al obtener información de la clínica', 500);
+    }
+
+    const clinic = updated.clinics;
+
+    return successResponse({
+      id: updated.id,
+      clinicId: clinic.id,
+      clinicInfo: {
+        id: clinic.id,
+        name: clinic.name,
+        address: clinic.address,
+        phone: clinic.phone,
+        whatsapp: clinic.whatsapp,
+        logoUrl: clinic.logo_url,
+      },
+      specialty: updated.specialty,
+      experience: updated.experience,
+      bio: updated.bio,
+      education: updated.education,
+      certifications: updated.certifications,
+      profileImageUrl: updated.profile_image_url,
+      phone: updated.phone,
+      whatsapp: updated.whatsapp,
+      email: updated.email,
+    });
+  } catch (error: any) {
+    console.error('Error updating clinic profile:', error);
+    return errorResponse(error.message || 'Error al actualizar perfil', 500);
+  }
+}
+
+/**
+ * GET /api/doctors/clinic/appointments
+ * Obtener citas confirmadas del médico asociado (sin información financiera)
+ */
+export async function getClinicAppointments(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  try {
+    const authResult = await requireAuth(event);
+    if ('statusCode' in authResult) {
+      return authResult;
+    }
+    const authContext = authResult as AuthContext;
+
+    const prisma = getPrismaClient();
+
+    const doctorAssociation = await prisma.clinic_doctors.findFirst({
+      where: {
+        user_id: authContext.user.id,
+        is_active: true,
+      },
+    });
+
+    if (!doctorAssociation) {
+      return errorResponse('No estás asociado a ninguna clínica', 404);
+    }
+
+    const provider = await prisma.providers.findFirst({
+      where: { user_id: authContext.user.id },
+    });
+
+    if (!provider) {
+      return successResponse([]);
     }
 
     const appointments = await prisma.appointments.findMany({
-      where,
-      include: {
-        patients: {
-          select: {
-            id: true,
-            full_name: true,
-            phone: true,
-          },
-        },
-        clinics: {
-          select: {
-            id: true,
-            name: true,
-          },
+      where: {
+        provider_id: provider.id,
+        clinic_id: doctorAssociation.clinic_id,
+        status: {
+          in: ['CONFIRMED', 'COMPLETED', 'NO_SHOW'],
         },
       },
-      orderBy: { scheduled_for: 'desc' },
-      take: parseInt(queryParams.limit || '50', 10),
+      include: {
+        patients: true,
+      },
+      orderBy: [
+        { scheduled_for: 'asc' },
+      ],
     });
 
-    // OCULTAR información financiera
-    return successResponse(appointments.map((apt: typeof appointments[0]) => ({
-      id: apt.id,
-      scheduledFor: apt.scheduled_for,
-      status: apt.status,
-      reason: apt.reason,
-      receptionStatus: apt.reception_status,
-      receptionNotes: apt.reception_notes,
-      patient: apt.patients ? {
-        id: apt.patients.id,
-        fullName: apt.patients.full_name,
-        phone: apt.patients.phone,
-      } : null,
-      clinic: apt.clinics ? {
-        id: apt.clinics.id,
-        name: apt.clinics.name,
-      } : null,
-      // NO incluir: cost, payment_method, is_paid
-    })));
+    const formattedAppointments = appointments.map((apt) => {
+      const scheduledFor = apt.scheduled_for ? new Date(apt.scheduled_for) : null;
+      
+      return {
+        id: apt.id,
+        patientId: apt.patient_id,
+        patientName: apt.patients?.full_name || 'Paciente',
+        patientPhone: apt.patients?.phone || '',
+        date: scheduledFor ? scheduledFor.toISOString().split('T')[0] : '',
+        time: scheduledFor ? scheduledFor.toTimeString().slice(0, 5) : '',
+        reason: apt.reason || 'Consulta general',
+        status: apt.status,
+      };
+    });
+
+    return successResponse(formattedAppointments);
   } catch (error: any) {
-    console.error(`❌ [DOCTORS] Error al obtener citas:`, error.message);
-    logger.error('Error getting clinic appointments', error);
-    return internalErrorResponse('Failed to get appointments');
+    console.error('Error getting clinic appointments:', error);
+    return errorResponse(error.message || 'Error al obtener citas', 500);
   }
 }
 
-// PATCH /api/doctors/clinic/appointments/:id/status
+/**
+ * PATCH /api/doctors/clinic/appointments/:appointmentId/status
+ * Actualizar estado de cita (marcar como atendida o no asistió)
+ */
 export async function updateClinicAppointmentStatus(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('✅ [DOCTORS] PATCH /api/doctors/clinic/appointments/{id}/status - Actualizando estado de cita');
-  
-  const authResult = await requireRole(event, [enum_roles.provider]);
-  if ('statusCode' in authResult) return authResult;
-
-  const authContext = authResult as AuthContext;
-  const appointmentId = extractIdFromPath(event.requestContext.http.path, '/api/doctors/clinic/appointments/', '/status');
-  const body = parseBody(event.body, updateAppointmentStatusSchema);
-
-  const validation = await validateAppointmentAccess(authContext, appointmentId);
-  if (!validation.valid) {
-    return errorResponse(validation.error || 'Access denied', 403);
-  }
-
-  const prisma = getPrismaClient();
-
   try {
-    // Mapear estados
-    const statusMap: Record<string, string> = {
-      'scheduled': 'CONFIRMED',
-      'confirmed': 'CONFIRMED',
-      'attended': 'attended',
-      'cancelled': 'CANCELLED',
-      'no_show': 'CANCELLED',
-    };
+    const authResult = await requireAuth(event);
+    if ('statusCode' in authResult) {
+      return authResult;
+    }
+    const authContext = authResult as AuthContext;
 
-    const dbStatus = statusMap[body.status] || body.status.toUpperCase();
+    const appointmentId = event.pathParameters?.appointmentId;
+    if (!appointmentId) {
+      return errorResponse('ID de cita requerido', 400);
+    }
+
+    const body = JSON.parse(event.body || '{}');
+    const { status } = body;
+
+    if (!status || !['COMPLETED', 'NO_SHOW'].includes(status)) {
+      return errorResponse('Estado inválido. Debe ser COMPLETED o NO_SHOW', 400);
+    }
+
+    const prisma = getPrismaClient();
+
+    const doctorAssociation = await prisma.clinic_doctors.findFirst({
+      where: {
+        user_id: authContext.user.id,
+        is_active: true,
+      },
+    });
+
+    if (!doctorAssociation) {
+      return errorResponse('No estás asociado a ninguna clínica', 404);
+    }
+
+    const provider = await prisma.providers.findFirst({
+      where: { user_id: authContext.user.id },
+    });
+
+    if (!provider) {
+      return errorResponse('Proveedor no encontrado', 404);
+    }
+
+    const appointment = await prisma.appointments.findFirst({
+      where: {
+        id: appointmentId,
+        provider_id: provider.id,
+        clinic_id: doctorAssociation.clinic_id,
+      },
+    });
+
+    if (!appointment) {
+      return errorResponse('Cita no encontrada o no tienes permiso para modificarla', 404);
+    }
 
     const updated = await prisma.appointments.update({
       where: { id: appointmentId },
-      data: { status: dbStatus },
+      data: { status },
+      include: {
+        patients: true,
+      },
     });
+
+    const scheduledFor = updated.scheduled_for ? new Date(updated.scheduled_for) : null;
 
     return successResponse({
       id: updated.id,
-      status: body.status,
-      updatedAt: updated.scheduled_for?.toISOString() || null,
+      patientId: updated.patient_id,
+      patientName: updated.patients?.full_name || 'Paciente',
+      patientPhone: updated.patients?.phone || '',
+      date: scheduledFor ? scheduledFor.toISOString().split('T')[0] : '',
+      time: scheduledFor ? scheduledFor.toTimeString().slice(0, 5) : '',
+      reason: updated.reason || 'Consulta general',
+      status: updated.status,
     });
   } catch (error: any) {
-    console.error(`❌ [DOCTORS] Error al actualizar estado:`, error.message);
-    logger.error('Error updating appointment status', error);
-    return internalErrorResponse('Failed to update appointment status');
+    console.error('Error updating appointment status:', error);
+    return errorResponse(error.message || 'Error al actualizar estado de cita', 500);
   }
 }
 
-// GET /api/doctors/clinic/reception/messages
+/**
+ * GET /api/doctors/clinic/reception/messages
+ * Obtener mensajes entre el médico y la recepción de la clínica
+ */
 export async function getReceptionMessages(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('✅ [DOCTORS] GET /api/doctors/clinic/reception/messages - Obteniendo mensajes de recepción');
-  
-  const authResult = await requireRole(event, [enum_roles.provider]);
-  if ('statusCode' in authResult) return authResult;
-
-  const authContext = authResult as AuthContext;
-  const clinicDoctor = await getClinicDoctor(authContext);
-
-  if (!clinicDoctor || !clinicDoctor.clinic_id) {
-    return notFoundResponse('Doctor is not associated with any clinic');
-  }
-
-  const prisma = getPrismaClient();
-  const queryParams = event.queryStringParameters || {};
-
   try {
-    const where: any = {
-      clinic_id: clinicDoctor.clinic_id,
-      doctor_id: clinicDoctor.id,
-    };
+    const authResult = await requireAuth(event);
+    if ('statusCode' in authResult) {
+      return authResult;
+    }
+    const authContext = authResult as AuthContext;
 
-    if (queryParams.unreadOnly === 'true') {
-      where.is_read = false;
+    const prisma = getPrismaClient();
+
+    const doctorAssociation = await prisma.clinic_doctors.findFirst({
+      where: {
+        user_id: authContext.user.id,
+        is_active: true,
+      },
+    });
+
+    if (!doctorAssociation) {
+      return errorResponse('No estás asociado a ninguna clínica', 404);
     }
 
-    // Obtener mensajes con información de clínica
     const messages = await prisma.reception_messages.findMany({
-      where,
-      include: {
-        clinics: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-        clinic_doctors: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
+      where: {
+        doctor_id: doctorAssociation.id,
       },
-      orderBy: { created_at: 'asc' }, // ⭐ Cambiar a ascendente para consistencia
-      take: parseInt(queryParams.limit || '50', 10),
+      include: {
+        clinics: true,
+      },
+      orderBy: {
+        created_at: 'desc',
+      },
     });
 
-    // Mapear a formato de respuesta con from correcto
-    const messagesData = messages.map((msg: typeof messages[0]) => ({
+    const formattedMessages = messages.map((msg) => ({
       id: msg.id,
-      clinicId: msg.clinic_id || null,
-      doctorId: msg.doctor_id || null,
-      doctorName: clinicDoctor.name || 'Médico', // ⭐ REQUERIDO
-      from: msg.sender_type === 'doctor' ? 'doctor' : 'reception', // ⭐ Mapear correctamente
+      clinicId: msg.clinic_id,
+      doctorId: msg.doctor_id,
+      from: msg.sender_type,
       message: msg.message,
-      timestamp: msg.created_at?.toISOString() || new Date().toISOString(),
-      isRead: msg.is_read ?? false,
-      senderName: msg.sender_type === 'doctor'
-        ? (clinicDoctor.name || 'Médico')
-        : (msg.clinics?.name || 'Recepción'), // ⭐ Nombre de clínica o médico
+      timestamp: msg.created_at,
+      isRead: msg.is_read,
+      senderName: msg.sender_type === 'reception' 
+        ? `Recepción ${msg.clinics?.name || 'Clínica'}` 
+        : doctorAssociation.name || 'Doctor',
     }));
 
-    return successResponse(messagesData);
+    return successResponse(formattedMessages);
   } catch (error: any) {
-    console.error(`❌ [DOCTORS] Error al obtener mensajes:`, error.message);
-    logger.error('Error getting reception messages', error);
-    return internalErrorResponse('Failed to get messages');
+    console.error('Error getting reception messages:', error);
+    return errorResponse(error.message || 'Error al obtener mensajes', 500);
   }
 }
 
-// POST /api/doctors/clinic/reception/messages
+/**
+ * POST /api/doctors/clinic/reception/messages
+ * Enviar mensaje a la recepción de la clínica
+ */
 export async function createReceptionMessage(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('✅ [DOCTORS] POST /api/doctors/clinic/reception/messages - Creando mensaje de recepción');
-  
-  const authResult = await requireRole(event, [enum_roles.provider]);
-  if ('statusCode' in authResult) return authResult;
-
-  const authContext = authResult as AuthContext;
-  const body = parseBody(event.body, createReceptionMessageDoctorSchema); // ⭐ Usar schema sin doctorId
-  const prisma = getPrismaClient();
-  const { randomUUID } = await import('crypto');
-
-  const clinicDoctor = await getClinicDoctor(authContext);
-  if (!clinicDoctor || !clinicDoctor.clinic_id || !clinicDoctor.clinics) {
-    return notFoundResponse('Doctor is not associated with any clinic');
-  }
-
   try {
-    const message = await prisma.reception_messages.create({
-      data: {
-        id: randomUUID(),
-        clinic_id: clinicDoctor.clinic_id,
-        doctor_id: clinicDoctor.id,
-        message: body.message,
-        sender_type: 'doctor', // ⭐ Siempre "doctor" cuando se envía desde médico
-        is_read: false,
+    const authResult = await requireAuth(event);
+    if ('statusCode' in authResult) {
+      return authResult;
+    }
+    const authContext = authResult as AuthContext;
+
+    const body = JSON.parse(event.body || '{}');
+    const { message } = body;
+
+    if (!message || message.trim() === '') {
+      return errorResponse('El mensaje no puede estar vacío', 400);
+    }
+
+    const prisma = getPrismaClient();
+
+    const doctorAssociation = await prisma.clinic_doctors.findFirst({
+      where: {
+        user_id: authContext.user.id,
+        is_active: true,
       },
       include: {
-        clinics: {
-          select: {
-            name: true,
-          },
-        },
+        clinics: true,
       },
     });
 
-    // ⭐ Retornar con formato correcto incluyendo from: "doctor"
+    if (!doctorAssociation) {
+      return errorResponse('No estás asociado a ninguna clínica', 404);
+    }
+
+    const newMessage = await prisma.reception_messages.create({
+      data: {
+        id: randomUUID(),
+        clinic_id: doctorAssociation.clinic_id,
+        doctor_id: doctorAssociation.id,
+        message: message.trim(),
+        sender_type: 'doctor',
+        is_read: false,
+        created_at: new Date(),
+      },
+      include: {
+        clinics: true,
+      },
+    });
+
     return successResponse({
-      id: message.id,
-      clinicId: message.clinic_id || null,
-      doctorId: message.doctor_id || null,
-      doctorName: clinicDoctor.name || 'Médico', // ⭐ REQUERIDO
-      from: 'doctor', // ⭐ Siempre "doctor" cuando se envía desde médico
-      message: message.message,
-      timestamp: message.created_at?.toISOString() || new Date().toISOString(),
-      isRead: false,
-      senderName: clinicDoctor.name || 'Médico', // ⭐ Nombre del médico
-    }, 201);
+      id: newMessage.id,
+      clinicId: newMessage.clinic_id,
+      doctorId: newMessage.doctor_id,
+      from: newMessage.sender_type,
+      message: newMessage.message,
+      timestamp: newMessage.created_at,
+      isRead: newMessage.is_read,
+      senderName: doctorAssociation.name || 'Doctor',
+    });
   } catch (error: any) {
-    console.error(`❌ [DOCTORS] Error al crear mensaje:`, error.message);
-    logger.error('Error creating reception message', error);
-    return internalErrorResponse('Failed to create message');
+    console.error('Error sending reception message:', error);
+    return errorResponse(error.message || 'Error al enviar mensaje', 500);
   }
 }
 
-// PATCH /api/doctors/clinic/reception/messages/read
+/**
+ * PATCH /api/doctors/clinic/reception/messages/read
+ * Marcar mensajes como leídos
+ */
 export async function markReceptionMessagesAsRead(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('✅ [DOCTORS] PATCH /api/doctors/clinic/reception/messages/read - Marcando mensajes como leídos');
-  
-  const authResult = await requireRole(event, [enum_roles.provider]);
-  if ('statusCode' in authResult) return authResult;
-
-  const authContext = authResult as AuthContext;
-  const prisma = getPrismaClient();
-
-  const clinicDoctor = await getClinicDoctor(authContext);
-  if (!clinicDoctor || !clinicDoctor.clinic_id) {
-    return notFoundResponse('Doctor is not associated with any clinic');
-  }
-
   try {
-    const result = await prisma.reception_messages.updateMany({
+    const authResult = await requireAuth(event);
+    if ('statusCode' in authResult) {
+      return authResult;
+    }
+    const authContext = authResult as AuthContext;
+
+    const body = JSON.parse(event.body || '{}');
+    const { messageIds } = body;
+
+    if (!Array.isArray(messageIds) || messageIds.length === 0) {
+      return errorResponse('Debe proporcionar al menos un ID de mensaje', 400);
+    }
+
+    const prisma = getPrismaClient();
+
+    const doctorAssociation = await prisma.clinic_doctors.findFirst({
       where: {
-        clinic_id: clinicDoctor.clinic_id,
-        doctor_id: clinicDoctor.id,
-        is_read: false,
+        user_id: authContext.user.id,
+        is_active: true,
+      },
+    });
+
+    if (!doctorAssociation) {
+      return errorResponse('No estás asociado a ninguna clínica', 404);
+    }
+
+    await prisma.reception_messages.updateMany({
+      where: {
+        id: { in: messageIds },
+        doctor_id: doctorAssociation.id,
       },
       data: {
         is_read: true,
       },
     });
 
-    return successResponse({
-      count: result.count,
-    });
+    return successResponse({ success: true });
   } catch (error: any) {
-    console.error(`❌ [DOCTORS] Error al marcar mensajes:`, error.message);
-    logger.error('Error marking messages as read', error);
-    return internalErrorResponse('Failed to mark messages as read');
+    console.error('Error marking messages as read:', error);
+    return errorResponse(error.message || 'Error al marcar mensajes como leídos', 500);
   }
 }
 
-// GET /api/doctors/clinic/date-blocks
+/**
+ * GET /api/doctors/clinic/date-blocks
+ * Obtener solicitudes de bloqueo de fechas del médico
+ */
 export async function getDateBlocks(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('✅ [DOCTORS] GET /api/doctors/clinic/date-blocks - Obteniendo bloqueos de fecha');
-  
-  const authResult = await requireRole(event, [enum_roles.provider]);
-  if ('statusCode' in authResult) return authResult;
-
-  const authContext = authResult as AuthContext;
-  const clinicDoctor = await getClinicDoctor(authContext);
-
-  if (!clinicDoctor || !clinicDoctor.clinic_id) {
-    return notFoundResponse('Doctor is not associated with any clinic');
-  }
-
-  const prisma = getPrismaClient();
-  const queryParams = event.queryStringParameters || {};
-
   try {
-    const where: any = {
-      clinic_id: clinicDoctor.clinic_id,
-      doctor_id: clinicDoctor.id,
-    };
-
-    if (queryParams.status) {
-      where.status = queryParams.status;
+    const authResult = await requireAuth(event);
+    if ('statusCode' in authResult) {
+      return authResult;
     }
+    const authContext = authResult as AuthContext;
 
-    const dateBlocks = await prisma.date_block_requests.findMany({
-      where,
-      orderBy: { date: 'desc' },
-      take: parseInt(queryParams.limit || '50', 10),
-    });
+    const prisma = getPrismaClient();
 
-    return successResponse(dateBlocks);
-  } catch (error: any) {
-    console.error(`❌ [DOCTORS] Error al obtener bloqueos:`, error.message);
-    logger.error('Error getting date blocks', error);
-    return internalErrorResponse('Failed to get date blocks');
-  }
-}
-
-// POST /api/doctors/clinic/date-blocks/request
-export async function requestDateBlock(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('✅ [DOCTORS] POST /api/doctors/clinic/date-blocks/request - Solicitando bloqueo de fecha');
-  
-  const authResult = await requireRole(event, [enum_roles.provider]);
-  if ('statusCode' in authResult) return authResult;
-
-  const authContext = authResult as AuthContext;
-  const body = parseBody(event.body, requestDateBlockSchema);
-  const prisma = getPrismaClient();
-  const { randomUUID } = await import('crypto');
-
-  const clinicDoctor = await getClinicDoctor(authContext);
-  if (!clinicDoctor || !clinicDoctor.clinic_id) {
-    return notFoundResponse('Doctor is not associated with any clinic');
-  }
-
-  try {
-    const dateBlock = await prisma.date_block_requests.create({
-      data: {
-        id: randomUUID(),
-        clinic_id: clinicDoctor.clinic_id,
-        doctor_id: clinicDoctor.id,
-        date: new Date(body.date),
-        reason: body.reason,
-        status: 'pending',
+    const doctorAssociation = await prisma.clinic_doctors.findFirst({
+      where: {
+        user_id: authContext.user.id,
+        is_active: true,
       },
     });
 
-    return successResponse(dateBlock, 201);
+    if (!doctorAssociation) {
+      return errorResponse('No estás asociado a ninguna clínica', 404);
+    }
+
+    const dateBlocks = await prisma.date_block_requests.findMany({
+      where: {
+        doctor_id: doctorAssociation.id,
+      },
+      orderBy: {
+        created_at: 'desc',
+      },
+    });
+
+    const formattedBlocks = dateBlocks.map((block) => ({
+      id: block.id,
+      doctorId: block.doctor_id,
+      clinicId: block.clinic_id,
+      startDate: block.date.toISOString().split('T')[0],
+      endDate: block.date.toISOString().split('T')[0],
+      reason: block.reason,
+      status: block.status,
+      createdAt: block.created_at,
+      reviewedAt: block.updated_at,
+      reviewedBy: null,
+      rejectionReason: null,
+    }));
+
+    return successResponse(formattedBlocks);
   } catch (error: any) {
-    console.error(`❌ [DOCTORS] Error al solicitar bloqueo:`, error.message);
-    logger.error('Error requesting date block', error);
-    return internalErrorResponse('Failed to request date block');
+    console.error('Error getting date blocks:', error);
+    return errorResponse(error.message || 'Error al obtener bloqueos de fechas', 500);
   }
 }
 
-// GET /api/doctors/clinic/notifications (opcional)
-export async function getClinicNotifications(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('✅ [DOCTORS] GET /api/doctors/clinic/notifications - Obteniendo notificaciones de clínica');
-  
-  const authResult = await requireRole(event, [enum_roles.provider]);
-  if ('statusCode' in authResult) return authResult;
-
-  const authContext = authResult as AuthContext;
-  const clinicDoctor = await getClinicDoctor(authContext);
-
-  if (!clinicDoctor || !clinicDoctor.clinic_id) {
-    return notFoundResponse('Doctor is not associated with any clinic');
-  }
-
-  const prisma = getPrismaClient();
-  const queryParams = event.queryStringParameters || {};
-
+/**
+ * POST /api/doctors/clinic/date-blocks/request
+ * Solicitar bloqueo de fechas
+ */
+export async function requestDateBlock(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   try {
-    const where: any = {
-      clinic_id: clinicDoctor.clinic_id,
-    };
+    const authResult = await requireAuth(event);
+    if ('statusCode' in authResult) {
+      return authResult;
+    }
+    const authContext = authResult as AuthContext;
 
-    if (queryParams.unreadOnly === 'true') {
-      where.is_read = false;
+    const body = JSON.parse(event.body || '{}');
+    const { startDate, endDate, reason } = body;
+
+    if (!startDate || !endDate) {
+      return errorResponse('Las fechas de inicio y fin son requeridas', 400);
     }
 
-    const notifications = await prisma.clinic_notifications.findMany({
-      where,
-      orderBy: { created_at: 'desc' },
-      take: parseInt(queryParams.limit || '50', 10),
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+
+    if (start > end) {
+      return errorResponse('La fecha de inicio debe ser anterior a la fecha de fin', 400);
+    }
+
+    const prisma = getPrismaClient();
+
+    const doctorAssociation = await prisma.clinic_doctors.findFirst({
+      where: {
+        user_id: authContext.user.id,
+        is_active: true,
+      },
     });
 
-    // Filtrar solo notificaciones relevantes para el médico
-    const relevantNotifications = notifications.filter((notif: typeof notifications[0]) => {
-      const data = notif.data as any;
-      return data?.doctor_id === clinicDoctor.id;
+    if (!doctorAssociation) {
+      return errorResponse('No estás asociado a ninguna clínica', 404);
+    }
+
+    const dateBlock = await prisma.date_block_requests.create({
+      data: {
+        id: randomUUID(),
+        clinic_id: doctorAssociation.clinic_id,
+        doctor_id: doctorAssociation.id,
+        date: start,
+        reason: reason || 'Sin especificar',
+        status: 'pending',
+        created_at: new Date(),
+        updated_at: new Date(),
+      },
     });
 
-    return successResponse(relevantNotifications);
+    return successResponse({
+      id: dateBlock.id,
+      doctorId: dateBlock.doctor_id,
+      clinicId: dateBlock.clinic_id,
+      startDate: startDate,
+      endDate: endDate,
+      reason: dateBlock.reason,
+      status: dateBlock.status,
+      createdAt: dateBlock.created_at,
+      reviewedAt: null,
+      reviewedBy: null,
+      rejectionReason: null,
+    });
   } catch (error: any) {
-    console.error(`❌ [DOCTORS] Error al obtener notificaciones:`, error.message);
-    logger.error('Error getting clinic notifications', error);
-    return internalErrorResponse('Failed to get notifications');
+    console.error('Error requesting date block:', error);
+    return errorResponse(error.message || 'Error al solicitar bloqueo de fechas', 500);
+  }
+}
+
+/**
+ * GET /api/doctors/clinic/notifications
+ * Obtener notificaciones del médico asociado
+ */
+export async function getClinicNotifications(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  try {
+    const authResult = await requireAuth(event);
+    if ('statusCode' in authResult) {
+      return authResult;
+    }
+
+    // Por ahora retornamos un array vacío
+    // Se puede implementar una tabla específica para notificaciones de médicos asociados
+    return successResponse([]);
+  } catch (error: any) {
+    console.error('Error getting clinic notifications:', error);
+    return errorResponse(error.message || 'Error al obtener notificaciones', 500);
   }
 }
