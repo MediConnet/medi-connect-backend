@@ -17,7 +17,6 @@ interface CreateAdBody {
 }
 
 // --- CONFIGURACIÓN DE TEMA ---
-// Define los pares de colores (Fondo / Acento) basados en el slug de la categoría
 const SERVICE_THEME: Record<string, { bg: string, accent: string }> = {
   doctor:      { bg: '#E0F2F1', accent: '#009688' }, 
   pharmacy:    { bg: '#E3F2FD', accent: '#1E88E5' }, 
@@ -25,32 +24,53 @@ const SERVICE_THEME: Record<string, { bg: string, accent: string }> = {
   ambulance:   { bg: '#FBE9E7', accent: '#D84315' }, 
   supplies:    { bg: '#FFF3E0', accent: '#F57C00' }, 
   clinic:      { bg: '#E0F7FA', accent: '#006064' }, 
-  // Fallback por defecto
   default:     { bg: '#FFFFFF', accent: '#009688' }
 };
 
 /**
- * Helper: Mapea el SLUG de la categoría a la pantalla de la App Móvil.
+ * Helper: Mapea el SLUG a la pantalla de DETALLE del proveedor
  */
 const getTargetScreenBySlug = (slug?: string): string => {
   switch (slug) {
-    case 'doctor':     return 'DoctorDetailScreen';
-    case 'pharmacy':   return 'PharmacyCatalogScreen';
-    case 'laboratory': return 'LabPackagesScreen';
-    case 'ambulance':  return 'AmbulanceRequestScreen';
-    case 'supplies':   return 'SuppliesStoreScreen';
-    case 'clinic':     return 'ClinicProfileScreen';
-    default:           return 'ProviderProfileScreen';
+    case 'doctor':
+      return 'DoctorDetail';
+    case 'pharmacy':
+      return 'FarmaciaDetail'; 
+    case 'laboratory':
+      return 'LaboratorioDetail';
+    case 'ambulance':
+      return 'AmbulanciaDetail';
+    case 'supplies':
+      return 'InsumoDetail';
+    case 'clinic':
+      return 'Home'; // Fallback si no hay ClinicDetail
+    default:
+      return 'Home';
   }
 };
 
 /**
- * Helper: Obtiene los colores correctos.
- * Prioriza el color de la BD para el acento, pero usa el mapa para el background.
+ * HELPER: Genera los parámetros correctos según la pantalla.
  */
+const getNavigationParams = (screen: string, id: string) => {
+  switch (screen) {
+    case 'DoctorDetail':
+      return { doctorId: id };
+    case 'FarmaciaDetail':
+      return { farmaciaId: id };
+    case 'LaboratorioDetail':
+      return { laboratorioId: id };
+    case 'AmbulanciaDetail':
+      return { ambulanciaId: id };
+    case 'InsumoDetail':
+      return { tiendaId: id }; 
+    default:
+      return { providerId: id };
+  }
+};
+
 const getAdColors = (slug: string, dbAccentColor?: string | null) => {
   const theme = SERVICE_THEME[slug] || SERVICE_THEME['default'];
-  
   return {
     bg: theme.bg,
     accent: dbAccentColor || theme.accent
@@ -61,7 +81,6 @@ const getAdColors = (slug: string, dbAccentColor?: string | null) => {
 export async function createAdRequest(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   console.log('📢 [ADS] Procesando solicitud de nuevo anuncio...');
 
-  // 1. Auth: Permitir a todos los roles de proveedores
   const authResult = await requireRole(event, [
       enum_roles.provider, enum_roles.pharmacy, enum_roles.lab, enum_roles.ambulance, enum_roles.supplies
   ]);
@@ -72,7 +91,6 @@ export async function createAdRequest(event: APIGatewayProxyEventV2): Promise<AP
   const prisma = getPrismaClient();
 
   try {
-    // 2. Obtener Proveedor y su Categoría
     const provider = await prisma.providers.findFirst({
       where: { user_id: user.id },
       include: {
@@ -84,7 +102,6 @@ export async function createAdRequest(event: APIGatewayProxyEventV2): Promise<AP
       return errorResponse('No se encontró un perfil de proveedor asociado a tu cuenta.', 404);
     }
 
-    // 3. Validar si ya tiene anuncios pendientes o activos
     const existingAd = await prisma.provider_ads.findFirst({
       where: {
         provider_id: provider.id,
@@ -106,7 +123,6 @@ export async function createAdRequest(event: APIGatewayProxyEventV2): Promise<AP
       return errorResponse(msg, 409); 
     }
 
-    // 4. Parsear Body
     const body: CreateAdBody = JSON.parse(event.body || '{}');
     const { badge_text, discount_title, description, button_text, image_url, start_date, end_date } = body;
 
@@ -114,38 +130,30 @@ export async function createAdRequest(event: APIGatewayProxyEventV2): Promise<AP
       return errorResponse('Faltan campos obligatorios.', 400);
     }
 
-    // 5. Lógica de Colores y Navegación
     const slug = provider.service_categories?.slug || 'default';
     const dbAccentColor = provider.service_categories?.default_color_hex;
     const colors = getAdColors(slug, dbAccentColor);
     const targetScreen = getTargetScreenBySlug(slug);
 
-    // 6. Guardar en Base de Datos
     const newAd = await prisma.provider_ads.create({
       data: {
         id: randomUUID(),
         provider_id: provider.id,
-        
         badge_text,
         title: discount_title,
         subtitle: description,
         action_text: button_text,
         image_url: image_url || null,
-        
         start_date: new Date(start_date),
         end_date: end_date ? new Date(end_date) : null,
-        
         is_active: true,       
         status: 'PENDING', 
-        
         bg_color_hex: colors.bg, 
         accent_color_hex: colors.accent, 
         
         target_screen: targetScreen,
         target_id: provider.id, 
         
-        // Prioridad por defecto (10 = Normal). 
-        // Si pagan extra, un admin cambiaría esto a 1 manualmente en la BD.
         priority_order: 10 
       }
     });
@@ -203,22 +211,30 @@ export async function getPublicAds(event: APIGatewayProxyEventV2): Promise<APIGa
     });
 
     // Mapeo para el Frontend (React Native)
-    const formattedAds = ads.map(ad => ({
-      id: ad.id,
-      badge: ad.badge_text,
-      title: ad.title,
-      subtitle: ad.subtitle,
-      image: ad.image_url,
-      actionText: ad.action_text,
-      color: ad.bg_color_hex, 
-      accent: ad.accent_color_hex,
-      navigation: {
-        screen: ad.target_screen,
-        params: { providerId: ad.target_id }
-      },
-      providerName: ad.providers?.commercial_name,
-      providerLogo: ad.providers?.logo_url
-    }));
+    const formattedAds = ads.map(ad => {
+        const screenName = ad.target_screen || 'Home';
+        const providerId = ad.target_id || '';
+        const navParams = getNavigationParams(screenName, providerId);
+
+        return {
+            id: ad.id,
+            badge: ad.badge_text,
+            title: ad.title,
+            subtitle: ad.subtitle,
+            image: ad.image_url,
+            actionText: ad.action_text,
+            color: ad.bg_color_hex, 
+            accent: ad.accent_color_hex,
+            
+            navigation: {
+                screen: screenName,
+                params: navParams 
+            },
+            
+            providerName: ad.providers?.commercial_name,
+            providerLogo: ad.providers?.logo_url
+        };
+    });
 
     return successResponse(formattedAds);
 
