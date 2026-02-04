@@ -35,7 +35,10 @@ export async function getDoctors(event: APIGatewayProxyEventV2): Promise<APIGate
 
     // Filtro por estado
     const status = queryParams.status || 'all';
-    const where: any = { clinic_id: clinic.id };
+    const where: any = { 
+      clinic_id: clinic.id,
+      is_invited: false, // ⭐ SOLO mostrar médicos que ya aceptaron la invitación
+    };
     
     if (status === 'active') {
       where.is_active = true;

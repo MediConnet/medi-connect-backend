@@ -3,8 +3,8 @@ import { logger } from '../shared/logger';
 import { errorResponse, internalErrorResponse, optionsResponse } from '../shared/response';
 import { getProfile, updateProfile, uploadLogo } from './profile.controller';
 import { getDashboard } from './dashboard.controller';
-import { getDoctors, inviteDoctor, updateDoctorStatus, updateDoctorOffice, deleteDoctor } from './doctors.controller';
-import { validateInvitation, acceptInvitation } from './invitations.controller';
+import { getDoctors, updateDoctorStatus, updateDoctorOffice, deleteDoctor } from './doctors.controller';
+import { validateInvitation, acceptInvitation, sendInvitation } from './invitations.controller';
 import { getAppointments, updateAppointmentStatus, getTodayReception, updateReceptionStatus } from './appointments.controller';
 import { getDoctorSchedule, updateDoctorSchedule } from './schedules.controller';
 import { getClinicNotifications, getUnreadCount, markNotificationAsRead, markAllAsRead } from './notifications.controller';
@@ -53,7 +53,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
 
     // --- Rutas de Invitación de Médicos ---
     if (path === '/api/clinics/doctors/invite') {
-      if (method === 'POST') return await inviteDoctor(event);
+      if (method === 'POST') return await sendInvitation(event);
     }
 
     // --- Rutas de Estado de Médico ---
