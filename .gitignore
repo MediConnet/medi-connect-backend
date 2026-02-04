@@ -15,3 +15,7 @@ coverage/
 /dist
 /src/generated/prisma
 layers/prisma-layer/nodejs/src/generated/prisma/
+
+# Gmail API - Archivos sensibles
+gmail-token.json
+client_secret_*.json
