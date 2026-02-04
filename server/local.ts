@@ -152,6 +152,7 @@ import { handler as suppliesHandler } from '../src/supplies/handler';
 import { handler as pharmaciesHandler } from '../src/pharmacies/handler';
 import { handler as publicHandler } from '../src/public/handler';
 import { handler as pharmacyChainsHandler } from '../src/pharmacy-chains/handler';
+import { handler as gmailHandler } from '../src/gmail/handler';
 
 // Importar otros handlers si existen
 let laboratoriesHandler: any;
@@ -244,6 +245,14 @@ app.use('/api/supplies', async (req, res) => {
 app.use('/api/pharmacy-chains', async (req, res) => {
   const path = req.originalUrl.split('?')[0];
   await handleLambdaResponse(pharmacyChainsHandler, req, res, path);
+});
+
+// Routes - Gmail
+console.log('✅ [GMAIL] Registrando rutas de Gmail en /api/gmail');
+app.use('/api/gmail', async (req, res) => {
+  const path = req.originalUrl.split('?')[0];
+  console.log(`📧 [GMAIL ROUTE] ${req.method} ${path} - originalUrl: ${req.originalUrl}`);
+  await handleLambdaResponse(gmailHandler, req, res, path);
 });
 
 // Routes - Patients
@@ -343,6 +352,13 @@ app.listen(PORT, async () => {
   console.log(`   - PUT    /api/admin/ad-requests/:id/approve`);
   console.log(`   - PUT    /api/admin/ad-requests/:id/reject`);
   console.log(`   - GET    /api/supplies/stores`);
+  console.log(`\n📧 Gmail API endpoints:`);
+  console.log(`   - GET    /api/gmail/authorize (Obtener URL de autorización)`);
+  console.log(`   - GET    /api/gmail/callback (Callback OAuth2)`);
+  console.log(`   - POST   /api/gmail/send (Enviar correo)`);
+  console.log(`   - GET    /api/gmail/test (Enviar correo de prueba)`);
+  console.log(`   - GET    /api/gmail/status (Verificar estado)`);
+  console.log(`   - DELETE /api/gmail/revoke (Revocar autorización)`);
   console.log(`\n💡 Make sure your .env file is configured with:`);
   console.log(`   - DATABASE_URL`);
   console.log(`   - AWS_REGION`);
