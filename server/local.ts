@@ -148,10 +148,10 @@ import { handler as adminHandler } from '../src/admin/handler';
 import { handler as adsHandler } from '../src/ads/handler';
 import { handler as authHandler } from '../src/auth/handler';
 import { handler as doctorsHandler } from '../src/doctors/handler';
-import { handler as suppliesHandler } from '../src/supplies/handler';
 import { handler as pharmaciesHandler } from '../src/pharmacies/handler';
-import { handler as publicHandler } from '../src/public/handler';
 import { handler as pharmacyChainsHandler } from '../src/pharmacy-chains/handler';
+import { handler as publicHandler } from '../src/public/handler';
+import { handler as suppliesHandler } from '../src/supplies/handler';
 
 // Importar otros handlers si existen
 let laboratoriesHandler: any;
@@ -184,15 +184,28 @@ try {
   console.error('❌ [CLINICS] Stack:', e.stack);
 }
 
+// =================================================================
+// 🚦 RUTAS (ENDPOINTS)
+// =================================================================
+
 // Routes - Auth
 app.use('/api/auth', async (req, res) => {
-  // Usar originalUrl para obtener el path completo
-  const path = req.originalUrl.split('?')[0]; // Remover query string si existe
+  const path = req.originalUrl.split('?')[0]; 
   await handleLambdaResponse(authHandler, req, res, path);
 });
 
-// Routes - Public (doctors, pharmacies, etc.)
-console.log('✅ [PUBLIC] Registrando rutas públicas en /api/public');
+// Route - Public Ads (Debe ir antes de /api/public genérico)
+// Esta ruta es manejada por el módulo de Ads, no por el módulo Public general
+console.log('✅ [ADS] Registrando ruta pública en /api/public/ads');
+app.get('/api/public/ads', async (req, res) => {
+  const path = req.originalUrl.split('?')[0];
+  console.log(`🔍 [PUBLIC ADS] ${req.method} ${path}`);
+  // Enviamos al adsHandler, que tiene la lógica de getPublicAds
+  await handleLambdaResponse(adsHandler, req, res, path);
+});
+
+// Routes - Public (doctors, pharmacies, generic)
+console.log('✅ [PUBLIC] Registrando rutas públicas generales en /api/public');
 app.use('/api/public', async (req, res) => {
   const path = req.originalUrl.split('?')[0];
   console.log(`🔍 [PUBLIC ROUTE] ${req.method} ${path} - originalUrl: ${req.originalUrl}`);
@@ -222,7 +235,7 @@ app.use('/api/providers', async (req, res) => {
   await handleLambdaResponse(adminHandler, req, res, path);
 });
 
-// Routes - Ads (Anuncios)
+// Routes - Ads (Gestión Privada de Anuncios)
 app.use('/api/ads', async (req, res) => {
   const path = req.originalUrl.split('?')[0];
   await handleLambdaResponse(adsHandler, req, res, path);
@@ -329,6 +342,7 @@ app.listen(PORT, async () => {
   console.log(`   - POST   /api/auth/refresh`);
   console.log(`   - GET    /api/auth/me`);
   console.log(`   - POST   /api/providers/register`);
+  console.log(`   - GET    /api/public/ads (Carrusel App)`); 
   console.log(`   - POST   /api/ads (Crear solicitud)`);
   console.log(`   - GET    /api/ads (Obtener mi anuncio)`);
   console.log(`   - GET    /api/admin/dashboard/stats`);
