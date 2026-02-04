@@ -20,37 +20,46 @@ export async function getAllDoctors(event: APIGatewayProxyEventV2): Promise<APIG
     const offset = (page - 1) * limit;
     
     // Filtros
-    const specialty = queryParams.specialty;
+    const specialtyId = queryParams.specialtyId; 
+    const specialtyName = queryParams.specialty; 
     const city = queryParams.city;
     const search = queryParams.search;
     
+    console.log('🔍 [FILTROS RECIBIDOS]:', { specialtyId, specialtyName, city, search });
+
     // Construir where clause
     const where: any = {
-      verification_status: 'APPROVED', // Solo médicos aprobados
-      category_id: 1, // Solo médicos (category_id = 1)
+      verification_status: 'APPROVED', 
+      category_id: 1, 
       users: {
         is_active: true,
       },
       provider_branches: {
         some: {
-          is_active: true, // Al menos una branch activa
+          is_active: true, 
         },
       },
     };
     
-    // Filtrar por especialidad
-    if (specialty) {
+    if (specialtyId) {
+      where.specialties = {
+        some: {
+          id: specialtyId 
+        }
+      };
+    } 
+    else if (specialtyName) {
       where.specialties = {
         some: {
           name: {
-            contains: specialty,
+            contains: specialtyName,
             mode: 'insensitive',
           },
         },
       };
     }
     
-    // Filtrar por ciudad (a través de branches)
+    // Filtrar por ciudad 
     if (city) {
       where.provider_branches = {
         some: {
@@ -65,7 +74,7 @@ export async function getAllDoctors(event: APIGatewayProxyEventV2): Promise<APIG
       };
     }
     
-    // Búsqueda por nombre o especialidad
+    // Búsqueda general
     if (search) {
       where.OR = [
         {
@@ -96,6 +105,17 @@ export async function getAllDoctors(event: APIGatewayProxyEventV2): Promise<APIG
             select: {
               email: true,
               profile_picture_url: true,
+              clinic_doctors: {
+                where: { is_active: true }, 
+                take: 1,
+                select: {
+                  clinics: {
+                    select: {
+                      name: true
+                    }
+                  }
+                }
+              }
             },
           },
           specialties: {
@@ -104,6 +124,7 @@ export async function getAllDoctors(event: APIGatewayProxyEventV2): Promise<APIG
               name: true,
               color_hex: true,
             },
+            take: 5, 
           },
           provider_branches: {
             where: {
@@ -141,29 +162,29 @@ export async function getAllDoctors(event: APIGatewayProxyEventV2): Promise<APIG
     // Transformar datos para el frontend
     const formattedDoctors = doctors.map(doctor => {
       const mainBranch = doctor.provider_branches[0];
-      const specialty = doctor.specialties[0];
       
-      // Debug: verificar especialidades
-      if (doctor.specialties && doctor.specialties.length > 0) {
-        console.log(`✅ [PUBLIC DOCTORS] Doctor ${doctor.commercial_name} tiene ${doctor.specialties.length} especialidad(es):`, doctor.specialties.map(s => s.name));
-      } else {
-        console.log(`⚠️ [PUBLIC DOCTORS] Doctor ${doctor.commercial_name} NO tiene especialidades asignadas`);
-      }
-      
+      const clinicName = doctor.users?.clinic_doctors?.[0]?.clinics?.name || null;
+      const especialidadesList = doctor.specialties.map(s => s.name); 
+
       return {
         id: doctor.id,
         nombre: doctor.commercial_name || '',
-        apellido: '', // Los médicos usan commercial_name completo
-        especialidad: specialty?.name || '',
-        especialidadId: specialty?.id || '',
+        apellido: '', 
+        
+        especialidad: especialidadesList[0] || '', 
+        especialidadId: doctor.specialties[0]?.id || '',
+        
+        especialidades: especialidadesList, 
+        clinica: clinicName,
+
         descripcion: doctor.description || '',
         experiencia: doctor.years_of_experience || 0,
-        registro: '', // No disponible en el schema actual
+        registro: '', 
         telefono: mainBranch?.phone_contact || '',
         email: doctor.users?.email || '',
         direccion: mainBranch?.address_text || '',
         ciudad: mainBranch?.cities?.name || '',
-        codigoPostal: '', // No disponible
+        codigoPostal: '', 
         horarioAtencion: formatSchedule(mainBranch?.provider_schedules || []),
         imagen: doctor.logo_url || doctor.users?.profile_picture_url || '',
         calificacion: mainBranch?.rating_cache || 0,
@@ -178,7 +199,7 @@ export async function getAllDoctors(event: APIGatewayProxyEventV2): Promise<APIG
       };
     });
     
-    console.log(`✅ [PUBLIC DOCTORS] Se encontraron ${formattedDoctors.length} médicos (total: ${total})`);
+    console.log(`✅ [PUBLIC DOCTORS] Retornando ${formattedDoctors.length} médicos. Filtro aplicado: ${specialtyId ? 'SpecialtyID' : 'Ninguno/Search'}`);
     
     return successResponse({
       doctors: formattedDoctors,
