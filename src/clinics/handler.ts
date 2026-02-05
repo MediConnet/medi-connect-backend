@@ -9,6 +9,7 @@ import { getAppointments, updateAppointmentStatus, getTodayReception, updateRece
 import { getDoctorSchedule, updateDoctorSchedule } from './schedules.controller';
 import { getClinicNotifications, getUnreadCount, markNotificationAsRead, markAllAsRead } from './notifications.controller';
 import { getReceptionMessages, createReceptionMessage, markReceptionMessagesRead } from './reception-messages.controller';
+import { getClinicPayments, getClinicPaymentDetail, distributePayment, getDoctorPayments, payDoctor, getPaymentDistribution } from './payments.controller';
 import { extractIdFromPath } from '../shared/validators';
 
 export async function handler(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
@@ -139,6 +140,33 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
 
     if (path.startsWith('/api/clinics/notifications/') && path.endsWith('/read')) {
       if (method === 'PATCH') return await markNotificationAsRead(event);
+    }
+
+    // --- Rutas de Pagos ---
+    if (path === '/api/clinics/payments' || (path.startsWith('/api/clinics/payments') && path.includes('?'))) {
+      if (method === 'GET') return await getClinicPayments(event);
+    }
+
+    if (path.startsWith('/api/clinics/payments/') && path.endsWith('/distribute')) {
+      if (method === 'POST') return await distributePayment(event);
+    }
+
+    if (path.startsWith('/api/clinics/payments/') && path.endsWith('/distribution')) {
+      if (method === 'GET') return await getPaymentDistribution(event);
+    }
+
+    if (path.startsWith('/api/clinics/payments/') && 
+        !path.includes('/distribute') && 
+        !path.includes('/distribution')) {
+      if (method === 'GET') return await getClinicPaymentDetail(event);
+    }
+
+    if (path === '/api/clinics/doctors/payments') {
+      if (method === 'GET') return await getDoctorPayments(event);
+    }
+
+    if (path.startsWith('/api/clinics/doctors/') && path.endsWith('/pay')) {
+      if (method === 'POST') return await payDoctor(event);
     }
 
     // Si no coincide ninguna ruta
