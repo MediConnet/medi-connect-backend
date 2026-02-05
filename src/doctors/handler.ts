@@ -9,6 +9,7 @@ import { createDiagnosis, getDiagnosis } from './diagnoses.controller';
 import { getPatients } from './patients.controller';
 import { getProfile, updateProfile } from './profile.controller';
 import { getSpecialties } from './specialties.controller';
+import { getDoctorPayments } from './payments.controller';
 import {
   getClinicInfo,
   getClinicProfile,
@@ -66,12 +67,14 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       if (method === 'GET') return await getPatients(event);
     }
 
-    // --- Reviews & Payments (Placeholders) ---
+    // --- Reviews (Placeholder) ---
     if (path === '/api/doctors/reviews' && method === 'GET') {
         return successResponse({ reviews: [] });
     }
-    if (path.startsWith('/api/doctors/payments') && method === 'GET') {
-        return successResponse({ payments: [] });
+
+    // --- Payments ---
+    if (path === '/api/doctors/payments' || path.startsWith('/api/doctors/payments?')) {
+      if (method === 'GET') return await getDoctorPayments(event);
     }
 
     // --- Specialties ---

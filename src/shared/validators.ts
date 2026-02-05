@@ -57,8 +57,8 @@ export const refreshTokenSchema = z.object({
 const scheduleItemSchema = z.object({
   day: z.string(),
   enabled: z.boolean(),
-  startTime: z.string(),
-  endTime: z.string(),
+  startTime: z.string().nullable(),
+  endTime: z.string().nullable(),
 });
 
 export const updateDoctorProfileSchema = z.object({

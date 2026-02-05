@@ -148,6 +148,7 @@ import { handler as adminHandler } from '../src/admin/handler';
 import { handler as adsHandler } from '../src/ads/handler';
 import { handler as authHandler } from '../src/auth/handler';
 import { handler as doctorsHandler } from '../src/doctors/handler';
+import { handler as homeHandler } from '../src/home/handler';
 import { handler as pharmaciesHandler } from '../src/pharmacies/handler';
 import { handler as pharmacyChainsHandler } from '../src/pharmacy-chains/handler';
 import { handler as gmailHandler } from '../src/gmail/handler';
@@ -383,7 +384,3 @@ app.listen(PORT, async () => {
   console.log(`   - Doctor: doctor@medicones.com / doctor123`);
   console.log(`   - Farmacia: farmacia@medicones.com / farmacia123`);
 });
-
-function homeHandler(event: APIGatewayProxyEventV2): Promise<any> {
-  throw new Error('Function not implemented.');
-}

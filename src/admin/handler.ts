@@ -7,6 +7,20 @@ import { getPrismaClient } from '../shared/prisma';
 import { errorResponse, internalErrorResponse, notFoundResponse, successResponse } from '../shared/response';
 import { parseBody } from '../shared/validators';
 import { createPharmacyChain, deletePharmacyChain, getPharmacyChains, updatePharmacyChain } from './pharmacy-chains.controller';
+import { 
+  getDoctorPayments, 
+  getClinicPayments, 
+  markDoctorPaymentsPaid, 
+  markClinicPaymentPaid, 
+  getPaymentHistory 
+} from './payments.controller';
+import {
+  getUsers,
+  getUserDetail,
+  updateUserStatus,
+  updateUser,
+  deleteUser
+} from './users.controller';
 
 export async function handler(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   const method = event.requestContext.http.method;
@@ -139,6 +153,88 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       console.log('✅ [ADMIN] DELETE /api/admin/pharmacy-chains/:id - Eliminando cadena de farmacias');
       const result = await deletePharmacyChain(event);
       console.log(`✅ [ADMIN] DELETE /api/admin/pharmacy-chains/:id - Completado con status ${result.statusCode}`);
+      return result;
+    }
+
+    // --- Rutas de Pagos (Admin) ---
+    // GET /api/admin/payments/doctors
+    if (method === 'GET' && path === '/api/admin/payments/doctors') {
+      console.log('✅ [ADMIN] GET /api/admin/payments/doctors - Obteniendo pagos a médicos');
+      const result = await getDoctorPayments(event);
+      console.log(`✅ [ADMIN] GET /api/admin/payments/doctors - Completado con status ${result.statusCode}`);
+      return result;
+    }
+
+    // GET /api/admin/payments/clinics
+    if (method === 'GET' && path === '/api/admin/payments/clinics') {
+      console.log('✅ [ADMIN] GET /api/admin/payments/clinics - Obteniendo pagos a clínicas');
+      const result = await getClinicPayments(event);
+      console.log(`✅ [ADMIN] GET /api/admin/payments/clinics - Completado con status ${result.statusCode}`);
+      return result;
+    }
+
+    // POST /api/admin/payments/doctors/:doctorId/mark-paid
+    if (method === 'POST' && path.match(/^\/api\/admin\/payments\/doctors\/[^/]+\/mark-paid$/)) {
+      console.log('✅ [ADMIN] POST /api/admin/payments/doctors/:doctorId/mark-paid - Marcando pagos como pagados');
+      const result = await markDoctorPaymentsPaid(event);
+      console.log(`✅ [ADMIN] POST /api/admin/payments/doctors/:doctorId/mark-paid - Completado con status ${result.statusCode}`);
+      return result;
+    }
+
+    // POST /api/admin/payments/clinics/:clinicPaymentId/mark-paid
+    if (method === 'POST' && path.match(/^\/api\/admin\/payments\/clinics\/[^/]+\/mark-paid$/)) {
+      console.log('✅ [ADMIN] POST /api/admin/payments/clinics/:clinicPaymentId/mark-paid - Marcando pago como pagado');
+      const result = await markClinicPaymentPaid(event);
+      console.log(`✅ [ADMIN] POST /api/admin/payments/clinics/:clinicPaymentId/mark-paid - Completado con status ${result.statusCode}`);
+      return result;
+    }
+
+    // GET /api/admin/payments/history
+    if (method === 'GET' && path === '/api/admin/payments/history') {
+      console.log('✅ [ADMIN] GET /api/admin/payments/history - Obteniendo historial de pagos');
+      const result = await getPaymentHistory(event);
+      console.log(`✅ [ADMIN] GET /api/admin/payments/history - Completado con status ${result.statusCode}`);
+      return result;
+    }
+
+    // --- Rutas de Usuarios (Admin) ---
+    // GET /api/admin/users
+    if (method === 'GET' && (path === '/api/admin/users' || path.startsWith('/api/admin/users?'))) {
+      console.log('✅ [ADMIN] GET /api/admin/users - Obteniendo usuarios');
+      const result = await getUsers(event);
+      console.log(`✅ [ADMIN] GET /api/admin/users - Completado con status ${result.statusCode}`);
+      return result;
+    }
+
+    // PATCH /api/admin/users/:id/status
+    if (method === 'PATCH' && path.match(/^\/api\/admin\/users\/[^/]+\/status$/)) {
+      console.log('✅ [ADMIN] PATCH /api/admin/users/:id/status - Actualizando estado');
+      const result = await updateUserStatus(event);
+      console.log(`✅ [ADMIN] PATCH /api/admin/users/:id/status - Completado con status ${result.statusCode}`);
+      return result;
+    }
+
+    // GET /api/admin/users/:id (debe ir después de /status para no capturarlo)
+    if (method === 'GET' && path.match(/^\/api\/admin\/users\/[^/]+$/) && !path.endsWith('/status')) {
+      console.log('✅ [ADMIN] GET /api/admin/users/:id - Obteniendo detalle de usuario');
+      const result = await getUserDetail(event);
+      console.log(`✅ [ADMIN] GET /api/admin/users/:id - Completado con status ${result.statusCode}`);
+      return result;
+    }
+
+    // PUT /api/admin/users/:id
+    if (method === 'PUT' && path.match(/^\/api\/admin\/users\/[^/]+$/)) {
+      console.log('✅ [ADMIN] PUT /api/admin/users/:id - Actualizando usuario');
+      const result = await updateUser(event);
+      console.log(`✅ [ADMIN] PUT /api/admin/users/:id - Completado con status ${result.statusCode}`);
+      return result;
+    }
+
+    // DELETE /api/admin/users/:id
+    if (method === 'DELETE' && path.match(/^\/api\/admin\/users\/[^/]+$/)) {
+      console.log('✅ [ADMIN] DELETE /api/admin/users/:id - Eliminando usuario');
+      const result = await deleteUser(event);
+      console.log(`✅ [ADMIN] DELETE /api/admin/users/:id - Completado con status ${result.statusCode}`);
       return result;
     }
 
