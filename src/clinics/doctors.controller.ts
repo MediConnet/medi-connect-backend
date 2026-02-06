@@ -493,3 +493,77 @@ export async function deleteDoctor(event: APIGatewayProxyEventV2): Promise<APIGa
     return internalErrorResponse('Failed to delete doctor');
   }
 }
+
+// GET /api/clinics/doctors/:doctorId/profile
+export async function getDoctorProfile(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  console.log('✅ [CLINICS] GET /api/clinics/doctors/{id}/profile - Obteniendo perfil completo del médico');
+  
+  const authResult = await requireRole(event, [enum_roles.provider]);
+  if ('statusCode' in authResult) {
+    console.error('❌ [CLINICS] GET /api/clinics/doctors/{id}/profile - Error de autenticación/autorización');
+    return authResult;
+  }
+
+  const authContext = authResult as AuthContext;
+  const prisma = getPrismaClient();
+
+  try {
+    const doctorId = extractIdFromPath(event.requestContext.http.path, '/api/clinics/doctors/', '/profile');
+
+    // Buscar clínica del usuario autenticado
+    const clinic = await prisma.clinics.findFirst({
+      where: { user_id: authContext.user.id },
+    });
+
+    if (!clinic) {
+      console.error('❌ [CLINICS] Clínica no encontrada');
+      return notFoundResponse('Clinic not found');
+    }
+
+    // Buscar el médico y verificar que pertenece a la clínica
+    const doctor = await prisma.clinic_doctors.findFirst({
+      where: {
+        id: doctorId,
+        clinic_id: clinic.id,
+      },
+    });
+
+    if (!doctor) {
+      console.error(`❌ [CLINICS] Médico no encontrado o no pertenece a esta clínica: ${doctorId}`);
+      return notFoundResponse('Doctor not found or does not belong to this clinic');
+    }
+
+    // Construir respuesta con perfil completo
+    const response = {
+      id: doctor.id,
+      clinicId: doctor.clinic_id,
+      userId: doctor.user_id || null,
+      email: doctor.email,
+      name: doctor.name || null,
+      specialty: doctor.specialty || null,
+      isActive: doctor.is_active ?? true,
+      officeNumber: doctor.office_number || null,
+      profileImageUrl: doctor.profile_image_url || null,
+      phone: doctor.phone || null,
+      whatsapp: doctor.whatsapp || null,
+      createdAt: doctor.created_at?.toISOString() || null,
+      updatedAt: doctor.updated_at?.toISOString() || null,
+      professionalProfile: {
+        bio: doctor.bio || null,
+        experience: doctor.experience || 0,
+        education: doctor.education || [],
+        certifications: doctor.certifications || [],
+      },
+    };
+
+    console.log(`✅ [CLINICS] Perfil del médico obtenido exitosamente: ${doctorId}`);
+    return successResponse(response);
+  } catch (error: any) {
+    console.error(`❌ [CLINICS] Error al obtener perfil del médico:`, error.message);
+    logger.error('Error getting doctor profile', error);
+    if (error.message.includes('Invalid path format')) {
+      return errorResponse('Invalid doctor ID', 400);
+    }
+    return internalErrorResponse('Failed to get doctor profile');
+  }
+}
