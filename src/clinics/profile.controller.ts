@@ -213,6 +213,8 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
       generalSchedule: schedule,
       description: clinic.description || '',
       isActive: clinic.is_active ?? true,
+      consultationPrices: clinic.consultation_prices || [],
+      bankAccount: clinic.bank_account || null,
       createdAt: clinic.created_at?.toISOString() || null,
       updatedAt: clinic.updated_at?.toISOString() || null,
     };
@@ -268,6 +270,27 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
       if (body.isActive !== undefined) clinicUpdateData.is_active = body.isActive;
       if (body.latitude !== undefined) clinicUpdateData.latitude = body.latitude !== null ? body.latitude : null;
       if (body.longitude !== undefined) clinicUpdateData.longitude = body.longitude !== null ? body.longitude : null;
+      
+      // Nuevos campos JSON
+      if (body.consultationPrices !== undefined) {
+        // Validar que las especialidades existan en el array de especialties
+        if (body.specialties) {
+          const validSpecialties = body.specialties;
+          const invalidPrices = body.consultationPrices.filter(
+            (price: any) => !validSpecialties.includes(price.specialty)
+          );
+          if (invalidPrices.length > 0) {
+            const invalidSpecialties = invalidPrices.map((p: any) => p.specialty).join(', ');
+            console.error(`❌ [CLINICS] Especialidades inválidas en consultationPrices: ${invalidSpecialties}`);
+            return errorResponse(`Invalid specialties in consultationPrices: ${invalidSpecialties}. Must be one of: ${validSpecialties.join(', ')}`, 400);
+          }
+        }
+        clinicUpdateData.consultation_prices = body.consultationPrices;
+      }
+      
+      if (body.bankAccount !== undefined) {
+        clinicUpdateData.bank_account = body.bankAccount;
+      }
 
       if (Object.keys(clinicUpdateData).length > 1) { // Más que solo updated_at
         await tx.clinics.update({
@@ -377,6 +400,8 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
       generalSchedule: schedule,
       description: updatedClinic.description || '',
       isActive: updatedClinic.is_active ?? true,
+      consultationPrices: updatedClinic.consultation_prices || [],
+      bankAccount: updatedClinic.bank_account || null,
       createdAt: updatedClinic.created_at?.toISOString() || null,
       updatedAt: updatedClinic.updated_at?.toISOString() || null,
     };

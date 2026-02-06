@@ -192,6 +192,24 @@ export const clinicScheduleSchema = z.object({
   sunday: dayScheduleSchema,
 });
 
+// Schema para precios por especialidad
+const consultationPriceSchema = z.object({
+  specialty: z.string().min(1, 'Specialty is required'),
+  price: z.number().min(0, 'Price must be >= 0'),
+  isActive: z.boolean(),
+});
+
+// Schema para datos bancarios
+const bankAccountSchema = z.object({
+  bankName: z.string().min(1, 'Bank name is required'),
+  accountNumber: z.string().min(10, 'Account number must be at least 10 digits'),
+  accountType: z.enum(['checking', 'savings'], {
+    errorMap: () => ({ message: 'Account type must be checking or savings' }),
+  }),
+  accountHolder: z.string().min(1, 'Account holder is required'),
+  identificationNumber: z.string().min(10, 'Identification number must be at least 10 digits').max(13, 'Identification number must be at most 13 digits'),
+});
+
 export const updateClinicProfileSchema = z.object({
   name: z.string().min(3, 'Name must be at least 3 characters').optional(),
   logoUrl: z.string().url('Logo URL must be a valid URL').optional().or(z.literal('')),
@@ -204,6 +222,8 @@ export const updateClinicProfileSchema = z.object({
   isActive: z.boolean().optional(),
   latitude: z.number().min(-90, 'Latitude must be between -90 and 90').max(90, 'Latitude must be between -90 and 90').optional().nullable(),
   longitude: z.number().min(-180, 'Longitude must be between -180 and 180').max(180, 'Longitude must be between -180 and 180').optional().nullable(),
+  consultationPrices: z.array(consultationPriceSchema).optional(),
+  bankAccount: bankAccountSchema.optional().nullable(),
 });
 
 export const inviteDoctorSchema = z.object({

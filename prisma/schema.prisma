@@ -363,6 +363,8 @@ model clinics {
   updated_at           DateTime?              @default(now()) @db.Timestamp(6)
   latitude             Decimal?               @db.Decimal(10, 8)
   longitude            Decimal?               @db.Decimal(11, 8)
+  consultation_prices  Json?                  @default("[]")
+  bank_account         Json?
   appointments         appointments[]
   clinic_doctors       clinic_doctors[]
   clinic_notifications clinic_notifications[]
