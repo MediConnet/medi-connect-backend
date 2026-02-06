@@ -45,7 +45,7 @@ const getDeviceInfo = (event: APIGatewayProxyEventV2): string => {
   return (
     event.headers["user-agent"] ||
     event.headers["User-Agent"] ||
-    "Dispositivo Desconocido"
+    "Unknown Device"
   );
 };
 
@@ -261,7 +261,7 @@ export async function register(
         where: { email: body.email },
       });
       if (existingUser) {
-        return errorResponse("El usuario ya existe", 409);
+        return errorResponse("User already exists", 409);
       }
 
       const passwordHash = await bcrypt.hash(body.password, 10);
@@ -299,7 +299,7 @@ export async function register(
         {
           userId: user.id,
           email: user.email,
-          message: "Usuario registrado exitosamente",
+          message: "User registered successfully",
         },
         201,
       );
@@ -350,8 +350,7 @@ export async function register(
       {
         userId: user.id,
         email: user.email,
-        message:
-          "Usuario registrado exitosamente. Por favor confirma tu email.",
+        message: "User registered successfully. Please confirm your email.",
       },
       201,
     );
@@ -360,10 +359,10 @@ export async function register(
     if (error.message.includes("Validation error"))
       return errorResponse(error.message, 400);
     if (error.name === "UsernameExistsException")
-      return errorResponse("El usuario ya existe", 409);
+      return errorResponse("User already exists", 409);
     if (error.code === "P2002")
-      return errorResponse("El usuario ya existe", 409);
-    return internalErrorResponse("Error al registrar usuario");
+      return errorResponse("User already exists", 409);
+    return internalErrorResponse("Failed to register user");
   }
 }
 
@@ -387,23 +386,23 @@ export async function login(
         where: { email: body.email },
       });
 
-      if (!user) return unauthorizedResponse("Credenciales inválidas");
+      if (!user) return unauthorizedResponse("Invalid credentials");
 
       const isProduction =
         process.env.STAGE === "prod" || process.env.NODE_ENV === "production";
       const isDevelopment = !isProduction;
 
       if (!user.is_active && !isDevelopment)
-        return unauthorizedResponse("La cuenta de usuario está inactiva");
+        return unauthorizedResponse("User account is inactive");
       if (!user.password_hash)
-        return unauthorizedResponse("Credenciales inválidas");
+        return unauthorizedResponse("Invalid credentials");
 
       const passwordMatch = await bcrypt.compare(
         body.password,
         user.password_hash,
       );
 
-      if (!passwordMatch) return unauthorizedResponse("Credenciales inválidas");
+      if (!passwordMatch) return unauthorizedResponse("Invalid credentials");
 
       let patientInfo = null;
       if (user.role === enum_roles.patient) {
@@ -433,6 +432,7 @@ export async function login(
           const provider = await prisma.providers.findFirst({
             where: {
               user_id: user.id,
+              verification_status: { in: ["APPROVED", "PENDING"] },
             },
             include: {
               service_categories: { select: { slug: true, name: true } },
@@ -442,13 +442,6 @@ export async function login(
           });
 
           if (provider) {
-            // BLOQUEO DE LOGIN SI NO ES 'APPROVED'
-            if (provider.verification_status !== "APPROVED") {
-              return unauthorizedResponse(
-                "Tu cuenta está en proceso de verificación. Debes esperar a ser aprobado para ingresar.",
-              );
-            }
-
             const isChainMember =
               !!provider.chain_id && !!provider.pharmacy_chains;
             const chain = provider.pharmacy_chains;
@@ -566,8 +559,8 @@ export async function login(
   } catch (error: any) {
     console.error("❌ [LOGIN] Error:", error.message);
     if (error.name === "NotAuthorizedException")
-      return unauthorizedResponse("Credenciales inválidas");
-    return internalErrorResponse("Error al iniciar sesión");
+      return unauthorizedResponse("Invalid credentials");
+    return internalErrorResponse("Failed to login");
   }
 }
 
@@ -583,9 +576,9 @@ export async function logout(
         data: { revoked_at: new Date() },
       });
     }
-    return successResponse({ message: "Sesión cerrada exitosamente" });
+    return successResponse({ message: "Logged out successfully" });
   } catch (error) {
-    return successResponse({ message: "Sesión cerrada" });
+    return successResponse({ message: "Logged out" });
   }
 }
 
@@ -604,7 +597,7 @@ export async function refresh(
     if (isLocalDev) {
       const parts = refreshToken.split(".");
       if (parts.length !== 3)
-        return unauthorizedResponse("Formato de token inválido");
+        return unauthorizedResponse("Invalid refresh token format");
 
       const base64Url = parts[1];
       const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
@@ -616,7 +609,7 @@ export async function refresh(
         where: { OR: [{ id: decoded.sub }, { email: decoded.email }] },
       });
 
-      if (!user) return unauthorizedResponse("Usuario no encontrado");
+      if (!user) return unauthorizedResponse("User not found");
 
       const normalizedRole = user.role
         ? String(user.role).toLowerCase()
@@ -703,7 +696,7 @@ export async function refresh(
     });
   } catch (error: any) {
     logger.error("Error in refresh", error);
-    return internalErrorResponse("Error al refrescar token");
+    return internalErrorResponse("Failed to refresh token");
   }
 }
 
@@ -727,7 +720,7 @@ export async function me(
     },
   });
 
-  if (!user) return notFoundResponse("Usuario no encontrado");
+  if (!user) return notFoundResponse("User not found");
 
   const normalizedRole = user.role
     ? String(user.role).toLowerCase()
@@ -801,9 +794,9 @@ export async function changePassword(
       ProposedPassword: body.newPassword,
     });
     await cognitoClient.send(cmd);
-    return successResponse({ message: "Contraseña cambiada exitosamente" });
+    return successResponse({ message: "Password changed successfully" });
   } catch (error: any) {
-    return internalErrorResponse("Error al cambiar contraseña");
+    return internalErrorResponse("Failed to change password");
   }
 }
 
@@ -817,12 +810,10 @@ export async function forgotPassword(
       Username: body.email,
     });
     await cognitoClient.send(cmd);
-    return successResponse({
-      message: "Código de recuperación enviado",
-    });
+    return successResponse({ message: "Password reset code sent" });
   } catch (error: any) {
     return successResponse({
-      message: "Si el correo existe, se ha enviado un código de recuperación",
+      message: "If the email exists, a reset code has been sent",
     });
   }
 }
@@ -839,10 +830,10 @@ export async function resetPassword(
       Password: body.newPassword,
     });
     await cognitoClient.send(cmd);
-    return successResponse({ message: "Contraseña restablecida exitosamente" });
+    return successResponse({ message: "Password reset successfully" });
   } catch (error: any) {
     if (error.name === "CodeMismatchException")
-      return errorResponse("Código de verificación inválido", 400);
-    return internalErrorResponse("Error al restablecer la contraseña");
+      return errorResponse("Invalid verification code", 400);
+    return internalErrorResponse("Failed to reset password");
   }
 }
