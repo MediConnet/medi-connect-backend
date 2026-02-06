@@ -62,6 +62,7 @@ export async function getSupplyStores(
               where: { is_active: true },
               orderBy: { day_of_week: "asc" },
             },
+            cities: true,
           },
         },
       },
@@ -73,10 +74,22 @@ export async function getSupplyStores(
       const term = normalizeText(searchQuery);
 
       filteredProviders = allProviders.filter((provider) => {
+        const mainBranch = provider.provider_branches[0];
+
+        // Normalización de campos
         const name = normalizeText(provider.commercial_name);
         const desc = normalizeText(provider.description);
 
-        return name.includes(term) || desc.includes(term);
+        const address = normalizeText(mainBranch?.address_text);
+        const city = normalizeText((mainBranch as any).cities?.name);
+
+        // Búsqueda en cualquiera de los 4 campos
+        return (
+          name.includes(term) ||
+          desc.includes(term) ||
+          address.includes(term) ||
+          city.includes(term)
+        );
       });
     }
 
