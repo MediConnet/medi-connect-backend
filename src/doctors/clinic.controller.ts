@@ -24,7 +24,15 @@ export async function getClinicInfo(event: APIGatewayProxyEventV2): Promise<APIG
         is_active: true,
       },
       include: {
-        clinics: true,
+        clinics: {
+          include: {
+            clinic_schedules: {
+              orderBy: {
+                day_of_week: 'asc',
+              },
+            },
+          },
+        },
       },
     });
 
@@ -34,6 +42,40 @@ export async function getClinicInfo(event: APIGatewayProxyEventV2): Promise<APIG
 
     const clinic = doctorAssociation.clinics;
 
+    // Helper para convertir número de día a nombre
+    const dayNumberToName = (day: number): string => {
+      const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+      return days[day] || 'monday';
+    };
+
+    // Helper para formatear Time a string HH:mm
+    const formatTime = (time: Date | null): string => {
+      if (!time) return '09:00';
+      const date = new Date(time);
+      return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+    };
+
+    // Construir objeto de horarios
+    const schedule: Record<string, any> = {
+      monday: { enabled: false, startTime: '09:00', endTime: '18:00' },
+      tuesday: { enabled: false, startTime: '09:00', endTime: '18:00' },
+      wednesday: { enabled: false, startTime: '09:00', endTime: '18:00' },
+      thursday: { enabled: false, startTime: '09:00', endTime: '18:00' },
+      friday: { enabled: false, startTime: '09:00', endTime: '18:00' },
+      saturday: { enabled: false, startTime: '09:00', endTime: '13:00' },
+      sunday: { enabled: false, startTime: '09:00', endTime: '13:00' },
+    };
+
+    // Mapear horarios de la BD
+    clinic.clinic_schedules.forEach((sched) => {
+      const dayName = dayNumberToName(sched.day_of_week);
+      schedule[dayName] = {
+        enabled: sched.enabled ?? false,
+        startTime: formatTime(sched.start_time),
+        endTime: formatTime(sched.end_time),
+      };
+    });
+
     return successResponse({
       id: clinic.id,
       name: clinic.name,
@@ -41,6 +83,7 @@ export async function getClinicInfo(event: APIGatewayProxyEventV2): Promise<APIG
       phone: clinic.phone,
       whatsapp: clinic.whatsapp,
       logoUrl: clinic.logo_url,
+      generalSchedule: schedule,
     });
   } catch (error: any) {
     console.error('Error getting clinic info:', error);
@@ -92,8 +135,8 @@ export async function getClinicProfile(event: APIGatewayProxyEventV2): Promise<A
       specialty: doctorAssociation.specialty,
       experience: doctorAssociation.experience,
       bio: doctorAssociation.bio,
-      education: doctorAssociation.education,
-      certifications: doctorAssociation.certifications,
+      education: doctorAssociation.education || [],
+      certifications: doctorAssociation.certifications || [],
       profileImageUrl: doctorAssociation.profile_image_url,
       phone: doctorAssociation.phone,
       whatsapp: doctorAssociation.whatsapp,
@@ -138,6 +181,7 @@ export async function updateClinicProfile(event: APIGatewayProxyEventV2): Promis
       data: {
         specialty,
         bio,
+        experience,
         education,
         certifications,
         phone,
