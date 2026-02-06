@@ -92,6 +92,23 @@ export const updateAppointmentStatusSchema = z.object({
   }),
 });
 
+// Doctor Bank Account validators
+export const doctorBankAccountSchema = z.object({
+  bankName: z.string().min(1, 'Bank name is required'),
+  accountNumber: z.string()
+    .min(10, 'Account number must be at least 10 digits')
+    .regex(/^\d+$/, 'Account number must contain only digits'),
+  accountType: z.enum(['checking', 'savings'], {
+    errorMap: () => ({ message: 'Account type must be checking or savings' }),
+  }),
+  accountHolder: z.string().min(1, 'Account holder is required'),
+  identificationNumber: z.string()
+    .min(10, 'Identification number must be at least 10 digits')
+    .max(13, 'Identification number must be at most 13 digits')
+    .regex(/^\d+$/, 'Identification number must contain only digits')
+    .optional(),
+});
+
 // Admin validators
 export const approveRequestSchema = z.object({
   notes: z.string().optional(),

@@ -3,7 +3,7 @@ import { logger } from '../shared/logger';
 import { errorResponse, internalErrorResponse, optionsResponse } from '../shared/response';
 import { getProfile, updateProfile, uploadLogo } from './profile.controller';
 import { getDashboard } from './dashboard.controller';
-import { getDoctors, updateDoctorStatus, updateDoctorOffice, deleteDoctor } from './doctors.controller';
+import { getDoctors, updateDoctorStatus, updateDoctorOffice, deleteDoctor, getDoctorProfile } from './doctors.controller';
 import { validateInvitation, acceptInvitation, sendInvitation } from './invitations.controller';
 import { getAppointments, updateAppointmentStatus, getTodayReception, updateReceptionStatus } from './appointments.controller';
 import { getDoctorSchedule, updateDoctorSchedule } from './schedules.controller';
@@ -80,6 +80,11 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     if (path.startsWith('/api/clinics/doctors/') && path.endsWith('/schedule')) {
       if (method === 'GET') return await getDoctorSchedule(event);
       if (method === 'PUT') return await updateDoctorSchedule(event);
+    }
+
+    // --- Rutas de Perfil de Médico ---
+    if (path.startsWith('/api/clinics/doctors/') && path.endsWith('/profile')) {
+      if (method === 'GET') return await getDoctorProfile(event);
     }
 
     // --- Rutas de Invitaciones (públicas) ---
