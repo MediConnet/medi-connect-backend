@@ -48,9 +48,6 @@ export async function handler(
       return await getAmbulanceSettings(event);
     }
 
-    // Nota: Las rutas públicas (Listar, Buscar, Detalle por ID) se manejan
-    // en el handler público, por lo que se eliminaron de aquí.
-
     return errorResponse("Not found", 404, undefined, event);
   } catch (error: any) {
     logger.error("Error in ambulances private handler", error, {
