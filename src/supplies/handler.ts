@@ -12,6 +12,17 @@ import {
   getSupplyStoreReviews,
   getSupplyStores,
 } from "./supplies.controller";
+import {
+  createProduct,
+  updateProduct,
+  deleteProduct,
+} from "./products.controller";
+import {
+  getOrders,
+  getOrderById,
+  createOrder,
+  updateOrderStatus,
+} from "./orders.controller";
 
 export async function handler(
   event: APIGatewayProxyEventV2,
@@ -42,17 +53,59 @@ export async function handler(
       return await getSupplyStoreDashboard(event);
     }
 
-    // 4. GET /api/supplies/:id/reviews
+    // === PRODUCTOS ===
+    
+    // 4. GET /api/supplies/products - Listar productos (si se necesita en el futuro)
+    // 5. POST /api/supplies/products - Crear producto
+    if (path === "/api/supplies/products" && method === "POST") {
+      return await createProduct(event);
+    }
+
+    // 6. PUT /api/supplies/products/:id - Actualizar producto
+    if (path.match(/^\/api\/supplies\/products\/[^/]+$/) && method === "PUT") {
+      return await updateProduct(event);
+    }
+
+    // 7. DELETE /api/supplies/products/:id - Eliminar producto
+    if (path.match(/^\/api\/supplies\/products\/[^/]+$/) && method === "DELETE") {
+      return await deleteProduct(event);
+    }
+
+    // === ÓRDENES ===
+
+    // 8. GET /api/supplies/orders - Listar órdenes
+    if (path === "/api/supplies/orders" && method === "GET") {
+      return await getOrders(event);
+    }
+
+    // 9. POST /api/supplies/orders - Crear orden
+    if (path === "/api/supplies/orders" && method === "POST") {
+      return await createOrder(event);
+    }
+
+    // 10. GET /api/supplies/orders/:id - Detalle de orden
+    if (path.match(/^\/api\/supplies\/orders\/[^/]+$/) && !path.includes('/status') && method === "GET") {
+      return await getOrderById(event);
+    }
+
+    // 11. PUT /api/supplies/orders/:id/status - Actualizar estado
+    if (path.match(/^\/api\/supplies\/orders\/[^/]+\/status$/) && method === "PUT") {
+      return await updateOrderStatus(event);
+    }
+
+    // === REVIEWS ===
+
+    // 12. GET /api/supplies/:id/reviews
     if (path.match(/^\/api\/supplies\/[^/]+\/reviews$/) && method === "GET") {
       return await getSupplyStoreReviews(event);
     }
 
-    // 5. POST /api/supplies/:id/reviews
+    // 13. POST /api/supplies/:id/reviews
     if (path.match(/^\/api\/supplies\/[^/]+\/reviews$/) && method === "POST") {
       return await createSupplyStoreReview(event);
     }
 
-    // 6. GET /api/supplies/:id
+    // 14. GET /api/supplies/:id - Detalle de tienda
     if (path.match(/^\/api\/supplies\/[^/]+$/) && method === "GET") {
       return await getSupplyStoreById(event);
     }

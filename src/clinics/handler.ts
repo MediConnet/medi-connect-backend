@@ -7,6 +7,7 @@ import { getDoctors, updateDoctorStatus, updateDoctorOffice, deleteDoctor, getDo
 import { validateInvitation, acceptInvitation, sendInvitation } from './invitations.controller';
 import { getAppointments, updateAppointmentStatus, getTodayReception, updateReceptionStatus } from './appointments.controller';
 import { getDoctorSchedule, updateDoctorSchedule } from './schedules.controller';
+import { getClinicSchedule, updateClinicSchedule } from './clinic-schedules.controller';
 import { getClinicNotifications, getUnreadCount, markNotificationAsRead, markAllAsRead } from './notifications.controller';
 import { getReceptionMessages, createReceptionMessage, markReceptionMessagesRead } from './reception-messages.controller';
 import { getClinicPayments, getClinicPaymentDetail, distributePayment, getDoctorPayments, payDoctor, getPaymentDistribution } from './payments.controller';
@@ -32,6 +33,13 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       console.log(`✅ [CLINICS HANDLER] Ruta de perfil encontrada`);
       if (method === 'GET') return await getProfile(event);
       if (method === 'PUT') return await updateProfile(event);
+    }
+
+    // --- Rutas de Horarios de Clínica ---
+    if (path === '/api/clinics/schedule') {
+      console.log(`✅ [CLINICS HANDLER] Ruta de schedule de clínica encontrada`);
+      if (method === 'GET') return await getClinicSchedule(event);
+      if (method === 'PUT') return await updateClinicSchedule(event);
     }
 
     // --- Ruta de Subida de Logo ---
