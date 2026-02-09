@@ -5,11 +5,7 @@ import {
   internalErrorResponse,
   optionsResponse,
 } from "../shared/response";
-import {
-  getAllAmbulances,
-  getAmbulanceById,
-  searchAmbulances,
-} from "./ambulances.controller";
+import { getAllAmbulances, getAmbulanceById } from "./ambulances.controller";
 import {
   createDoctorReview,
   getDoctorReviews,
@@ -110,24 +106,14 @@ export async function handler(
 
     // --- RUTAS PÚBLICAS DE AMBULANCIAS ---
 
-    // GET /api/ambulances - Listar ambulancias
+    // GET /api/ambulances - Listar ambulancias (Incluye búsqueda por query params)
     if (path === "/api/ambulances" && method === "GET") {
       return await getAllAmbulances(event);
     }
 
-    // GET /api/ambulances/search - Buscar ambulancias
-    if (path === "/api/ambulances/search" && method === "GET") {
-      return await searchAmbulances(event);
-    }
-
     // GET /api/ambulances/{id} - Obtener ambulancia por ID
     if (path.startsWith("/api/ambulances/") && method === "GET") {
-      const pathParts = path.split("/");
-      const lastPart = pathParts[pathParts.length - 1];
-      // Si no es "search", es un ID
-      if (lastPart !== "search") {
-        return await getAmbulanceById(event);
-      }
+      return await getAmbulanceById(event);
     }
 
     // Si no coincide ninguna ruta
