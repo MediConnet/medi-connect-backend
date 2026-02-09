@@ -333,7 +333,6 @@ model providers {
   service_categories    service_categories?     @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   pharmacy_chains       pharmacy_chains?        @relation(fields: [chain_id], references: [id], onUpdate: NoAction)
   users                 users?                  @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  supply_orders         supply_orders[]
   specialties           specialties[]           @relation("providersTospecialties")
 }
 
@@ -547,43 +546,6 @@ model pharmacy_chains {
   updated_at  DateTime?   @default(now()) @db.Timestamp(6)
   description String?
   providers   providers[]
-}
-
-model supply_order_items {
-  id               String            @id @db.Uuid
-  order_id         String            @db.Uuid
-  product_id       String?           @db.Uuid
-  product_name     String            @db.VarChar(255)
-  quantity         Int
-  unit_price       Decimal           @db.Decimal(10, 2)
-  total            Decimal           @db.Decimal(10, 2)
-  supply_orders    supply_orders     @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  provider_catalog provider_catalog? @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-
-  @@index([order_id], map: "idx_supply_order_items_order")
-}
-
-model supply_orders {
-  id                 String               @id @db.Uuid
-  order_number       String               @unique @db.VarChar(50)
-  provider_id        String               @db.Uuid
-  client_name        String               @db.VarChar(255)
-  client_email       String               @db.VarChar(255)
-  client_phone       String               @db.VarChar(50)
-  client_address     String
-  total_amount       Decimal              @db.Decimal(10, 2)
-  status             String?              @default("pending") @db.VarChar(50)
-  order_date         DateTime             @db.Timestamp(6)
-  delivery_date      DateTime?            @db.Timestamp(6)
-  notes              String?
-  created_at         DateTime?            @default(now()) @db.Timestamp(6)
-  updated_at         DateTime?            @default(now()) @db.Timestamp(6)
-  supply_order_items supply_order_items[]
-  providers          providers            @relation(fields: [provider_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-
-  @@index([order_date], map: "idx_supply_orders_date")
-  @@index([provider_id], map: "idx_supply_orders_provider")
-  @@index([status], map: "idx_supply_orders_status")
 }
 
 enum enum_appt_status {
