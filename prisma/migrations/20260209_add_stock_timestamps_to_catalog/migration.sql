@@ -1,0 +1,5 @@
+-- Add stock and timestamps to provider_catalog
+ALTER TABLE provider_catalog 
+ADD COLUMN stock INTEGER DEFAULT 0,
+ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;

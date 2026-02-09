@@ -9,7 +9,7 @@ import { createDiagnosis, getDiagnosis } from './diagnoses.controller';
 import { getPatients } from './patients.controller';
 import { getProfile, updateProfile } from './profile.controller';
 import { getSpecialties } from './specialties.controller';
-import { getDoctorPayments } from './payments.controller';
+import { getDoctorPayments, getDoctorPaymentById } from './payments.controller';
 import { getBankAccount, upsertBankAccount } from './bank-account.controller';
 import {
   getClinicInfo,
@@ -76,6 +76,11 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     // --- Payments ---
     if (path === '/api/doctors/payments' || path.startsWith('/api/doctors/payments?')) {
       if (method === 'GET') return await getDoctorPayments(event);
+    }
+
+    // Payment detail by ID
+    if (path.startsWith('/api/doctors/payments/') && !path.includes('?')) {
+      if (method === 'GET') return await getDoctorPaymentById(event);
     }
 
     // --- Bank Account ---
