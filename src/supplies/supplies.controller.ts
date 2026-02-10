@@ -219,6 +219,108 @@ export async function getSupplyStoreReviews(
   }
 }
 
+/**
+ * GET /api/supplies/reviews
+ * Obtener reseñas del panel de insumos (requiere autenticación)
+ */
+export async function getMySupplyStoreReviews(
+  event: APIGatewayProxyEventV2,
+): Promise<APIGatewayProxyResult> {
+  console.log('✅ [SUPPLIES] GET /api/supplies/reviews - Obteniendo reseñas del panel');
+  
+  try {
+    const authResult = await requireAuth(event);
+    if ('statusCode' in authResult) {
+      console.error('❌ [SUPPLIES] Error de autenticación');
+      return authResult;
+    }
+    const authContext = authResult as AuthContext;
+
+    if (authContext.user.role !== 'provider') {
+      console.error('❌ [SUPPLIES] Usuario no autorizado:', authContext.user.role);
+      return errorResponse('No autorizado. Debe ser proveedor', 403);
+    }
+
+    const prisma = getPrismaClient();
+
+    // Buscar el provider del usuario autenticado
+    const provider = await prisma.providers.findFirst({
+      where: { user_id: authContext.user.id },
+    });
+
+    if (!provider) {
+      console.log('⚠️ [SUPPLIES] Provider no encontrado, retornando array vacío');
+      return successResponse({
+        reviews: [],
+        averageRating: 0,
+        totalReviews: 0,
+      });
+    }
+
+    console.log('🔍 [SUPPLIES] Provider encontrado:', provider.id);
+
+    // Obtener todas las sucursales del provider
+    const branches = await prisma.provider_branches.findMany({
+      where: { provider_id: provider.id },
+      select: { id: true },
+    });
+
+    const branchIds = branches.map((b) => b.id);
+    console.log('🔍 [SUPPLIES] Branch IDs:', branchIds);
+
+    // Obtener reseñas de todas las sucursales del provider
+    const reviews = await prisma.reviews.findMany({
+      where: { branch_id: { in: branchIds } },
+      include: {
+        patients: {
+          select: {
+            id: true,
+            full_name: true,
+            users: {
+              select: {
+                profile_picture_url: true,
+              },
+            },
+          },
+        },
+        provider_branches: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+      orderBy: {
+        created_at: 'desc',
+      },
+    });
+
+    // Calcular promedio de calificaciones
+    const averageRating = reviews.length > 0
+      ? reviews.reduce((sum, r) => sum + (r.rating || 0), 0) / reviews.length
+      : 0;
+
+    console.log(`✅ [SUPPLIES] Reseñas obtenidas exitosamente (${reviews.length} reseñas)`);
+
+    return successResponse({
+      reviews: reviews.map((review) => ({
+        id: review.id,
+        rating: review.rating || 0,
+        comment: review.comment,
+        patientName: review.patients?.full_name || 'Usuario',
+        profilePictureUrl: review.patients?.users?.profile_picture_url || null,
+        date: review.created_at,
+        branchName: review.provider_branches?.name || null,
+      })),
+      averageRating: Number(averageRating.toFixed(2)),
+      totalReviews: reviews.length,
+    });
+  } catch (error: any) {
+    console.error('❌ [SUPPLIES] Error al obtener reseñas:', error.message);
+    return internalErrorResponse(error.message || 'Error al obtener reseñas');
+  }
+}
+
 export async function createSupplyStoreReview(
   event: APIGatewayProxyEventV2,
 ): Promise<APIGatewayProxyResult> {

@@ -261,44 +261,6 @@ model provider_catalog {
   created_at         DateTime?            @default(now()) @db.Timestamp(6)
   updated_at         DateTime?            @default(now()) @db.Timestamp(6)
   providers          providers?           @relation(fields: [provider_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  supply_order_items supply_order_items[]
-}
-
-model supply_orders {
-  id                 String               @id @db.Uuid
-  order_number       String               @unique @db.VarChar(50)
-  provider_id        String               @db.Uuid
-  client_name        String               @db.VarChar(255)
-  client_email       String               @db.VarChar(255)
-  client_phone       String               @db.VarChar(50)
-  client_address     String
-  total_amount       Decimal              @db.Decimal(10, 2)
-  status             String               @default("pending") @db.VarChar(50)
-  order_date         DateTime             @db.Timestamp(6)
-  delivery_date      DateTime?            @db.Timestamp(6)
-  notes              String?
-  created_at         DateTime             @default(now()) @db.Timestamp(6)
-  updated_at         DateTime             @default(now()) @db.Timestamp(6)
-  providers          providers            @relation(fields: [provider_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  supply_order_items supply_order_items[]
-
-  @@index([provider_id])
-  @@index([status])
-  @@index([order_date])
-}
-
-model supply_order_items {
-  id               String            @id @db.Uuid
-  order_id         String            @db.Uuid
-  product_id       String?           @db.Uuid
-  product_name     String            @db.VarChar(255)
-  quantity         Int
-  unit_price       Decimal           @db.Decimal(10, 2)
-  total            Decimal           @db.Decimal(10, 2)
-  supply_orders    supply_orders     @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  provider_catalog provider_catalog? @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-
-  @@index([order_id])
 }
 
 model provider_schedules {
@@ -329,7 +291,6 @@ model providers {
   provider_bank_details provider_bank_details[]
   provider_branches     provider_branches[]
   provider_catalog      provider_catalog[]
-  supply_orders         supply_orders[]
   service_categories    service_categories?     @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   pharmacy_chains       pharmacy_chains?        @relation(fields: [chain_id], references: [id], onUpdate: NoAction)
   users                 users?                  @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)

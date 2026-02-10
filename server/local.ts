@@ -154,6 +154,7 @@ import { handler as pharmacyChainsHandler } from '../src/pharmacy-chains/handler
 import { handler as gmailHandler } from '../src/gmail/handler';
 import { handler as publicHandler } from '../src/public/handler';
 import { handler as suppliesHandler } from '../src/supplies/handler';
+import { handler as ambulancesHandler } from '../src/ambulances/handler';
 
 // Importar otros handlers si existen
 let laboratoriesHandler: any;
@@ -304,12 +305,12 @@ if (laboratoriesHandler) {
   });
 }
 
-// Routes - Ambulances (ahora manejadas por publicHandler)
-console.log('✅ [AMBULANCES] Registrando rutas de ambulancias en /api/ambulances (usando publicHandler)');
+// Routes - Ambulances (panel privado)
+console.log('✅ [AMBULANCES] Registrando rutas de ambulancias en /api/ambulances (panel privado)');
 app.use('/api/ambulances', async (req, res) => {
   const path = req.originalUrl.split('?')[0];
   console.log(`🔍 [AMBULANCES ROUTE] ${req.method} ${path} - originalUrl: ${req.originalUrl}`);
-  await handleLambdaResponse(publicHandler, req, res, path);
+  await handleLambdaResponse(ambulancesHandler, req, res, path);
 });
 
 // Routes - Clinics (si existe)

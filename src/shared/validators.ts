@@ -32,6 +32,8 @@ export const registerSchema = z.object({
 export const loginSchema = z.object({
   email: z.string().email('Invalid email format'),
   password: z.string().min(1, 'Password is required'),
+  // Tipo de servicio opcional (doctor, pharmacy, laboratory, ambulance, supplies, clinic, etc.)
+  type: z.string().optional(),
 });
 
 export const changePasswordSchema = z.object({

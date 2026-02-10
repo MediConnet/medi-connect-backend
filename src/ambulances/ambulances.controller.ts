@@ -10,6 +10,8 @@ import { errorResponse, successResponse } from "../shared/response";
 export async function getAmbulanceProfile(
   event: APIGatewayProxyEventV2,
 ): Promise<APIGatewayProxyResult> {
+  console.log("✅ [AMBULANCES] GET /api/ambulances/profile - Obteniendo perfil");
+
   try {
     const authResult = await requireAuth(event);
     if ("statusCode" in authResult) {
@@ -29,42 +31,113 @@ export async function getAmbulanceProfile(
 
     const prisma = getPrismaClient();
 
+    // Buscar provider de tipo "ambulance" del usuario autenticado (más reciente aprobado)
     const provider = await prisma.providers.findFirst({
-      where: { user_id: authContext.user.id },
+      where: {
+        user_id: authContext.user.id,
+        service_categories: {
+          slug: "ambulance", // ⭐ Filtrar específicamente por tipo ambulance
+        },
+        verification_status: "APPROVED", // Solo providers aprobados
+      },
       include: {
+        service_categories: { select: { slug: true, name: true } },
+        users: {
+          select: {
+            email: true,
+            profile_picture_url: true,
+          },
+        },
         provider_branches: {
           where: { is_active: true },
+          include: {
+            cities: {
+              select: {
+                name: true,
+              },
+            },
+          },
         },
+      },
+      orderBy: {
+        id: "desc", // Más reciente primero
       },
     });
 
     if (!provider) {
-      return errorResponse("Ambulancia no encontrada", 404);
+      console.log(
+        "⚠️ [AMBULANCES] Provider de tipo 'ambulance' no encontrado para user_id:",
+        authContext.user.id,
+      );
+      // Retornar estructura completa para evitar errores en el frontend
+      return successResponse({
+        id: null,
+        name: "Servicio de Ambulancia",
+        description: "Perfil en configuración",
+        phone: "",
+        whatsapp: "",
+        address: "",
+        email: authContext.user.email || "",
+        rating: 0,
+        totalTrips: 0,
+        logoUrl: null,
+        isActive: false,
+        city: null,
+        latitude: null,
+        longitude: null,
+        status: "PENDING",
+      });
     }
 
+    console.log("🔍 [AMBULANCES] Provider encontrado:", {
+      id: provider.id,
+      name: provider.commercial_name,
+      branches: provider.provider_branches.length,
+    });
+
+    // Obtener branch principal (puede no existir)
     const mainBranch =
       provider.provider_branches.find((b) => b.is_main) ||
-      provider.provider_branches[0];
+      provider.provider_branches[0] ||
+      null;
 
     // Calcular total de viajes (usando appointments como viajes)
     const totalTrips = await prisma.appointments.count({
       where: { provider_id: provider.id },
     });
 
-    return successResponse({
+    console.log(
+      `✅ [AMBULANCES] Perfil obtenido exitosamente (${totalTrips} viajes, ${provider.provider_branches.length} branches)`,
+    );
+
+    // Estructura completa del perfil para el frontend
+    // Asegurar que todos los campos estén presentes (incluso si son null/empty) para evitar errores en el frontend
+    const profileData = {
       id: provider.id,
       name: provider.commercial_name || "Servicio de Ambulancia",
-      description: provider.description,
+      description: provider.description || "",
       phone: mainBranch?.phone_contact || "",
       whatsapp: mainBranch?.phone_contact || "",
       address: mainBranch?.address_text || "",
+      email: provider.users?.email || authContext.user.email || "",
       rating: mainBranch?.rating_cache
         ? parseFloat(mainBranch.rating_cache.toString())
         : 0,
-      totalTrips,
-    });
+      totalTrips: totalTrips || 0,
+      logoUrl: provider.logo_url || mainBranch?.image_url || null,
+      isActive: mainBranch?.is_active ?? false,
+      city: mainBranch?.cities?.name || null,
+      latitude: mainBranch?.latitude ? Number(mainBranch.latitude) : null,
+      longitude: mainBranch?.longitude ? Number(mainBranch.longitude) : null,
+      // Campos adicionales que el frontend podría necesitar
+      status: provider.verification_status || "APPROVED",
+    };
+
+    console.log(`📦 [AMBULANCES] Estructura de respuesta:`, JSON.stringify(profileData, null, 2));
+
+    return successResponse(profileData);
   } catch (error: any) {
-    console.error("Error getting ambulance profile:", error);
+    console.error("❌ [AMBULANCES] Error al obtener perfil:", error.message);
     return errorResponse(error.message || "Error al obtener perfil", 500);
   }
 }

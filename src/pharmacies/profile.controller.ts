@@ -34,6 +34,10 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
     where: { 
       user_id: authContext.user.id,
       verification_status: { in: ['APPROVED', 'PENDING'] }, // Solo aprobados o pendientes
+      // ⭐ Filtrar solo por tipo pharmacy
+      service_categories: {
+        slug: "pharmacy",
+      },
     },
     include: {
       users: { select: { email: true, profile_picture_url: true } },
@@ -48,6 +52,10 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
           }
         }
       },
+    },
+    // ⭐ Ordenar por más reciente primero
+    orderBy: {
+      id: "desc",
     },
   });
 
@@ -112,11 +120,19 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
       where: { 
         user_id: authContext.user.id,
         verification_status: { in: ['APPROVED', 'PENDING'] }, // Solo aprobados o pendientes
+        // ⭐ Filtrar solo por tipo pharmacy
+        service_categories: {
+          slug: "pharmacy",
+        },
       },
       include: { 
         provider_branches: { where: { is_main: true } },
         pharmacy_chains: true, // ⭐ Incluir relación con cadena
-      }
+      },
+      // ⭐ Ordenar por más reciente primero
+      orderBy: {
+        id: "desc",
+      },
     });
 
     if (!profile) return notFoundResponse('Pharmacy profile not found for updates');
@@ -214,7 +230,13 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
 
     // --- RECUPERAR PERFIL ACTUALIZADO COMPLETO ---
     const updatedProfile = await prisma.providers.findFirst({
-      where: { id: profile.id },
+      where: { 
+        id: profile.id,
+        // ⭐ Filtrar solo por tipo pharmacy
+        service_categories: {
+          slug: "pharmacy",
+        },
+      },
       include: {
         users: { select: { email: true, profile_picture_url: true } },
         service_categories: true,
