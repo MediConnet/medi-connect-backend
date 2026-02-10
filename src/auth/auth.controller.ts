@@ -157,6 +157,12 @@ async function createProviderProfile(prisma: any, userId: string, body: any) {
     };
   }
 
+  // Validación de UUIDs
+  const uuidRegex =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  const isValidCityId = body.cityId && uuidRegex.test(body.cityId);
+  const isValidChainId = body.chainId && uuidRegex.test(body.chainId);
+
   // Crear Provider (Entidad Legal / Persona)
   await prisma.providers.create({
     data: {
@@ -172,6 +178,11 @@ async function createProviderProfile(prisma: any, userId: string, body: any) {
         ? { service_categories: { connect: { id: categoryId } } }
         : {}),
 
+      // ⭐ Conectar con cadena de farmacia si se proporciona chainId válido
+      ...(isValidChainId
+        ? { pharmacy_chains: { connect: { id: body.chainId } } }
+        : {}),
+
       commission_percentage: 15.0,
 
       years_of_experience: yearsExp,
@@ -181,9 +192,6 @@ async function createProviderProfile(prisma: any, userId: string, body: any) {
   });
 
   // Datos Adicionales para la Sucursal
-  const uuidRegex =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-  const isValidCityId = body.cityId && uuidRegex.test(body.cityId);
 
   const fullAddress = body.address || "Sin dirección registrada";
 
@@ -430,19 +438,79 @@ export async function login(
           };
           serviceType = "clinic";
         } else {
-          const provider = await prisma.providers.findFirst({
-            where: {
-              user_id: user.id,
-            },
-            include: {
-              service_categories: { select: { slug: true, name: true } },
-              pharmacy_chains: true,
-            },
-            orderBy: { id: "desc" },
-          });
+          // El frontend NO envía 'type', así que inferimos el tipo del provider más reciente aprobado
+          const typeToSlug: Record<string, string> = {
+            doctor: "doctor",
+            pharmacy: "pharmacy",
+            lab: "laboratory",
+            laboratory: "laboratory",
+            ambulance: "ambulance",
+            supplies: "supplies",
+            clinic: "clinic",
+          };
+
+          // Usamos `any` aquí para simplificar el tipado de las relaciones incluidas
+          // (service_categories, pharmacy_chains) y evitar problemas con los tipos generados de Prisma.
+          let provider: any = null;
+
+          // Si el frontend envía 'type' (opcional), buscar ese tipo específico
+          if (body.type) {
+            const typeKey = body.type.toLowerCase();
+            const categorySlug = typeToSlug[typeKey] ?? typeKey;
+
+            console.log(`🔍 [LOGIN] Frontend envió type=${categorySlug}, buscando provider de ese tipo para user_id: ${user.id}`);
+
+            provider = await prisma.providers.findFirst({
+              where: {
+                user_id: user.id,
+                service_categories: {
+                  slug: categorySlug,
+                },
+                verification_status: "APPROVED",
+              },
+              include: {
+                service_categories: { select: { slug: true, name: true } },
+                pharmacy_chains: true,
+              },
+              orderBy: {
+                id: "desc", // Más reciente primero
+              },
+            });
+
+            if (provider) {
+              console.log(`✅ [LOGIN] Provider encontrado (con type): ${provider.id} - ${provider.commercial_name} (${categorySlug})`);
+            }
+          }
+
+          // SIEMPRE buscar el provider más reciente aprobado (inferir tipo automáticamente)
+          // Esto asegura que si no viene 'type' o no se encontró, devolvemos el más reciente
+          if (!provider) {
+            console.log(`🔍 [LOGIN] Buscando provider más reciente aprobado para user_id: ${user.id} (sin filtro de tipo)`);
+            
+            provider = await prisma.providers.findFirst({
+              where: {
+                user_id: user.id,
+                verification_status: "APPROVED", // Solo providers aprobados
+              },
+              include: {
+                service_categories: { select: { slug: true, name: true } },
+                pharmacy_chains: true,
+              },
+              orderBy: {
+                id: "desc", // Más reciente primero (el último creado/aprobado)
+              },
+            });
+
+            if (provider) {
+              const detectedType = provider.service_categories?.slug || 'unknown';
+              console.log(`✅ [LOGIN] Provider encontrado (más reciente): ${provider.id} - ${provider.commercial_name} (tipo: ${detectedType})`);
+            } else {
+              console.log(`⚠️ [LOGIN] No se encontró ningún provider aprobado para user_id: ${user.id}`);
+            }
+          }
 
           if (provider) {
-            // BLOQUEO DE LOGIN SI NO ES 'APPROVED'
+            // Verificar status (aunque ya filtramos por APPROVED, por seguridad)
             if (provider.verification_status !== "APPROVED") {
               return unauthorizedResponse(
                 "Tu cuenta está en proceso de verificación. Debes esperar a ser aprobado para ingresar.",
@@ -465,7 +533,11 @@ export async function login(
               chainName: isChainMember && chain ? chain.name : null,
               chainLogo: isChainMember && chain ? chain.logo_url : null,
             };
+            
+            // ⭐ CRÍTICO: Siempre establecer serviceType desde el provider encontrado
             serviceType = provider.service_categories?.slug || null;
+            
+            console.log(`📋 [LOGIN] Provider seleccionado: ID=${provider.id}, Tipo=${serviceType}, Nombre=${provider.commercial_name}`);
           }
         }
       }
@@ -541,9 +613,15 @@ export async function login(
         responseData.user.provider = providerInfo;
       }
 
+      // ⭐ CRÍTICO: Siempre establecer 'tipo' si hay provider (frontend lo necesita para guards)
       if (normalizedServiceType) {
         responseData.user.serviceType = normalizedServiceType;
-        responseData.user.tipo = normalizedServiceType;
+        responseData.user.tipo = normalizedServiceType; // Frontend usa esto para guards
+      } else if (providerInfo) {
+        // Si hay providerInfo pero no serviceType, intentar inferirlo
+        console.warn(`⚠️ [LOGIN] Provider encontrado pero sin serviceType. providerInfo:`, providerInfo);
+        // Esto no debería pasar, pero por seguridad:
+        responseData.user.tipo = null;
       }
 
       return successResponse(responseData);
@@ -639,7 +717,6 @@ export async function refresh(
             service_categories: { select: { slug: true } },
             pharmacy_chains: true,
           },
-          orderBy: { id: "desc" },
         });
         if (provider) {
           serviceType = provider.service_categories?.slug;
@@ -752,7 +829,6 @@ export async function me(
         service_categories: { select: { slug: true, name: true } },
         pharmacy_chains: true,
       },
-      orderBy: { id: "desc" },
     });
 
     if (provider) {

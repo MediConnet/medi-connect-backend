@@ -10,6 +10,7 @@ import {
   getLaboratoryById,
   getLaboratoryDashboard,
 } from "./laboratories.controller";
+import { getLaboratoryReviews } from "./reviews.controller";
 
 export async function handler(
   event: APIGatewayProxyEventV2,
@@ -27,6 +28,11 @@ export async function handler(
   }
 
   try {
+    // GET /api/laboratories/reviews - Obtener reseñas del laboratorio
+    if (normalizedPath === "/api/laboratories/reviews" && method === "GET") {
+      return await getLaboratoryReviews(event);
+    }
+
     // GET /api/laboratories - Listar laboratorios (y buscar con ?q=...)
     if (normalizedPath === "/api/laboratories" && method === "GET") {
       return await getAllLaboratories(event);
@@ -50,7 +56,7 @@ export async function handler(
       const pathParts = normalizedPath.split("/");
       const lastPart = pathParts[pathParts.length - 1];
 
-      if (lastPart !== "search" && lastPart !== "dashboard") {
+      if (lastPart !== "search" && lastPart !== "dashboard" && lastPart !== "reviews") {
         return await getLaboratoryById(event);
       }
     }

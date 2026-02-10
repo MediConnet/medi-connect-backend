@@ -7,6 +7,7 @@ import { getProducts, createProduct, updateProduct, deleteProduct } from './prod
 import { getOrders, updateOrderStatus } from './orders.controller';
 import { getReviews, getBranchReviews, createReview } from './reviews.controller';
 import { getPayments } from './payments.controller';
+import { getBranches, createBranch, updateBranch, deleteBranch } from './branches.controller';
 import { extractIdFromPath } from '../shared/validators';
 
 export async function handler(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
@@ -75,6 +76,21 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     // --- Rutas de Pagos ---
     if (path === '/api/pharmacies/payments' || path === '/api/pharmacies/payments/income') {
       if (method === 'GET') return await getPayments(event);
+    }
+
+    // --- Rutas de Sucursales ---
+    if (path === '/api/pharmacies/branches') {
+      if (method === 'GET') return await getBranches(event);
+      if (method === 'POST') return await createBranch(event);
+    }
+
+    // --- Rutas de Sucursal Individual ---
+    if (path.startsWith('/api/pharmacies/branches/')) {
+      const branchId = extractIdFromPath(path, '/api/pharmacies/branches/');
+      if (branchId) {
+        if (method === 'PUT') return await updateBranch(event);
+        if (method === 'DELETE') return await deleteBranch(event);
+      }
     }
 
     // Si no coincide ninguna ruta

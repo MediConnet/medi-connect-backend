@@ -6,6 +6,68 @@ import { successResponse, errorResponse, internalErrorResponse, notFoundResponse
 import { logger } from '../shared/logger';
 
 /**
+ * GET /api/supplies/products
+ * Listar productos del proveedor autenticado
+ */
+export async function getProducts(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  console.log('✅ [SUPPLIES] GET /api/supplies/products - Listando productos');
+
+  try {
+    const authResult = await requireAuth(event);
+    if ('statusCode' in authResult) {
+      return authResult;
+    }
+    const authContext = authResult as AuthContext;
+
+    // Buscar proveedor
+    const prisma = getPrismaClient();
+    const provider = await prisma.providers.findFirst({
+      where: { user_id: authContext.user.id },
+    });
+
+    if (!provider) {
+      console.log('⚠️ [SUPPLIES] Usuario no tiene tienda asociada');
+      // Retornar array vacío en lugar de error
+      return successResponse({
+        products: [],
+        message: 'No tienes una tienda de insumos configurada'
+      });
+    }
+
+    // Obtener productos del proveedor
+    const products = await prisma.provider_catalog.findMany({
+      where: {
+        provider_id: provider.id,
+      },
+      orderBy: {
+        created_at: 'desc',
+      },
+    });
+
+    console.log(`✅ [SUPPLIES] ${products.length} productos encontrados`);
+
+    return successResponse({
+      products: products.map(p => ({
+        id: p.id,
+        name: p.name,
+        description: p.description,
+        type: p.type,
+        price: p.price ? parseFloat(p.price.toString()) : 0,
+        stock: p.stock || 0,
+        imageUrl: p.image_url,
+        isActive: p.is_available,
+        createdAt: p.created_at,
+        updatedAt: p.updated_at,
+      })),
+    });
+  } catch (error: any) {
+    console.error('❌ [SUPPLIES] Error al listar productos:', error.message);
+    logger.error('Error getting products', error);
+    return internalErrorResponse('Error al obtener productos');
+  }
+}
+
+/**
  * POST /api/supplies/products
  * Crear un producto nuevo
  */
