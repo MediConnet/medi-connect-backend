@@ -284,6 +284,7 @@ model providers {
   commission_percentage Decimal?                @db.Decimal
   years_of_experience   Int?                    @default(0)
   chain_id              String?                 @db.Uuid
+  documents             Json?                   @default("[]") @db.Json
   appointments          appointments[]
   medical_history       medical_history[]
   payouts               payouts[]

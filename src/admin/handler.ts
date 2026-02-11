@@ -51,6 +51,15 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       return result;
     }
 
+    // GET /api/admin/requests/{id}
+    if (method === 'GET' && path.startsWith('/api/admin/requests/') &&
+        !path.endsWith('/approve') && !path.endsWith('/reject')) {
+      console.log('✅ [ADMIN] GET /api/admin/requests/{id} - Obteniendo detalle de solicitud');
+      const result = await getRequestDetail(event);
+      console.log(`✅ [ADMIN] GET /api/admin/requests/{id} - Completado con status ${result.statusCode}`);
+      return result;
+    }
+
     // GET /api/admin/ad-requests
     if (method === 'GET' && path === '/api/admin/ad-requests') {
       console.log('✅ [ADMIN] GET /api/admin/ad-requests - Obteniendo solicitudes de anuncios');
@@ -474,6 +483,7 @@ async function getRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayPro
   const requests = providers.map((provider: typeof providers[0]) => {
     const branch = provider.provider_branches[0];
     const city = branch?.city_id ? cityMap[branch.city_id] : undefined;
+    const docs = Array.isArray((provider as any).documents) ? (provider as any).documents : [];
 
     return {
       id: provider.id,
@@ -484,7 +494,7 @@ async function getRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayPro
       submissionDate: provider.users?.created_at 
         ? new Date(provider.users.created_at).toISOString().split('T')[0]
         : new Date().toISOString().split('T')[0],
-      documentsCount: 0, // TODO: Implementar cuando exista modelo de documentos
+      documentsCount: docs.length,
       status: provider.verification_status === 'APPROVED' ? 'APPROVED' :
               provider.verification_status === 'REJECTED' ? 'REJECTED' :
               'PENDING',
@@ -494,13 +504,72 @@ async function getRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayPro
       city: city?.name || 'Sin ciudad',
       address: branch?.address_text || '',
       description: provider.description || '',
-      documents: [], // TODO: Implementar cuando exista modelo de documentos
+      documents: docs,
     };
   });
 
     console.log(`✅ [GET_REQUESTS] Retornando ${requests.length} solicitudes`);
     console.log(`🔍 [GET_REQUESTS] IDs de providers encontrados:`, providers.map((p: typeof providers[0]) => ({ id: p.id, name: p.commercial_name, status: p.verification_status })));
   return successResponse(requests);
+}
+
+async function getRequestDetail(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  console.log('📋 [GET_REQUEST_DETAIL] Obteniendo detalle de solicitud');
+  const authResult = await requireRole(event, [enum_roles.admin]);
+  if ('statusCode' in authResult) return authResult;
+
+  const requestId = extractIdFromPath(event.requestContext.http.path, '/api/admin/requests/');
+  const prisma = getPrismaClient();
+
+  const provider = await prisma.providers.findFirst({
+    where: { id: requestId },
+    include: {
+      users: {
+        select: {
+          id: true,
+          email: true,
+          profile_picture_url: true,
+          created_at: true,
+        },
+      },
+      service_categories: { select: { slug: true, name: true } },
+      provider_branches: {
+        select: { id: true, city_id: true, address_text: true, phone_contact: true },
+        take: 1,
+      },
+    },
+  });
+
+  if (!provider) return notFoundResponse('Request not found');
+
+  const branch = provider.provider_branches[0];
+  const city = branch?.city_id
+    ? await prisma.cities.findFirst({ where: { id: branch.city_id }, select: { name: true } })
+    : null;
+
+  const docs = Array.isArray((provider as any).documents) ? (provider as any).documents : [];
+
+  return successResponse({
+    id: provider.id,
+    providerName: provider.commercial_name || 'Sin nombre',
+    email: provider.users?.email || '',
+    avatarUrl: provider.users?.profile_picture_url || undefined,
+    serviceType: provider.service_categories?.slug || provider.service_categories?.name?.toLowerCase() || 'doctor',
+    submissionDate: provider.users?.created_at
+      ? new Date(provider.users.created_at).toISOString().split('T')[0]
+      : new Date().toISOString().split('T')[0],
+    documentsCount: docs.length,
+    status: provider.verification_status === 'APPROVED' ? 'APPROVED' :
+            provider.verification_status === 'REJECTED' ? 'REJECTED' :
+            'PENDING',
+    rejectionReason: null,
+    phone: branch?.phone_contact || '',
+    whatsapp: branch?.phone_contact || '',
+    city: city?.name || 'Sin ciudad',
+    address: branch?.address_text || '',
+    description: provider.description || '',
+    documents: docs,
+  });
 }
 
 async function getAdRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
@@ -728,10 +797,10 @@ async function rejectRequest(event: APIGatewayProxyEventV2): Promise<APIGatewayP
   return successResponse({ success: true });
 }
 
-function extractIdFromPath(path: string, prefix: string, suffix: string): string {
+function extractIdFromPath(path: string, prefix: string, suffix: string = ''): string {
   const start = prefix.length;
-  const end = path.indexOf(suffix);
-  if (end === -1) {
+  const end = suffix ? path.indexOf(suffix) : path.length;
+  if (end === -1 || start >= end) {
     throw new Error('Invalid path format');
   }
   return path.substring(start, end);

@@ -214,20 +214,28 @@ export async function getAuthContext(
   
   // Si no hay email, intentar buscar por userId o sub
   let user;
-  if (userEmail) {
-    console.log(`🔍 [AUTH] Buscando usuario por email/username: ${userEmail}`);
-    user = await prisma.users.findFirst({
-      where: { email: userEmail as string },
-    });
-  } else {
-    // Si no hay email, buscar por userId o sub (que debería ser el ID del usuario)
-    const userId = claims.userId || claims.sub;
-    if (userId) {
-      console.log(`🔍 [AUTH] Buscando usuario por userId/sub: ${userId}`);
-      user = await prisma.users.findUnique({
-        where: { id: userId },
+  try {
+    if (userEmail) {
+      console.log(`🔍 [AUTH] Buscando usuario por email/username: ${userEmail}`);
+      user = await prisma.users.findFirst({
+        where: { email: String(userEmail) },
       });
+    } else {
+      // Si no hay email, buscar por userId o sub (que debería ser el ID del usuario)
+      const userId = claims.userId || claims.sub;
+      if (userId) {
+        console.log(`🔍 [AUTH] Buscando usuario por userId/sub: ${userId}`);
+        user = await prisma.users.findUnique({
+          where: { id: String(userId) },
+        });
+      }
     }
+  } catch (err: any) {
+    // Evitar 500 por errores intermitentes/consulta: tratamos como no autenticado
+    console.error('❌ [AUTH] Error consultando usuario en DB:', err?.message);
+    if (err?.code) console.error('❌ [AUTH] Prisma code:', err.code);
+    if (err?.meta) console.error('❌ [AUTH] Prisma meta:', JSON.stringify(err.meta));
+    return null;
   }
   
   if (!userEmail && !claims.userId && !claims.sub) {

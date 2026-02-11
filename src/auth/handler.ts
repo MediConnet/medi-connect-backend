@@ -22,6 +22,11 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       return await authController.register(event);
     }
 
+    // 1b. Registro profesional (alias / compatibilidad con frontend)
+    if (method === 'POST' && path === '/api/auth/register-professional') {
+      return await authController.register(event);
+    }
+
     // 2. Login
     if (method === 'POST' && path === '/api/auth/login') {
       return await authController.login(event);

@@ -18,6 +18,11 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '10mb' })); // ⭐ Aumentar límite para subida de imágenes
 app.use(express.urlencoded({ extended: true, limit: '10mb' })); // ⭐ Aumentar límite para subida de imágenes
+// ⭐ Soporte para multipart/form-data (documentos) en rutas de auth
+app.use('/api/auth', express.raw({ type: 'multipart/form-data', limit: '20mb' }));
+
+// ⭐ Servir archivos subidos localmente (solo dev)
+app.use('/uploads', express.static('uploads'));
 
 // Middleware de logging para todas las requests
 app.use((req, res, next) => {
@@ -44,6 +49,13 @@ function createApiGatewayEvent(
   req: express.Request,
   path: string
 ): APIGatewayProxyEventV2 {
+  const contentType =
+    (typeof req.headers['content-type'] === 'string' ? req.headers['content-type'] : '') ||
+    'application/json';
+
+  const isMultipart = contentType.includes('multipart/form-data');
+  const rawBody = isMultipart && Buffer.isBuffer(req.body) ? (req.body as Buffer) : null;
+
   return {
     version: '2.0',
     routeKey: `${req.method} ${path}`,
@@ -51,7 +63,7 @@ function createApiGatewayEvent(
     rawQueryString: new URLSearchParams(req.query as any).toString(),
     headers: {
       ...req.headers as Record<string, string>,
-      'content-type': req.headers['content-type'] || 'application/json',
+      'content-type': contentType,
     },
     requestContext: {
       accountId: 'local',
@@ -71,8 +83,12 @@ function createApiGatewayEvent(
       time: new Date().toISOString(),
       timeEpoch: Date.now(),
     },
-    body: req.body ? JSON.stringify(req.body) : undefined,
-    isBase64Encoded: false,
+    body: rawBody
+      ? rawBody.toString('base64')
+      : req.body
+        ? JSON.stringify(req.body)
+        : undefined,
+    isBase64Encoded: Boolean(rawBody),
     queryStringParameters: Object.keys(req.query).length > 0
       ? req.query as Record<string, string>
       : undefined,

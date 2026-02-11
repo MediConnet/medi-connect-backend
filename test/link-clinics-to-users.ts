@@ -1,18 +1,15 @@
 import { PrismaClient } from '../src/generated/prisma/client';
 import bcrypt from 'bcrypt';
 import { randomUUID } from 'crypto';
+import * as dotenv from 'dotenv';
 
 async function linkClinicsToUsers() {
   console.log('🔗 [LINK CLINICS] Vinculando clínicas con usuarios...\n');
   
+  dotenv.config();
+
   // Usar PrismaClient directamente sin adaptador
-  const prisma = new PrismaClient({
-    datasources: {
-      db: {
-        url: process.env.DATABASE_URL,
-      },
-    },
-  });
+  const prisma = new PrismaClient() as any;
 
   try {
     // 1. Obtener todas las clínicas sin user_id
@@ -40,7 +37,7 @@ async function linkClinicsToUsers() {
       });
       
       console.log('\n🏥 [INFO] Clínicas existentes:');
-      allClinics.forEach(c => {
+      allClinics.forEach((c: any) => {
         console.log(`  - ${c.name}`);
         console.log(`    Email: ${c.users?.email || 'Sin usuario'}`);
         console.log(`    User ID: ${c.user_id || 'NULL'}`);
@@ -51,7 +48,7 @@ async function linkClinicsToUsers() {
     }
 
     console.log('\n🏥 [INFO] Clínicas a vincular:');
-    clinicsWithoutUser.forEach(c => {
+    clinicsWithoutUser.forEach((c: any) => {
       console.log(`  - ${c.name} (ID: ${c.id})`);
     });
 
@@ -124,7 +121,7 @@ async function linkClinicsToUsers() {
     
     console.log('📋 [SUMMARY] Resumen de clínicas:');
     console.log('═'.repeat(60));
-    allClinics.forEach(c => {
+    allClinics.forEach((c: any) => {
       console.log(`\n🏥 ${c.name}`);
       console.log(`   Email: ${c.users?.email || 'Sin usuario'}`);
       console.log(`   Password: Clinica123!`);

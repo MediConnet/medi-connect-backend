@@ -30,64 +30,76 @@ export async function getClinicPayments(event: APIGatewayProxyEventV2): Promise<
       return notFoundResponse('Clinic not found');
     }
 
-    // Obtener payouts de la clínica
+    // Obtener payouts de la clínica (ligero: sin includes pesados para evitar timeouts)
     const payouts = await prisma.payouts.findMany({
       where: {
         provider_id: clinic.id,
         payout_type: 'clinic',
       },
-      include: {
-        payments: {
-          include: {
-            appointments: {
-              include: {
-                patients: {
-                  select: {
-                    users: {
-                      select: {
-                        email: true,
-                      },
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-        clinic_payment_distributions: true,
+      select: {
+        id: true,
+        total_amount: true,
+        status: true,
+        paid_at: true,
+        created_at: true,
       },
       orderBy: {
         created_at: 'desc',
       },
+      take: 50,
     });
+
+    const payoutIds = payouts.map((p) => p.id);
+
+    // Agregados de payments por payout (sumas)
+    const paymentAgg = payoutIds.length
+      ? await prisma.payments.groupBy({
+          by: ['payout_id'],
+          where: { payout_id: { in: payoutIds } },
+          _sum: { amount_total: true, platform_fee: true },
+        })
+      : [];
+
+    // Agregados de distribuciones por payout
+    const distAgg = payoutIds.length
+      ? await prisma.clinic_payment_distributions.groupBy({
+          by: ['payout_id'],
+          where: { payout_id: { in: payoutIds } },
+          _sum: { amount: true },
+        })
+      : [];
+
+    const paymentAggMap = new Map(
+      paymentAgg.map((x) => [
+        x.payout_id,
+        {
+          totalAmount: Number(x._sum.amount_total || 0),
+          appCommission: Number(x._sum.platform_fee || 0),
+        },
+      ]),
+    );
+    const distAggMap = new Map(
+      distAgg.map((x) => [x.payout_id, Number(x._sum.amount || 0)]),
+    );
 
     // Mapear a formato del frontend
     const mappedPayouts = payouts.map((payout) => {
-      const totalAmount = payout.payments.reduce((sum: number, p) => sum + Number(p.amount_total || 0), 0);
-      const appCommission = payout.payments.reduce((sum: number, p) => sum + Number(p.platform_fee || 0), 0);
-      const distributedAmount = payout.clinic_payment_distributions?.reduce(
-        (sum: number, d) => sum + Number(d.amount), 
-        0
-      ) || 0;
+      const sums = paymentAggMap.get(payout.id) || { totalAmount: 0, appCommission: 0 };
+      const distributedAmount = distAggMap.get(payout.id) || 0;
 
       return {
         id: payout.id,
         clinicId: clinic.id,
         clinicName: clinic.name,
-        totalAmount,
-        appCommission,
+        totalAmount: sums.totalAmount,
+        appCommission: sums.appCommission,
         netAmount: Number(payout.total_amount || 0),
         status: payout.status || 'pending',
         paymentDate: payout.paid_at?.toISOString() || null,
         createdAt: payout.created_at?.toISOString(),
-        appointments: payout.payments.map((p) => ({
-          id: p.appointment_id,
-          doctorId: p.appointments?.provider_id,
-          doctorName: 'Doctor', // TODO: Obtener nombre del médico
-          patientName: p.appointments?.patients?.users?.email || 'Paciente',
-          amount: Number(p.amount_total || 0),
-          date: p.appointments?.scheduled_for?.toISOString() || p.created_at?.toISOString(),
-        })),
+        // Para evitar consultas pesadas, el listado no incluye detalle de citas.
+        // El detalle se obtiene desde GET /api/clinics/payments/:id
+        appointments: [],
         isDistributed: distributedAmount > 0,
         distributedAmount,
         remainingAmount: Number(payout.total_amount || 0) - distributedAmount,
@@ -328,13 +340,22 @@ export async function getDoctorPayments(event: APIGatewayProxyEventV2): Promise<
       return notFoundResponse('Clinic not found');
     }
 
-    // Obtener distribuciones de pagos
+    // Evitar join pesado por relación: primero obtenemos payouts de la clínica y filtramos por payout_id
+    const payoutIds = (
+      await prisma.payouts.findMany({
+        where: { provider_id: clinic.id, payout_type: 'clinic' },
+        select: { id: true },
+        take: 500,
+      })
+    ).map((p) => p.id);
+
+    if (payoutIds.length === 0) {
+      return successResponse([]);
+    }
+
+    // Obtener distribuciones de pagos (filtrado directo por payout_id)
     const distributions = await prisma.clinic_payment_distributions.findMany({
-      where: {
-        payouts: {
-          provider_id: clinic.id,
-        },
-      },
+      where: { payout_id: { in: payoutIds } },
       include: {
         clinic_doctors: {
           include: {
@@ -346,6 +367,7 @@ export async function getDoctorPayments(event: APIGatewayProxyEventV2): Promise<
       orderBy: {
         created_at: 'desc',
       },
+      take: 500,
     });
 
     // Mapear a formato del frontend

@@ -8,11 +8,196 @@ import {
   internalErrorResponse,
   successResponse,
 } from "../shared/response";
+import { z } from "zod";
+import { parseBody } from "../shared/validators";
 
 const extractStoreId = (path: string): string | null => {
   const match = path.match(/\/api\/supplies\/([^\/]+)/);
   return match ? match[1] : null;
 };
+
+const suppliesProfileSchema = z.object({
+  name: z.string().min(1).optional(),
+  description: z.string().optional(),
+  phone: z.string().optional(),
+  whatsapp: z.string().optional(),
+  address: z.string().optional(),
+  schedule: z.string().optional(),
+  isActive: z.boolean().optional(),
+  logoUrl: z
+    .union([
+      z.string().url("Invalid logo URL"),
+      z.string().startsWith("data:image/", "Logo must be a valid URL or base64 image"),
+      z.literal(""),
+    ])
+    .optional()
+    .nullable(),
+});
+
+async function getSuppliesProviderByUserId(prisma: any, userId: string) {
+  const suppliesCategory = await prisma.service_categories.findFirst({
+    where: { slug: "supplies" },
+    select: { id: true },
+  });
+  if (!suppliesCategory) return null;
+
+  const provider = await prisma.providers.findFirst({
+    where: {
+      user_id: userId,
+      category_id: suppliesCategory.id,
+    },
+  });
+  return provider;
+}
+
+async function getOrCreateMainBranch(prisma: any, providerId: string, email: string) {
+  let branch = await prisma.provider_branches.findFirst({
+    where: { provider_id: providerId, is_main: true },
+    orderBy: { id: "desc" },
+  });
+  if (branch) return branch;
+
+  branch = await prisma.provider_branches.create({
+    data: {
+      id: randomUUID(),
+      provider_id: providerId,
+      name: "Sucursal Principal",
+      email_contact: email,
+      is_main: true,
+      is_active: true,
+      payment_methods: [],
+    },
+  });
+  return branch;
+}
+
+/**
+ * GET /api/supplies/profile (panel)
+ * Retorna perfil del proveedor de insumos autenticado
+ */
+export async function getSuppliesProfile(
+  event: APIGatewayProxyEventV2,
+): Promise<APIGatewayProxyResult> {
+  try {
+    const authResult = await requireAuth(event);
+    if ("statusCode" in authResult) return authResult;
+    const authContext = authResult as AuthContext;
+
+    const prisma = getPrismaClient();
+
+    const provider = await getSuppliesProviderByUserId(prisma, authContext.user.id);
+    if (!provider) {
+      // Perfil nuevo: retornar vacío con id null (pero manteniendo shape esperado)
+      return successResponse({
+        id: null,
+        name: "",
+        description: "",
+        phone: "",
+        whatsapp: "",
+        address: "",
+        schedule: "",
+        logoUrl: null,
+        isActive: false,
+      });
+    }
+
+    const branch = await getOrCreateMainBranch(prisma, provider.id, authContext.user.email);
+
+    return successResponse({
+      id: provider.id,
+      name: provider.commercial_name || "",
+      description: provider.description || "",
+      phone: branch.phone_contact || "",
+      whatsapp: branch.phone_contact || "",
+      address: branch.address_text || "",
+      schedule: branch.opening_hours_text || "",
+      logoUrl: provider.logo_url || null,
+      isActive: Boolean(branch.is_active),
+    });
+  } catch (error: any) {
+    console.error("❌ [SUPPLIES] Error getting supplies profile:", error.message);
+    return internalErrorResponse("Error al obtener perfil de insumos");
+  }
+}
+
+/**
+ * PUT /api/supplies/profile (panel)
+ * Actualiza perfil del proveedor de insumos autenticado
+ */
+export async function updateSuppliesProfile(
+  event: APIGatewayProxyEventV2,
+): Promise<APIGatewayProxyResult> {
+  try {
+    const authResult = await requireAuth(event);
+    if ("statusCode" in authResult) return authResult;
+    const authContext = authResult as AuthContext;
+
+    const body = parseBody(event.body, suppliesProfileSchema);
+    const prisma = getPrismaClient();
+
+    // Buscar o crear provider de insumos para este usuario
+    const suppliesCategory = await prisma.service_categories.findFirst({
+      where: { slug: "supplies" },
+      select: { id: true },
+    });
+    if (!suppliesCategory) return errorResponse("Categoría de insumos no encontrada", 404);
+
+    let provider = await prisma.providers.findFirst({
+      where: { user_id: authContext.user.id, category_id: suppliesCategory.id },
+    });
+
+    if (!provider) {
+      provider = await prisma.providers.create({
+        data: {
+          id: randomUUID(),
+          user_id: authContext.user.id,
+          category_id: suppliesCategory.id,
+          commercial_name: body.name || "Insumos",
+          description: body.description || null,
+          verification_status: "APPROVED",
+          commission_percentage: 15.0,
+        },
+      });
+    }
+
+    const branch = await getOrCreateMainBranch(prisma, provider.id, authContext.user.email);
+
+    const updatedProvider = await prisma.providers.update({
+      where: { id: provider.id },
+      data: {
+        commercial_name: body.name !== undefined ? body.name : provider.commercial_name,
+        description: body.description !== undefined ? body.description : provider.description,
+        logo_url:
+          body.logoUrl !== undefined ? (body.logoUrl === "" ? null : body.logoUrl) : provider.logo_url,
+      },
+    });
+
+    const updatedBranch = await prisma.provider_branches.update({
+      where: { id: branch.id },
+      data: {
+        phone_contact: body.phone !== undefined ? body.phone : branch.phone_contact,
+        address_text: body.address !== undefined ? body.address : branch.address_text,
+        opening_hours_text: body.schedule !== undefined ? body.schedule : branch.opening_hours_text,
+        is_active: body.isActive !== undefined ? body.isActive : branch.is_active,
+      },
+    });
+
+    return successResponse({
+      id: updatedProvider.id,
+      name: updatedProvider.commercial_name || "",
+      description: updatedProvider.description || "",
+      phone: updatedBranch.phone_contact || "",
+      whatsapp: updatedBranch.phone_contact || "",
+      address: updatedBranch.address_text || "",
+      schedule: updatedBranch.opening_hours_text || "",
+      logoUrl: updatedProvider.logo_url || null,
+      isActive: Boolean(updatedBranch.is_active),
+    });
+  } catch (error: any) {
+    console.error("❌ [SUPPLIES] Error updating supplies profile:", error.message);
+    return internalErrorResponse("Error al actualizar perfil de insumos");
+  }
+}
 
 /**
  * HELPER: Normalizar texto para búsquedas

@@ -4,8 +4,18 @@ import { errorResponse } from './response';
 /**
  * Valida el tamaño del payload
  */
-export function validatePayloadSize(event: APIGatewayProxyEventV2, maxSize: number = 100000): void {
-  if (event.body && event.body.length > maxSize) {
+export function validatePayloadSize(
+  event: APIGatewayProxyEventV2,
+  maxBytes: number = 100000,
+): void {
+  if (!event.body) return;
+
+  const isBase64 = Boolean((event as any).isBase64Encoded);
+  const bytes = isBase64
+    ? Buffer.byteLength(event.body, 'base64')
+    : Buffer.byteLength(event.body, 'utf8');
+
+  if (bytes > maxBytes) {
     throw new Error('Payload too large');
   }
 }

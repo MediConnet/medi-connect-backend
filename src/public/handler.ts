@@ -18,6 +18,7 @@ import {
   getPharmacyBrands,
 } from "./pharmacies.controller";
 import { getCities } from "./public.controller";
+import { getPublicSpecialties } from "./specialties.controller";
 
 export async function handler(
   event: APIGatewayProxyEventV2,
@@ -38,6 +39,11 @@ export async function handler(
     // Listar ciudades
     if (path === "/api/public/cities" && method === "GET") {
       return await getCities(event);
+    }
+
+    // Listar especialidades (para registro / filtros públicos)
+    if (path === "/api/public/specialties" && method === "GET") {
+      return await getPublicSpecialties(event);
     }
 
     // --- RUTAS PÚBLICAS DE MÉDICOS ---

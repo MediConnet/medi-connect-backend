@@ -22,6 +22,8 @@ import {
   unauthorizedResponse,
 } from "../shared/response";
 import { validatePayloadSize } from "../shared/security";
+import { isMultipartContentType, parseMultipartBody } from "../shared/multipart";
+import { storeFilesLocally } from "../shared/uploads";
 import {
   changePasswordSchema,
   forgotPasswordSchema,
@@ -188,6 +190,7 @@ async function createProviderProfile(prisma: any, userId: string, body: any) {
       years_of_experience: yearsExp,
 
       specialties: specialtiesConnect,
+      documents: body.documents ?? [],
     },
   });
 
@@ -239,6 +242,8 @@ async function createProviderProfile(prisma: any, userId: string, body: any) {
   console.log(
     `✅ [HELPER] Proveedor "${representativeName}" creado con éxito con ${body.specialties?.length || 0} especialidades.`,
   );
+
+  return providerId;
 }
 
 // --- CONTROLLERS ---
@@ -248,10 +253,78 @@ export async function register(
 ): Promise<APIGatewayProxyResult> {
   try {
     console.log("📝 [REGISTER] Procesando registro de usuario");
-    validatePayloadSize(event);
 
-    const body = parseBody(event.body, registerSchema);
+    const contentType =
+      event.headers["content-type"] ||
+      event.headers["Content-Type"] ||
+      event.headers["CONTENT-TYPE"] ||
+      "";
+
+    // ⭐ Multipart (documentos) necesita un límite mayor que JSON
+    const isMultipart = isMultipartContentType(contentType);
+    validatePayloadSize(event, isMultipart ? 25 * 1024 * 1024 : 200 * 1024);
+
+    let body: any;
+    let uploadedDocuments: any[] = [];
+
+    if (isMultipart) {
+      const parsed = await parseMultipartBody({
+        body: event.body || undefined,
+        isBase64Encoded: (event as any).isBase64Encoded,
+        headers: event.headers as any,
+        limits: { fileSize: 15 * 1024 * 1024, files: 20, fields: 200 },
+      });
+
+      const f = parsed.fields;
+      const specialtiesRaw = f["specialties"];
+      const specialties = Array.isArray(specialtiesRaw)
+        ? specialtiesRaw
+        : specialtiesRaw
+          ? [specialtiesRaw]
+          : undefined;
+
+      body = registerSchema.parse({
+        email: f["email"],
+        password: f["password"],
+        firstName: f["firstName"],
+        lastName: f["lastName"],
+        name: f["name"],
+        serviceName: f["serviceName"],
+        yearsOfExperience: f["yearsOfExperience"],
+        phone: f["phone"],
+        role: f["role"],
+        address: f["address"],
+        cityId: f["cityId"],
+        city: f["city"],
+        description: f["description"],
+        price: f["price"],
+        chainId: f["chainId"],
+        type: f["type"],
+        specialties,
+        whatsapp: f["whatsapp"],
+      });
+
+      const baseUrl =
+        process.env.FILE_BASE_URL ||
+        `http://localhost:${process.env.PORT || 3000}`;
+
+      uploadedDocuments = await storeFilesLocally({
+        files: parsed.files.map((x) => ({
+          fieldname: x.fieldname,
+          filename: x.filename,
+          mimetype: x.mimetype,
+          buffer: x.buffer,
+          size: x.size,
+        })),
+        baseUrl,
+      });
+    } else {
+      body = parseBody(event.body, registerSchema);
+    }
+
     const prisma = getPrismaClient();
+
+    const requestedRole = body.role ? mapRoleToEnum(body.role) : enum_roles.patient;
 
     const isLocalDev =
       process.env.STAGE === "dev" ||
@@ -259,23 +332,145 @@ export async function register(
       !CLIENT_ID ||
       !USER_POOL_ID;
 
+    // =====================================================
+    // ✅ Manejo idempotente para SOLICITUDES PROFESIONALES
+    // =====================================================
+    // Si el usuario ya existe y está intentando registrarse como profesional/proveedor,
+    // validamos credenciales y (si falta) creamos el perfil de proveedor.
+    const existingUser = await prisma.users.findFirst({
+      where: { email: body.email },
+    });
+
+    if (existingUser) {
+      if (requestedRole === enum_roles.provider) {
+        // Validar contraseña (local: bcrypt; prod: cognito auth)
+        if (isLocalDev) {
+          if (!existingUser.password_hash) {
+            return unauthorizedResponse("Credenciales inválidas");
+          }
+          const ok = await bcrypt.compare(body.password, existingUser.password_hash);
+          if (!ok) return unauthorizedResponse("Credenciales inválidas");
+        } else {
+          try {
+            await cognitoClient.send(
+              new InitiateAuthCommand({
+                AuthFlow: "USER_PASSWORD_AUTH",
+                ClientId: CLIENT_ID,
+                AuthParameters: {
+                  USERNAME: body.email,
+                  PASSWORD: body.password,
+                },
+              }),
+            );
+          } catch (err: any) {
+            if (err?.name === "UserNotConfirmedException") {
+              return errorResponse(
+                "Usuario no confirmado. Por favor confirma tu email.",
+                403,
+              );
+            }
+            return unauthorizedResponse("Credenciales inválidas");
+          }
+        }
+
+        // Asegurar role provider (sin romper cuentas ya existentes)
+        if (existingUser.role !== enum_roles.provider) {
+          await prisma.users.update({
+            where: { id: existingUser.id },
+            data: { role: enum_roles.provider },
+          });
+        }
+
+        // Crear perfil proveedor si no existe
+        const existingProvider = await prisma.providers.findFirst({
+          where: { user_id: existingUser.id },
+          select: { id: true },
+        });
+
+        if (!existingProvider) {
+          const providerId = await createProviderProfile(prisma, existingUser.id, {
+            ...body,
+            documents: uploadedDocuments,
+          });
+          return successResponse(
+            {
+              userId: existingUser.id,
+              email: existingUser.email,
+              providerId,
+              message: "Solicitud enviada exitosamente",
+            },
+            201,
+          );
+        }
+
+        // Si el proveedor ya existe, tratamos este POST como reenvío de solicitud:
+        // - actualizamos documentos si llegaron
+        // - y marcamos el estado como PENDING para que aparezca en Admin /requests
+        if (uploadedDocuments.length > 0) {
+          await prisma.providers.update({
+            where: { id: existingProvider.id },
+            data: {
+              documents: uploadedDocuments,
+              verification_status: "PENDING",
+            },
+          });
+        } else {
+          // Si no llegaron documentos, no forzamos el cambio de estado.
+          // (Evita mover a PENDING un proveedor aprobado por un simple reintento sin adjuntos)
+        }
+
+        // Si es clínica y no existe registro de clínica, crearlo (evitar P2002 por user_id único)
+        if (body.type === "clinic") {
+          const existingClinic = await prisma.clinics.findFirst({
+            where: { user_id: existingUser.id },
+            select: { id: true },
+          });
+          if (!existingClinic) {
+            const representativeName =
+              body.name ||
+              [body.firstName, body.lastName].filter(Boolean).join(" ") ||
+              "Usuario Proveedor";
+            const businessName = body.serviceName || representativeName;
+            const fullAddress = body.address || "Sin dirección registrada";
+            await prisma.clinics.create({
+              data: {
+                id: randomUUID(),
+                user_id: existingUser.id,
+                name: businessName,
+                address: fullAddress,
+                phone: body.phone || "0000000000",
+                whatsapp: (body as any).whatsapp || body.phone || "0000000000",
+                is_active: false,
+              },
+            });
+          }
+        }
+
+        return successResponse(
+          {
+            userId: existingUser.id,
+            email: existingUser.email,
+            message:
+              uploadedDocuments.length > 0
+                ? "Solicitud reenviada exitosamente"
+                : "La solicitud ya fue enviada previamente",
+          },
+          200,
+        );
+      }
+
+      // Para pacientes (u otros roles), mantenemos el comportamiento actual
+      return errorResponse("El usuario ya existe", 409);
+    }
+
     // ==========================================
     // 🛠️ MODO DESARROLLO / FALLBACK LOCAL
     // ==========================================
     if (isLocalDev) {
       console.log("🔧 [REGISTER] Modo desarrollo local");
 
-      const existingUser = await prisma.users.findFirst({
-        where: { email: body.email },
-      });
-      if (existingUser) {
-        return errorResponse("El usuario ya existe", 409);
-      }
-
       const passwordHash = await bcrypt.hash(body.password, 10);
-      const userRole = body.role
-        ? mapRoleToEnum(body.role)
-        : enum_roles.patient;
+      const userRole = requestedRole;
 
       const user = await prisma.users.create({
         data: {
@@ -300,7 +495,10 @@ export async function register(
           },
         });
       } else if (userRole === enum_roles.provider) {
-        await createProviderProfile(prisma, user.id, body);
+        await createProviderProfile(prisma, user.id, {
+          ...body,
+          documents: uploadedDocuments,
+        });
       }
 
       return successResponse(
@@ -328,7 +526,7 @@ export async function register(
 
     const cognitoResponse = await cognitoClient.send(signUpCommand);
     const cognitoSub = cognitoResponse.UserSub || randomUUID();
-    const userRole = body.role ? mapRoleToEnum(body.role) : enum_roles.patient;
+    const userRole = requestedRole;
 
     const user = await prisma.users.create({
       data: {
@@ -351,7 +549,10 @@ export async function register(
         },
       });
     } else if (userRole === enum_roles.provider) {
-      await createProviderProfile(prisma, user.id, body);
+      await createProviderProfile(prisma, user.id, {
+        ...body,
+        documents: uploadedDocuments,
+      });
     }
 
     return successResponse(
@@ -367,6 +568,8 @@ export async function register(
     console.error("❌ [REGISTER] Error al registrar usuario:", error.message);
     if (error.message.includes("Validation error"))
       return errorResponse(error.message, 400);
+    if (error.message === "Payload too large")
+      return errorResponse("Payload too large", 413);
     if (error.name === "UsernameExistsException")
       return errorResponse("El usuario ya existe", 409);
     if (error.code === "P2002")

@@ -95,6 +95,10 @@ functions:
       - httpApi:
           path: /api/public/pharmacies
           method: GET
+      # Public Specialties (Registro / Filtros)
+      - httpApi:
+          path: /api/public/specialties
+          method: GET
       # Public Ambulances
       - httpApi:
           path: /api/ambulances
@@ -124,6 +128,13 @@ functions:
   suppliesHandler:
     handler: src/supplies/handler.handler
     events:
+      # Supplies Profile (panel autenticado)
+      - httpApi:
+          path: /api/supplies/profile
+          method: GET
+      - httpApi:
+          path: /api/supplies/profile
+          method: PUT
       - httpApi:
           path: /api/supplies/stores
           method: GET

@@ -11,7 +11,9 @@ import {
   getSupplyStoreDashboard,
   getSupplyStoreReviews,
   getMySupplyStoreReviews,
+  getSuppliesProfile,
   getSupplyStores,
+  updateSuppliesProfile,
 } from "./supplies.controller";
 import {
   createProduct,
@@ -34,6 +36,12 @@ export async function handler(
   }
 
   try {
+    // 0. GET/PUT /api/supplies/profile (panel - autenticado)
+    if (path === "/api/supplies/profile") {
+      if (method === "GET") return await getSuppliesProfile(event);
+      if (method === "PUT") return await updateSuppliesProfile(event);
+    }
+
     // 1. GET /api/supplies/search
     if (path === "/api/supplies/search" && method === "GET") {
       return await getSupplyStores(event);

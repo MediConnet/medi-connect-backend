@@ -1,6 +1,16 @@
 import { z } from 'zod';
 
 import { enum_appt_status } from '../generated/prisma/client';
+
+const emptyStringToUndefined = (val: unknown) =>
+  val === '' || val === null ? undefined : val;
+
+const digitsOnlyOrUndefined = (val: unknown) => {
+  if (val === '' || val === null || val === undefined) return undefined;
+  if (typeof val !== 'string') return val;
+  const digits = val.replace(/\D/g, '');
+  return digits.length === 0 ? undefined : digits;
+};
 // Auth validators
 export const registerSchema = z.object({
   email: z.string().email(),
@@ -142,7 +152,13 @@ export function parseBody<T extends z.ZodTypeAny>(body: string | null | undefine
     return schema.parse(parsed) as z.infer<T>;
   } catch (error) {
     if (error instanceof z.ZodError) {
-      throw new Error(`Validation error: ${error.errors.map(e => e.message).join(', ')}`);
+      const formatted = error.errors
+        .map((e) => {
+          const path = e.path?.length ? e.path.join('.') : '(root)';
+          return `${path}: ${e.message}`;
+        })
+        .join(', ');
+      throw new Error(`Validation error: ${formatted}`);
     }
     throw new Error('Invalid JSON in request body');
   }
@@ -214,34 +230,104 @@ export const clinicScheduleSchema = z.object({
 // Schema para precios por especialidad
 const consultationPriceSchema = z.object({
   specialty: z.string().min(1, 'Specialty is required'),
-  price: z.number().min(0, 'Price must be >= 0'),
-  isActive: z.boolean(),
+  price: z.coerce.number().min(0, 'Price must be >= 0'),
+  isActive: z.coerce.boolean(),
 });
 
 // Schema para datos bancarios
 const bankAccountSchema = z.object({
   bankName: z.string().min(1, 'Bank name is required'),
-  accountNumber: z.string().min(10, 'Account number must be at least 10 digits'),
+  accountNumber: z.coerce.string().min(10, 'Account number must be at least 10 digits'),
   accountType: z.enum(['checking', 'savings'], {
     errorMap: () => ({ message: 'Account type must be checking or savings' }),
   }),
   accountHolder: z.string().min(1, 'Account holder is required'),
-  identificationNumber: z.string().min(10, 'Identification number must be at least 10 digits').max(13, 'Identification number must be at most 13 digits'),
+  identificationNumber: z.coerce.string().min(10, 'Identification number must be at least 10 digits').max(13, 'Identification number must be at most 13 digits'),
 });
 
 export const updateClinicProfileSchema = z.object({
-  name: z.string().min(3, 'Name must be at least 3 characters').optional(),
-  logoUrl: z.string().url('Logo URL must be a valid URL').optional().or(z.literal('')),
-  specialties: z.array(z.string()).min(1, 'At least one specialty is required').optional(),
-  address: z.string().min(5, 'Address must be at least 5 characters').optional(),
-  phone: z.string().regex(/^\d{10}$/, 'Phone must be exactly 10 digits').optional(),
-  whatsapp: z.string().regex(/^\d{10}$/, 'WhatsApp must be exactly 10 digits').optional(),
-  description: z.string().min(10, 'Description must be at least 10 characters').optional(),
+  name: z.preprocess(
+    emptyStringToUndefined,
+    z.string().min(3, 'Name must be at least 3 characters').optional(),
+  ).optional(),
+  // Aceptar null (no enviar / sin cambios), string vacío (limpiar), URL o data:image (cuando se sube base64 desde frontend)
+  logoUrl: z.preprocess(
+    (val) => (val === null ? undefined : val),
+    z
+      .union([
+        z.literal(''),
+        z.string().url('Logo URL must be a valid URL'),
+        z.string().startsWith('data:image/', 'Logo must be a valid URL or base64 image'),
+      ])
+      .optional(),
+  ),
+  specialties: z
+    .preprocess(
+      (val) => {
+        if (val === null || val === undefined) return undefined;
+        if (Array.isArray(val) && val.length === 0) return undefined;
+        return val;
+      },
+      z
+        .array(
+          z.union([
+            z.string(),
+            z.object({ name: z.string().optional(), id: z.string().optional() }),
+          ]),
+        )
+        .min(1, 'At least one specialty is required')
+        .optional(),
+    )
+    .transform((arr) =>
+      (arr as any[]).map((x) => (typeof x === 'string' ? x : x?.name || x?.id)).filter(Boolean),
+    )
+    .optional(),
+  address: z.preprocess(
+    emptyStringToUndefined,
+    z.string().min(5, 'Address must be at least 5 characters').optional(),
+  ).optional(),
+  phone: z.preprocess(
+    digitsOnlyOrUndefined,
+    z.string().regex(/^\d{9,10}$/, 'Phone must be 9-10 digits').optional(),
+  ).optional(),
+  whatsapp: z.preprocess(
+    digitsOnlyOrUndefined,
+    z.string().regex(/^\d{9,10}$/, 'WhatsApp must be 9-10 digits').optional(),
+  ).optional(),
+  description: z.preprocess(
+    emptyStringToUndefined,
+    z.string().min(10, 'Description must be at least 10 characters').optional(),
+  ).optional(),
   generalSchedule: clinicScheduleSchema.optional(),
-  isActive: z.boolean().optional(),
-  latitude: z.number().min(-90, 'Latitude must be between -90 and 90').max(90, 'Latitude must be between -90 and 90').optional().nullable(),
-  longitude: z.number().min(-180, 'Longitude must be between -180 and 180').max(180, 'Longitude must be between -180 and 180').optional().nullable(),
-  consultationPrices: z.array(consultationPriceSchema).optional(),
+  isActive: z.coerce.boolean().optional(),
+  latitude: z.preprocess(
+    (val) => (val === '' || val === undefined ? undefined : val),
+    z
+      .union([
+        z
+          .coerce.number()
+          .min(-90, 'Latitude must be between -90 and 90')
+          .max(90, 'Latitude must be between -90 and 90'),
+        z.null(),
+      ])
+      .optional(),
+  ).optional(),
+  longitude: z.preprocess(
+    (val) => (val === '' || val === undefined ? undefined : val),
+    z
+      .union([
+        z
+          .coerce.number()
+          .min(-180, 'Longitude must be between -180 and 180')
+          .max(180, 'Longitude must be between -180 and 180'),
+        z.null(),
+      ])
+      .optional(),
+  ).optional(),
+  consultationPrices: z.preprocess(
+    (val) => (val === null ? undefined : val),
+    z.array(consultationPriceSchema).optional(),
+  ).optional(),
   bankAccount: bankAccountSchema.optional().nullable(),
 });
 
