@@ -98,6 +98,8 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
           enabled: false,
           startTime: null,
           endTime: null,
+          breakStart: null,
+          breakEnd: null,
         };
       }
       
@@ -108,12 +110,20 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
           if (dayNum >= 0 && dayNum <= 6) {
             const startTime = sch.start_time ? new Date(sch.start_time).toISOString().substring(11, 16) : null;
             const endTime = sch.end_time ? new Date(sch.end_time).toISOString().substring(11, 16) : null;
+            const breakStart = (sch as any).break_start
+              ? new Date((sch as any).break_start).toISOString().substring(11, 16)
+              : null;
+            const breakEnd = (sch as any).break_end
+              ? new Date((sch as any).break_end).toISOString().substring(11, 16)
+              : null;
             
             daysMap[dayNum] = {
               day: dayNames[dayNum],
               enabled: true,
               startTime: startTime,
               endTime: endTime,
+              breakStart,
+              breakEnd,
             };
           }
         }
@@ -214,6 +224,12 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
                     const baseDate = '1970-01-01';
                     const startTime = new Date(`${baseDate}T${item.startTime}:00Z`);
                     const endTime = new Date(`${baseDate}T${item.endTime}:00Z`);
+                    const breakStart = item.breakStart
+                      ? new Date(`${baseDate}T${item.breakStart}:00Z`)
+                      : null;
+                    const breakEnd = item.breakEnd
+                      ? new Date(`${baseDate}T${item.breakEnd}:00Z`)
+                      : null;
 
                     await tx.provider_schedules.create({
                         data: {
@@ -222,6 +238,8 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
                             day_of_week: getDayIdFromString(item.day), 
                             start_time: startTime,
                             end_time: endTime,
+                            break_start: breakStart,
+                            break_end: breakEnd,
                         }
                     });
                 }
@@ -288,6 +306,8 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
             enabled: false,
             startTime: null,
             endTime: null,
+            breakStart: null,
+            breakEnd: null,
           };
         }
         
@@ -298,12 +318,20 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
             if (dayNum >= 0 && dayNum <= 6) {
               const startTime = sch.start_time ? new Date(sch.start_time).toISOString().substring(11, 16) : null;
               const endTime = sch.end_time ? new Date(sch.end_time).toISOString().substring(11, 16) : null;
+              const breakStart = (sch as any).break_start
+                ? new Date((sch as any).break_start).toISOString().substring(11, 16)
+                : null;
+              const breakEnd = (sch as any).break_end
+                ? new Date((sch as any).break_end).toISOString().substring(11, 16)
+                : null;
               
               daysMap[dayNum] = {
                 day: dayNames[dayNum],
                 enabled: true,
                 startTime: startTime,
                 endTime: endTime,
+                breakStart,
+                breakEnd,
               };
             }
           }

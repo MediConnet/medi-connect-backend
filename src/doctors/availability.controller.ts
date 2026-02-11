@@ -120,16 +120,21 @@ export async function getDoctorAvailability(
 
     allSlots = allSlots.filter((slot) => !busyTimestamps.has(slot.getTime()));
 
+    // blocked_slots cuelga de provider_branches (branch_id). Filtramos por branches del doctor.
     const blockedRanges = await prisma.blocked_slots.findMany({
       where: {
-        provider_branches: { provider_id: doctorId },
+        provider_branches: {
+          provider_id: doctorId,
+          ...(branchId ? { id: branchId } : {}),
+        },
         date: requestDate,
       },
+      select: { start_time: true, end_time: true },
     });
 
     if (blockedRanges.length > 0) {
       allSlots = allSlots.filter((slot) => {
-        const isBlocked = blockedRanges.some((block) => {
+        const isBlocked = blockedRanges.some((block: any) => {
           const blockStart = mergeDateAndTime(requestDate, block.start_time);
           const blockEnd = mergeDateAndTime(requestDate, block.end_time);
           return slot >= blockStart && slot < blockEnd;
