@@ -66,12 +66,35 @@ export const refreshTokenSchema = z.object({
 });
 
 // Doctor validators
-const scheduleItemSchema = z.object({
-  day: z.string(),
-  enabled: z.boolean(),
-  startTime: z.string().nullable(),
-  endTime: z.string().nullable(),
-});
+const timeHHMMNullable = z
+  .string()
+  .regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, 'Time must be in HH:mm format')
+  .nullable();
+
+const scheduleItemSchema = z
+  .object({
+    day: z.string(),
+    enabled: z.boolean(),
+    startTime: timeHHMMNullable,
+    endTime: timeHHMMNullable,
+
+    // Break time (almuerzo) - enviar ambos o ninguno
+    breakStart: timeHHMMNullable.optional(),
+    breakEnd: timeHHMMNullable.optional(),
+  })
+  .refine((v) => !v.enabled || (!!v.startTime && !!v.endTime), {
+    message: 'startTime y endTime son requeridos cuando enabled=true',
+    path: ['startTime'],
+  })
+  .refine(
+    (v) =>
+      (v.breakStart == null && v.breakEnd == null) ||
+      (v.breakStart != null && v.breakEnd != null),
+    {
+      message: 'breakStart y breakEnd deben enviarse juntos o ambos null',
+      path: ['breakStart'],
+    },
+  );
 
 export const updateDoctorProfileSchema = z.object({
   licenseNumber: z.string().optional(),
