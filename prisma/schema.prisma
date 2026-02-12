@@ -314,7 +314,6 @@ model providers {
   medical_history       medical_history[]
   payouts               payouts[]
   provider_ads          provider_ads[]
-  documents             Json?                   @default("[]")
   provider_bank_details provider_bank_details[]
   provider_branches     provider_branches[]
   provider_catalog      provider_catalog[]
