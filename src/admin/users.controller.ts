@@ -367,11 +367,17 @@ export async function updateUser(event: APIGatewayProxyEventV2): Promise<APIGate
 
 /**
  * DELETE /api/admin/users/:id
- * Eliminar un usuario (soft delete - desactivar)
+ * Eliminar un usuario permanentemente
+ * 
+ * Validaciones:
+ * - Solo administradores pueden eliminar
+ * - No puede eliminarse a sí mismo
+ * - Elimina todos los datos relacionados (CASCADE)
  */
 export async function deleteUser(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('✅ [ADMIN] DELETE /api/admin/users/:id - Eliminando usuario');
+  console.log('🗑️ [ADMIN] DELETE /api/admin/users/:id - Eliminando usuario');
   
+  // Verificar que sea admin
   const authResult = await requireRole(event, [enum_roles.admin]);
   if ('statusCode' in authResult) {
     return authResult;
@@ -382,18 +388,101 @@ export async function deleteUser(event: APIGatewayProxyEventV2): Promise<APIGate
   try {
     const pathParts = event.requestContext.http.path.split('/');
     const userId = pathParts[pathParts.length - 1];
+    
+    // Obtener el usuario que hace la petición (del token)
+    const requestingUserId = authResult.user.id;
 
-    // Soft delete - solo desactivar
-    await prisma.users.update({
+    // 1. Verificar que no se esté eliminando a sí mismo
+    if (requestingUserId === userId) {
+      console.log(`⚠️ [ADMIN] Admin ${requestingUserId} intentó eliminarse a sí mismo`);
+      return errorResponse('No puedes eliminar tu propia cuenta de administrador', 400);
+    }
+
+    // 2. Buscar usuario a eliminar
+    const userToDelete = await prisma.users.findUnique({
       where: { id: userId },
-      data: { is_active: false },
+      include: {
+        providers: {
+          select: { id: true, commercial_name: true },
+        },
+        patients: {
+          select: { id: true, full_name: true },
+        },
+        clinics: {
+          select: { id: true, name: true },
+        },
+      },
     });
 
-    console.log(`✅ [ADMIN] Usuario ${userId} desactivado`);
-    return successResponse({ success: true });
+    if (!userToDelete) {
+      console.log(`⚠️ [ADMIN] Intento de eliminar usuario inexistente: ${userId}`);
+      return notFoundResponse('Usuario no encontrado');
+    }
+
+    // 3. Log de auditoría
+    const userType = userToDelete.clinics ? 'Clínica' : 
+                     userToDelete.providers.length > 0 ? 'Proveedor' : 
+                     userToDelete.patients.length > 0 ? 'Paciente' : 
+                     'Usuario';
+    const userName = userToDelete.clinics?.name || 
+                     userToDelete.providers[0]?.commercial_name || 
+                     userToDelete.patients[0]?.full_name || 
+                     userToDelete.email;
+
+    console.log(`🗑️ [ADMIN] Eliminando ${userType}: ${userName} (${userToDelete.email}) - ID: ${userId}`);
+    console.log(`👤 [ADMIN] Solicitado por admin: ${authResult.user.email} (ID: ${requestingUserId})`);
+
+    // 4. Eliminar usuario (CASCADE eliminará datos relacionados automáticamente)
+    // Las foreign keys en el schema tienen onDelete: Cascade configurado
+    console.log(`🔄 [ADMIN] Ejecutando DELETE en la base de datos...`);
+    
+    try {
+      const deleteResult = await prisma.users.delete({
+        where: { id: userId },
+      });
+      console.log(`✅ [ADMIN] DELETE ejecutado. Resultado:`, deleteResult);
+    } catch (deleteError: any) {
+      console.error(`❌ [ADMIN] Error específico al ejecutar DELETE:`, deleteError);
+      console.error(`❌ [ADMIN] Código de error:`, deleteError.code);
+      console.error(`❌ [ADMIN] Mensaje:`, deleteError.message);
+      console.error(`❌ [ADMIN] Meta:`, deleteError.meta);
+      throw deleteError; // Re-lanzar para que sea capturado por el catch principal
+    }
+
+    // 5. Verificar que se eliminó
+    console.log(`🔍 [ADMIN] Verificando eliminación...`);
+    const userStillExists = await prisma.users.findUnique({
+      where: { id: userId },
+    });
+
+    if (userStillExists) {
+      console.error(`❌ [ADMIN] ERROR CRÍTICO: El usuario AÚN EXISTE después del DELETE`);
+      return internalErrorResponse('Error: El usuario no pudo ser eliminado de la base de datos');
+    }
+
+    console.log(`✅ [ADMIN] Usuario ${userName} (${userToDelete.email}) eliminado exitosamente y verificado`);
+
+    return successResponse({
+      success: true,
+      message: 'Usuario eliminado correctamente',
+    });
+
   } catch (error: any) {
     console.error('❌ [ADMIN] Error al eliminar usuario:', error.message);
+    console.error('❌ [ADMIN] Código de error:', error.code);
+    console.error('❌ [ADMIN] Stack:', error.stack);
     logger.error('Error deleting user', error);
-    return internalErrorResponse('Failed to delete user');
+    
+    // Manejar errores específicos
+    if (error.code === 'P2025') {
+      return notFoundResponse('Usuario no encontrado');
+    }
+    
+    if (error.code === 'P2003') {
+      console.error('❌ [ADMIN] Error de foreign key constraint');
+      return internalErrorResponse('No se puede eliminar el usuario porque tiene datos relacionados. Contacta al administrador del sistema.');
+    }
+    
+    return internalErrorResponse(`Error al eliminar usuario: ${error.message}`);
   }
 }

@@ -1090,19 +1090,107 @@ export async function forgotPassword(
   event: APIGatewayProxyEventV2,
 ): Promise<APIGatewayProxyResult> {
   try {
+    console.log("🔑 [FORGOT-PASSWORD] Procesando solicitud de recuperación");
     const body = parseBody(event.body, forgotPasswordSchema);
-    const cmd = new ForgotPasswordCommand({
-      ClientId: CLIENT_ID,
-      Username: body.email,
+    
+    // Validar email
+    if (!body.email || !body.email.includes("@")) {
+      return errorResponse("Email inválido", 400);
+    }
+    
+    const prisma = getPrismaClient();
+    
+    // Buscar usuario en la base de datos
+    const user = await prisma.users.findFirst({
+      where: { email: body.email.toLowerCase() },
     });
-    await cognitoClient.send(cmd);
-    return successResponse({
-      message: "Código de recuperación enviado",
+    
+    // IMPORTANTE: Siempre responder lo mismo (seguridad)
+    // No revelar si el email existe o no
+    const standardResponse = {
+      success: true,
+      message: "Si el email está registrado, recibirás un enlace de recuperación en los próximos minutos.",
+    };
+    
+    // Si el usuario no existe, responder igual pero no hacer nada más
+    if (!user) {
+      console.log(`⚠️ [FORGOT-PASSWORD] Intento con email no registrado: ${body.email}`);
+      return successResponse(standardResponse);
+    }
+    
+    // Verificar límite de intentos (máximo 3 por hora)
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    const recentAttempts = await prisma.password_resets.count({
+      where: {
+        email: body.email.toLowerCase(),
+        created_at: { gte: oneHourAgo },
+      },
     });
+    
+    if (recentAttempts >= 3) {
+      console.log(`⚠️ [FORGOT-PASSWORD] Límite de intentos excedido para: ${body.email}`);
+      return errorResponse("Demasiados intentos. Por favor intenta en 1 hora.", 429);
+    }
+    
+    // Generar token único y seguro
+    const resetToken = crypto.randomBytes(32).toString("hex");
+    
+    // Hashear el token antes de guardarlo (seguridad)
+    const hashedToken = crypto
+      .createHash("sha256")
+      .update(resetToken)
+      .digest("hex");
+    
+    // Guardar en base de datos
+    await prisma.password_resets.create({
+      data: {
+        id: randomUUID(),
+        user_id: user.id,
+        email: user.email.toLowerCase(),
+        token: hashedToken,
+        expires_at: new Date(Date.now() + 60 * 60 * 1000), // 1 hora
+        used: false,
+      },
+    });
+    
+    // Obtener nombre del usuario
+    let userName = "Usuario";
+    if (user.role === enum_roles.patient) {
+      const patient = await prisma.patients.findFirst({
+        where: { user_id: user.id },
+        select: { full_name: true },
+      });
+      if (patient?.full_name) userName = patient.full_name;
+    } else if (user.role === enum_roles.provider) {
+      const provider = await prisma.providers.findFirst({
+        where: { user_id: user.id },
+        select: { commercial_name: true },
+      });
+      if (provider?.commercial_name) userName = provider.commercial_name;
+    }
+    
+    // Enviar email (con token SIN hashear)
+    const { sendEmail } = await import("../shared/email-adapter");
+    const { generatePasswordResetEmail } = await import("../shared/email");
+    
+    const emailHtml = generatePasswordResetEmail({
+      userName,
+      resetToken, // Token sin hashear para el enlace
+    });
+    
+    await sendEmail({
+      to: user.email,
+      subject: "Recuperación de Contraseña - DOCALINK",
+      html: emailHtml,
+    });
+    
+    console.log(`✅ [FORGOT-PASSWORD] Email de recuperación enviado a: ${user.email}`);
+    
+    return successResponse(standardResponse);
   } catch (error: any) {
-    return successResponse({
-      message: "Si el correo existe, se ha enviado un código de recuperación",
-    });
+    console.error("❌ [FORGOT-PASSWORD] Error:", error.message);
+    logger.error("Error in forgotPassword", error);
+    return internalErrorResponse("Error al procesar solicitud. Por favor intenta nuevamente.");
   }
 }
 
@@ -1110,18 +1198,86 @@ export async function resetPassword(
   event: APIGatewayProxyEventV2,
 ): Promise<APIGatewayProxyResult> {
   try {
+    console.log("🔐 [RESET-PASSWORD] Procesando reseteo de contraseña");
     const body = parseBody(event.body, resetPasswordSchema);
-    const cmd = new ConfirmForgotPasswordCommand({
-      ClientId: CLIENT_ID,
-      Username: body.email,
-      ConfirmationCode: body.code,
-      Password: body.newPassword,
+    
+    // Validar datos
+    if (!body.token || !body.newPassword) {
+      return errorResponse("Token y nueva contraseña son requeridos", 400);
+    }
+    
+    if (body.newPassword.length < 6) {
+      return errorResponse("La contraseña debe tener al menos 6 caracteres", 400);
+    }
+    
+    const prisma = getPrismaClient();
+    
+    // Hashear el token recibido para comparar
+    const hashedToken = crypto
+      .createHash("sha256")
+      .update(body.token)
+      .digest("hex");
+    
+    // Buscar token en base de datos
+    const resetRequest = await prisma.password_resets.findFirst({
+      where: {
+        token: hashedToken,
+        used: false,
+        expires_at: { gt: new Date() }, // No expirado
+      },
     });
-    await cognitoClient.send(cmd);
-    return successResponse({ message: "Contraseña restablecida exitosamente" });
+    
+    if (!resetRequest) {
+      console.log("⚠️ [RESET-PASSWORD] Token inválido o expirado");
+      return errorResponse(
+        "Token inválido o expirado. Por favor solicita un nuevo enlace de recuperación.",
+        400
+      );
+    }
+    
+    // Buscar usuario
+    const user = await prisma.users.findUnique({
+      where: { id: resetRequest.user_id },
+    });
+    
+    if (!user) {
+      console.log("⚠️ [RESET-PASSWORD] Usuario no encontrado para token válido");
+      return notFoundResponse("Usuario no encontrado");
+    }
+    
+    // Hashear nueva contraseña
+    const hashedPassword = await bcrypt.hash(body.newPassword, 10);
+    
+    // Actualizar contraseña del usuario
+    await prisma.users.update({
+      where: { id: user.id },
+      data: { password_hash: hashedPassword },
+    });
+    
+    // Marcar token como usado
+    await prisma.password_resets.update({
+      where: { id: resetRequest.id },
+      data: {
+        used: true,
+        used_at: new Date(),
+      },
+    });
+    
+    // (Opcional) Invalidar todas las sesiones activas del usuario
+    await prisma.sessions.updateMany({
+      where: { user_id: user.id },
+      data: { revoked_at: new Date() },
+    });
+    
+    console.log(`✅ [RESET-PASSWORD] Contraseña actualizada exitosamente para: ${user.email}`);
+    
+    return successResponse({
+      success: true,
+      message: "Contraseña actualizada correctamente. Ya puedes iniciar sesión con tu nueva contraseña.",
+    });
   } catch (error: any) {
-    if (error.name === "CodeMismatchException")
-      return errorResponse("Código de verificación inválido", 400);
-    return internalErrorResponse("Error al restablecer la contraseña");
+    console.error("❌ [RESET-PASSWORD] Error:", error.message);
+    logger.error("Error in resetPassword", error);
+    return internalErrorResponse("Error al restablecer contraseña. Por favor intenta nuevamente.");
   }
 }
