@@ -85,7 +85,7 @@ function mapAmbulanceData(ambulance: any) {
 
 /**
  * Listar ambulancias públicas (sin autenticación)
- * GET /api/ambulances
+ * GET /api/public/ambulances
  * Soporta filtros: q (search), city, page, limit
  */
 export async function getAllAmbulances(
@@ -229,19 +229,19 @@ export async function getAllAmbulances(
 
 /**
  * Obtener ambulancia pública por ID
- * GET /api/ambulances/{id}
+ * GET /api/public/ambulances/{id}
  */
 export async function getAmbulanceById(
   event: APIGatewayProxyEventV2,
 ): Promise<APIGatewayProxyResult> {
   console.log(
-    "✅ [PUBLIC AMBULANCES] GET /api/ambulances/{id} - Obteniendo ambulancia",
+    "✅ [PUBLIC AMBULANCES] GET /api/public/ambulances/{id} - Obteniendo ambulancia",
   );
 
   try {
     const ambulanceId = extractIdFromPath(
       event.requestContext.http.path,
-      "/api/ambulances/",
+      "/api/public/ambulances/",
     );
 
     if (!ambulanceId) {

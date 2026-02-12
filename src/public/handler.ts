@@ -112,13 +112,13 @@ export async function handler(
 
     // --- RUTAS PÚBLICAS DE AMBULANCIAS ---
 
-    // GET /api/ambulances - Listar ambulancias (Incluye búsqueda por query params)
-    if (path === "/api/ambulances" && method === "GET") {
+    // GET /api/public/ambulances
+    if (path === "/api/public/ambulances" && method === "GET") {
       return await getAllAmbulances(event);
     }
 
-    // GET /api/ambulances/{id} - Obtener ambulancia por ID
-    if (path.startsWith("/api/ambulances/") && method === "GET") {
+    // GET /api/public/ambulances/{id}
+    if (path.startsWith("/api/public/ambulances/") && method === "GET") {
       return await getAmbulanceById(event);
     }
 
