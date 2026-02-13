@@ -9,7 +9,6 @@ datasource db {
 }
 
 model appointments {
-<<<<<<< Updated upstream
   id               String              @id @db.Uuid
   patient_id       String?             @db.Uuid
   branch_id        String?             @db.Uuid
@@ -32,27 +31,6 @@ model appointments {
   clinics           clinics?           @relation(fields: [clinic_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   patients          patients?          @relation(fields: [patient_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   providers         providers?         @relation(fields: [provider_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-=======
-  id                String              @id @db.Uuid
-  patient_id        String?             @db.Uuid
-  branch_id         String?             @db.Uuid
-  provider_id       String?             @db.Uuid
-  scheduled_for     DateTime?           @db.Timestamp(6)
-  status            String?             @db.VarChar(255)
-  reason            String?
-  is_paid           Boolean?            @default(false)
-  cost              Decimal             @default(0) @db.Decimal(10, 2)
-  payment_method    enum_payment_method @default(CASH)
-  clinic_id         String?             @db.Uuid
-  reception_notes   String?
-  reception_status  String?             @db.VarChar(50)
-  created_at        DateTime            @default(now()) @db.Timestamp(6)
-  updated_at        DateTime            @db.Timestamp(6)
-  provider_branches provider_branches?  @relation(fields: [branch_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  clinics           clinics?            @relation(fields: [clinic_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  patients          patients?           @relation(fields: [patient_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  providers         providers?          @relation(fields: [provider_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
->>>>>>> Stashed changes
   medical_history   medical_history[]
   payments          payments[]
   reviews           reviews[]
@@ -147,10 +125,7 @@ model payments {
   id                      String        @id @db.Uuid
   appointment_id          String?       @db.Uuid
   payout_id               String?       @db.Uuid
-<<<<<<< Updated upstream
   external_transaction_id String?       @db.VarChar(255)
-=======
->>>>>>> Stashed changes
   amount_total            Decimal?      @db.Decimal
   platform_fee            Decimal?      @db.Decimal
   provider_amount         Decimal?      @db.Decimal
@@ -160,10 +135,6 @@ model payments {
   payment_source          String?       @db.VarChar(50)
   clinic_id               String?       @db.Uuid
   paid_at                 DateTime?     @db.Timestamp(6)
-<<<<<<< Updated upstream
-=======
-  external_transaction_id String?       @db.VarChar(255)
->>>>>>> Stashed changes
   appointments            appointments? @relation(fields: [appointment_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   clinics                 clinics?      @relation(fields: [clinic_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   payouts                 payouts?      @relation(fields: [payout_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
@@ -574,10 +545,6 @@ model password_resets {
   created_at DateTime  @default(now()) @db.Timestamp(6)
   users      users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-<<<<<<< Updated upstream
-=======
-  @@index([token])
->>>>>>> Stashed changes
   @@index([email])
   @@index([expires_at])
   @@index([token])
