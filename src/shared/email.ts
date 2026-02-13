@@ -427,3 +427,68 @@ export function generatePatientCancellationEmail(data: {
 </html>
   `;
 }
+
+/**
+ * Genera el HTML del email de recuperación de contraseña
+ */
+export function generatePasswordResetEmail(data: {
+  userName: string;
+  resetToken: string;
+}): string {
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+  const resetLink = `${frontendUrl}/reset-password?token=${data.resetToken}`;
+  
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+    .header { background-color: #14b8a6; color: white; padding: 20px; text-align: center; }
+    .content { padding: 20px; background-color: #f9f9f9; }
+    .warning { background: #fef3c7; padding: 15px; border-radius: 8px; border-left: 4px solid #f59e0b; margin: 20px 0; }
+    .button { display: inline-block; background: #14b8a6; color: white; padding: 15px 40px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px; margin: 20px 0; }
+    .link-box { background: #f3f4f6; padding: 15px; border-radius: 8px; margin: 20px 0; word-break: break-all; }
+    .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🔐 Recuperación de Contraseña</h1>
+    </div>
+    <div class="content">
+      <p>Hola <strong>${data.userName}</strong>,</p>
+      <p>Recibimos una solicitud para restablecer la contraseña de tu cuenta en <strong>DOCALINK</strong>.</p>
+      <div class="warning">
+        <p style="margin: 0; color: #92400e;">
+          ⚠️ <strong>Importante:</strong> Si no solicitaste este cambio, ignora este email. 
+          Tu contraseña permanecerá sin cambios.
+        </p>
+      </div>
+      <p>Para restablecer tu contraseña, haz clic en el siguiente botón:</p>
+      <div style="text-align: center;">
+        <a href="${resetLink}" class="button">Restablecer Contraseña</a>
+      </div>
+      <p style="color: #6b7280; font-size: 14px;">
+        ⏰ <strong>Este enlace expira en 1 hora</strong> por seguridad.
+      </p>
+      <div class="link-box">
+        <p style="margin: 0; font-size: 13px; color: #6b7280;">
+          Si el botón no funciona, copia y pega este enlace en tu navegador:<br>
+          <a href="${resetLink}" style="color: #14b8a6;">${resetLink}</a>
+        </p>
+      </div>
+    </div>
+    <div class="footer">
+      <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
+      <p><strong>DOCALINK</strong> - Conecta tu salud<br>
+      Este es un email automático, por favor no respondas.</p>
+    </div>
+  </div>
+</body>
+</html>
+  `;
+}

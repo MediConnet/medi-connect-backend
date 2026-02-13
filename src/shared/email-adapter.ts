@@ -1,5 +1,5 @@
 /**
- * Adaptador de Email - Permite usar Nodemailer, Mailjet o Resend de forma transparente
+ * Adaptador de Email - Permite usar Nodemailer, Mailjet, MailerLite o Resend de forma transparente
  * 
  * Este módulo actúa como un adaptador que permite cambiar entre proveedores
  * sin modificar el código que envía correos.
@@ -13,19 +13,19 @@ import { logger } from './logger';
 /**
  * Tipo de proveedor de email
  */
-export type EmailProvider = 'nodemailer' | 'mailjet' | 'resend' | 'auto';
+export type EmailProvider = 'nodemailer' | 'mailjet' | 'mailerlite' | 'resend' | 'auto';
 
 /**
  * Configuración del adaptador
  */
 interface EmailAdapterConfig {
   provider: EmailProvider;
-  fallbackToResend: boolean; // Si Mailjet falla, usar Resend como fallback
+  fallbackToResend: boolean; // Si Mailjet/MailerLite falla, usar Resend como fallback
 }
 
 // Configuración por defecto
 const defaultConfig: EmailAdapterConfig = {
-  provider: (process.env.EMAIL_PROVIDER as EmailProvider) || 'mailjet',
+  provider: (process.env.EMAIL_PROVIDER as EmailProvider) || 'mailerlite',
   fallbackToResend: process.env.EMAIL_FALLBACK_TO_RESEND === 'true' || true,
 };
 
@@ -43,14 +43,21 @@ interface EmailOptions {
 /**
  * Determina qué proveedor usar basado en la configuración
  */
-function determineProvider(config: EmailAdapterConfig): 'nodemailer' | 'mailjet' | 'resend' {
+function determineProvider(config: EmailAdapterConfig): 'nodemailer' | 'mailjet' | 'mailerlite' | 'resend' {
   // Si se especifica un proveedor, usarlo
-  if (config.provider === 'nodemailer' || config.provider === 'mailjet' || config.provider === 'resend') {
+  if (config.provider === 'nodemailer' || config.provider === 'mailjet' || config.provider === 'mailerlite' || config.provider === 'resend') {
     return config.provider;
   }
   
-  // Modo auto: usar Nodemailer si está configurado, sino Mailjet, sino Resend
+  // Modo auto: usar MailerLite si está configurado, sino Nodemailer, sino Mailjet, sino Resend
   if (config.provider === 'auto') {
+    const { getMailerLiteStatus } = require('./mailerlite');
+    const mailerliteStatus = getMailerLiteStatus();
+    if (mailerliteStatus.configured) {
+      console.log('📧 [EMAIL-ADAPTER] Usando MailerLite (configurado)');
+      return 'mailerlite';
+    }
+    
     const nodemailerStatus = getNodemailerStatus();
     if (nodemailerStatus.configured) {
       console.log('📧 [EMAIL-ADAPTER] Usando Nodemailer (configurado)');
@@ -67,8 +74,8 @@ function determineProvider(config: EmailAdapterConfig): 'nodemailer' | 'mailjet'
     return 'resend';
   }
   
-  // Por defecto, usar Nodemailer
-  return 'nodemailer';
+  // Por defecto, usar MailerLite
+  return 'mailerlite';
 }
 
 /**
@@ -85,7 +92,26 @@ export async function sendEmail(
   const provider = determineProvider(config);
   
   try {
-    if (provider === 'nodemailer') {
+    if (provider === 'mailerlite') {
+      // Usar MailerLite
+      const { sendEmail: sendEmailMailerLite } = await import('./mailerlite');
+      const result = await sendEmailMailerLite(options);
+      
+      if (result) {
+        console.log(`✅ [EMAIL-ADAPTER] Email enviado con MailerLite a ${options.to}`);
+        return true;
+      } else {
+        console.error(`❌ [EMAIL-ADAPTER] Error al enviar con MailerLite`);
+        
+        // Si hay fallback habilitado, intentar con Resend
+        if (config.fallbackToResend) {
+          console.log('🔄 [EMAIL-ADAPTER] Intentando con Resend como fallback...');
+          return await sendEmailResend(options);
+        }
+        
+        return false;
+      }
+    } else if (provider === 'nodemailer') {
       // Usar Nodemailer
       return await sendEmailNodemailer(options);
     } else if (provider === 'mailjet') {
@@ -119,8 +145,8 @@ export async function sendEmail(
     console.error(`❌ [EMAIL-ADAPTER] Error al enviar email:`, error.message);
     logger.error('Error sending email with adapter', error, { to: options.to, provider });
     
-    // Si hay fallback habilitado y estábamos usando Mailjet, intentar con Resend
-    if (provider === 'mailjet' && config.fallbackToResend) {
+    // Si hay fallback habilitado y estábamos usando Mailjet o MailerLite, intentar con Resend
+    if ((provider === 'mailjet' || provider === 'mailerlite') && config.fallbackToResend) {
       console.log('🔄 [EMAIL-ADAPTER] Intentando con Resend como fallback...');
       try {
         return await sendEmailResend(options);
@@ -142,6 +168,13 @@ export async function sendEmailWithMailjet(options: EmailOptions): Promise<boole
 }
 
 /**
+ * Envía un email forzando el uso de MailerLite
+ */
+export async function sendEmailWithMailerLite(options: EmailOptions): Promise<boolean> {
+  return sendEmail(options, { provider: 'mailerlite', fallbackToResend: false });
+}
+
+/**
  * Envía un email forzando el uso de Resend
  */
 export async function sendEmailWithResend(options: EmailOptions): Promise<boolean> {
@@ -151,7 +184,7 @@ export async function sendEmailWithResend(options: EmailOptions): Promise<boolea
 /**
  * Determina qué proveedor usar basado en la configuración
  */
-export function getCurrentProvider(): 'nodemailer' | 'mailjet' | 'resend' {
+export function getCurrentProvider(): 'nodemailer' | 'mailjet' | 'mailerlite' | 'resend' {
   return determineProvider(defaultConfig);
 }
 
@@ -187,4 +220,5 @@ export {
   generatePatientReminderEmail,
   generateDoctorCancellationEmail,
   generatePatientCancellationEmail,
+  generatePasswordResetEmail,
 } from './email';
