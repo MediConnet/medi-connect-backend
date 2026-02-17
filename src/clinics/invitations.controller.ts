@@ -1,13 +1,127 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResult } from 'aws-lambda';
-import { randomUUID } from 'crypto';
+import { randomUUID, randomBytes } from 'crypto';
 import { logger } from '../shared/logger';
 import { getPrismaClient } from '../shared/prisma';
 import { errorResponse, internalErrorResponse, notFoundResponse, successResponse } from '../shared/response';
 import { parseBody, acceptInvitationSchema, extractIdFromPath } from '../shared/validators';
 import { createHash } from 'crypto';
 import { enum_roles, PrismaClient } from '../generated/prisma/client';
-import { generateJWT, getJWTClaims } from '../shared/auth';
+import { generateJWT, getJWTClaims, requireRole, AuthContext } from '../shared/auth';
 import { sendEmail } from '../shared/email-adapter';
+import { z } from 'zod';
+
+/**
+ * POST /api/clinics/doctors/invite/link
+ * Generar link de invitación único para un médico (sin enviar email)
+ */
+export async function generateInvitationLink(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  console.log('✅ [CLINICS] POST /api/clinics/doctors/invite/link - Generando link de invitación');
+  
+  // Validar autenticación y permisos de clínica
+  const authResult = await requireRole(event, [enum_roles.provider]);
+  if ('statusCode' in authResult) {
+    console.error('❌ [CLINICS] Error de autenticación/autorización');
+    return authResult;
+  }
+
+  const authContext = authResult as AuthContext;
+  const prisma = getPrismaClient();
+
+  try {
+    // Validar body
+    const bodySchema = z.object({
+      email: z.string().email('Email inválido'),
+    });
+    const body = parseBody(event.body, bodySchema);
+
+    // Validar formato de email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(body.email)) {
+      return errorResponse('Formato de email inválido', 400);
+    }
+
+    // Buscar clínica del usuario autenticado
+    const clinic = await prisma.clinics.findFirst({
+      where: { user_id: authContext.user.id },
+    });
+
+    if (!clinic) {
+      console.error('❌ [CLINICS] Clínica no encontrada para el usuario');
+      return notFoundResponse('Clínica no encontrada');
+    }
+
+    // Verificar si ya existe una invitación pendiente para este email
+    const existingInvitation = await prisma.doctor_invitations.findFirst({
+      where: {
+        clinic_id: clinic.id,
+        email: body.email,
+        status: 'pending',
+        expires_at: {
+          gte: new Date(),
+        },
+      },
+    });
+
+    // Si existe una invitación pendiente válida, retornar el link existente
+    if (existingInvitation) {
+      const frontendUrl = process.env.FRONTEND_URL || 'https://app.mediconnect.com';
+      const invitationLink = `${frontendUrl}/clinic/invite?token=${existingInvitation.invitation_token}`;
+      
+      console.log(`✅ [CLINICS] Invitación existente encontrada para: ${body.email}`);
+      return successResponse({
+        invitationLink,
+        expiresAt: existingInvitation.expires_at.toISOString(),
+      });
+    }
+
+    // Verificar si el médico ya está registrado en la clínica
+    const existingDoctor = await prisma.clinic_doctors.findFirst({
+      where: {
+        clinic_id: clinic.id,
+        email: body.email,
+        is_invited: false, // Ya aceptó la invitación
+      },
+    });
+
+    if (existingDoctor) {
+      return errorResponse('Este médico ya está registrado en la clínica', 400);
+    }
+
+    // Generar token único y seguro (256 bits)
+    const invitationToken = randomBytes(32).toString('base64url');
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7); // Expira en 7 días
+
+    // Crear invitación en la base de datos
+    const invitation = await prisma.doctor_invitations.create({
+      data: {
+        id: randomUUID(),
+        clinic_id: clinic.id,
+        email: body.email,
+        invitation_token: invitationToken,
+        expires_at: expiresAt,
+        status: 'pending',
+      },
+    });
+
+    // Generar URL de invitación
+    const frontendUrl = process.env.FRONTEND_URL || 'https://app.mediconnect.com';
+    const invitationLink = `${frontendUrl}/clinic/invite?token=${invitationToken}`;
+
+    console.log(`✅ [CLINICS] Link de invitación generado exitosamente para: ${body.email}`);
+    return successResponse({
+      invitationLink,
+      expiresAt: expiresAt.toISOString(),
+    });
+  } catch (error: any) {
+    console.error(`❌ [CLINICS] Error al generar link de invitación:`, error.message);
+    logger.error('Error generating invitation link', error);
+    if (error.message.includes('Validation error')) {
+      return errorResponse(error.message, 400);
+    }
+    return internalErrorResponse('Error al generar link de invitación');
+  }
+}
 
 /**
  * POST /api/clinics/doctors/invite
@@ -213,15 +327,23 @@ export async function validateInvitation(event: APIGatewayProxyEventV2): Promise
 
     if (!invitation) {
       console.error(`❌ [CLINICS] Token de invitación no encontrado: ${token}`);
-      return notFoundResponse('Invitation token not found');
+      // Retornar respuesta con isValid: false en lugar de 404 para que el frontend pueda mostrar el mensaje
+      return successResponse({
+        clinic: null,
+        email: '',
+        expiresAt: new Date().toISOString(),
+        isValid: false,
+      });
     }
 
     // Verificar si está expirado
     const now = new Date();
     const isExpired = invitation.expires_at < now;
+    
+    // isValid es true solo si: no está expirado Y está en estado 'pending'
     const isValid = !isExpired && invitation.status === 'pending';
 
-    // Si está expirado, actualizar status
+    // Si está expirado y aún está en estado 'pending', actualizar status
     if (isExpired && invitation.status === 'pending') {
       await prisma.doctor_invitations.update({
         where: { id: invitation.id },
@@ -229,7 +351,7 @@ export async function validateInvitation(event: APIGatewayProxyEventV2): Promise
       });
     }
 
-    console.log(`✅ [CLINICS] Token validado: ${isValid ? 'válido' : 'inválido'}`);
+    console.log(`✅ [CLINICS] Token validado: ${isValid ? 'válido' : 'inválido'} (status: ${invitation.status}, expirado: ${isExpired})`);
     return successResponse({
       clinic: invitation.clinics ? {
         id: invitation.clinics.id,
@@ -246,6 +368,71 @@ export async function validateInvitation(event: APIGatewayProxyEventV2): Promise
       return errorResponse('Invalid invitation token', 400);
     }
     return internalErrorResponse('Failed to validate invitation');
+  }
+}
+
+// POST /api/clinics/invite/:token/reject
+export async function rejectInvitation(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  console.log('❌ [CLINICS] POST /api/clinics/invite/{token}/reject - Rechazando invitación');
+  
+  const prisma = getPrismaClient();
+
+  try {
+    const token = extractIdFromPath(event.requestContext.http.path, '/api/clinics/invite/', '/reject');
+
+    // Buscar invitación
+    const invitation = await prisma.doctor_invitations.findFirst({
+      where: { invitation_token: token },
+    });
+
+    if (!invitation) {
+      console.error(`❌ [CLINICS] Token de invitación no encontrado: ${token}`);
+      return notFoundResponse('Invitation token not found');
+    }
+
+    // Validar que el token no ha expirado
+    const now = new Date();
+    if (invitation.expires_at < now) {
+      console.error(`❌ [CLINICS] Token de invitación expirado`);
+      return errorResponse('Invitation token has expired', 400);
+    }
+
+    // Validar que la invitación no fue ya aceptada
+    if (invitation.status === 'accepted') {
+      console.error(`❌ [CLINICS] Invitación ya fue aceptada`);
+      return errorResponse('Invitation has already been accepted', 400);
+    }
+
+    // Validar que la invitación no fue ya rechazada
+    if (invitation.status === 'rejected') {
+      console.error(`❌ [CLINICS] Invitación ya fue rechazada`);
+      return errorResponse('Invitation has already been rejected', 400);
+    }
+
+    // Solo permitir rechazar si está en estado 'pending'
+    if (invitation.status !== 'pending') {
+      console.error(`❌ [CLINICS] Invitación no está en estado válido para rechazar: ${invitation.status}`);
+      return errorResponse('Invitation is not in a valid state to be rejected', 400);
+    }
+
+    // Marcar invitación como rechazada
+    await prisma.doctor_invitations.update({
+      where: { id: invitation.id },
+      data: { status: 'rejected' },
+    });
+
+    console.log(`✅ [CLINICS] Invitación rechazada exitosamente: ${invitation.email}`);
+    return successResponse({
+      success: true,
+      message: 'Invitación rechazada correctamente',
+    });
+  } catch (error: any) {
+    console.error(`❌ [CLINICS] Error al rechazar invitación:`, error.message);
+    logger.error('Error rejecting invitation', error);
+    if (error.message.includes('Invalid path format')) {
+      return errorResponse('Invalid invitation token', 400);
+    }
+    return internalErrorResponse('Failed to reject invitation');
   }
 }
 

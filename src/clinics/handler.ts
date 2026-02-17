@@ -4,7 +4,7 @@ import { errorResponse, internalErrorResponse, optionsResponse } from '../shared
 import { getProfile, updateProfile, uploadLogo } from './profile.controller';
 import { getDashboard } from './dashboard.controller';
 import { getDoctors, updateDoctorStatus, updateDoctorOffice, deleteDoctor, getDoctorProfile } from './doctors.controller';
-import { validateInvitation, acceptInvitation, sendInvitation } from './invitations.controller';
+import { validateInvitation, acceptInvitation, rejectInvitation, sendInvitation, generateInvitationLink } from './invitations.controller';
 import { getAppointments, updateAppointmentStatus, getTodayReception, updateReceptionStatus } from './appointments.controller';
 import { getDoctorSchedule, updateDoctorSchedule } from './schedules.controller';
 import { getClinicSchedule, updateClinicSchedule } from './clinic-schedules.controller';
@@ -61,6 +61,10 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     }
 
     // --- Rutas de Invitación de Médicos ---
+    if (path === '/api/clinics/doctors/invite/link') {
+      if (method === 'POST') return await generateInvitationLink(event);
+    }
+
     if (path === '/api/clinics/doctors/invite') {
       if (method === 'POST') return await sendInvitation(event);
     }
@@ -99,6 +103,12 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     if (path.startsWith('/api/clinics/invite/') && path.endsWith('/accept')) {
       if (method === 'POST') {
         return await acceptInvitation(event);
+      }
+    }
+
+    if (path.startsWith('/api/clinics/invite/') && path.endsWith('/reject')) {
+      if (method === 'POST') {
+        return await rejectInvitation(event);
       }
     }
 

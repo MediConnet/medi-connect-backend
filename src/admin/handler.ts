@@ -581,14 +581,101 @@ async function getAdRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayP
   }
 
   const queryParams = event.queryStringParameters || {};
-  const status = queryParams.status; // 'pending', 'approved', 'rejected'
+  const status = queryParams.status; // 'PENDING', 'APPROVED', 'REJECTED'
   const limit = parseInt(queryParams.limit || '50', 10);
   const offset = parseInt(queryParams.offset || '0', 10);
 
-  // TODO: Model adRequest doesn't exist in schema
-  // Retornar array vacío para evitar errores en el frontend
-  console.log(`✅ [GET_AD_REQUESTS] Retornando array vacío (modelo no implementado)`);
-  return successResponse([]);
+  const prisma = getPrismaClient();
+
+  // Determinar el estado a filtrar (por defecto PENDING para notificaciones)
+  const adStatus = status === 'APPROVED' ? 'APPROVED' :
+                   status === 'REJECTED' ? 'REJECTED' :
+                   'PENDING';
+
+  console.log(`🔍 [GET_AD_REQUESTS] Buscando anuncios con status: ${adStatus}`);
+
+  // Obtener anuncios con información del proveedor
+  const ads = await prisma.provider_ads.findMany({
+    where: {
+      status: adStatus,
+    },
+    include: {
+      providers: {
+        include: {
+          users: {
+            select: {
+              id: true,
+              email: true,
+            },
+          },
+          service_categories: {
+            select: {
+              slug: true,
+              name: true,
+            },
+          },
+        },
+      },
+    },
+    orderBy: {
+      start_date: 'desc', // Más recientes primero
+    },
+    take: limit,
+    skip: offset,
+  });
+
+  const now = new Date();
+
+  // Mapear a la estructura esperada por el frontend
+  const adRequests = ads.map((ad) => {
+    const provider = ad.providers;
+    const serviceType = provider?.service_categories?.slug || 
+                       provider?.service_categories?.name?.toLowerCase() || 
+                       'doctor';
+
+    // Verificar si el anuncio está activo
+    const hasActiveAd = ad.status === 'APPROVED' && 
+                       ad.is_active === true &&
+                       ad.start_date &&
+                       new Date(ad.start_date) <= now &&
+                       (!ad.end_date || new Date(ad.end_date) > now);
+
+    // Usar start_date como submissionDate (fecha de creación aproximada)
+    const submissionDate = ad.start_date
+      ? new Date(ad.start_date).toISOString().split('T')[0]
+      : new Date().toISOString().split('T')[0];
+
+    return {
+      id: ad.id,
+      providerId: ad.provider_id || '',
+      providerName: provider?.commercial_name || 'Sin nombre',
+      providerEmail: provider?.users?.email || '',
+      serviceType: serviceType as 'doctor' | 'pharmacy' | 'laboratory' | 'ambulance' | 'supplies',
+      submissionDate: submissionDate,
+      status: ad.status as 'PENDING' | 'APPROVED' | 'REJECTED',
+      rejectionReason: null, // TODO: Agregar campo de razón de rechazo al schema
+      approvedAt: ad.status === 'APPROVED' ? submissionDate : undefined,
+      rejectedAt: ad.status === 'REJECTED' ? submissionDate : undefined,
+      hasActiveAd: hasActiveAd,
+      adContent: {
+        label: ad.badge_text || '',
+        discount: ad.title || '',
+        description: ad.subtitle || '',
+        buttonText: ad.action_text || '',
+        imageUrl: ad.image_url || undefined,
+        startDate: ad.start_date
+          ? new Date(ad.start_date).toISOString().split('T')[0]
+          : new Date().toISOString().split('T')[0],
+        endDate: ad.end_date
+          ? new Date(ad.end_date).toISOString().split('T')[0]
+          : undefined,
+        title: ad.title || undefined, // deprecated pero incluido para compatibilidad
+      },
+    };
+  });
+
+  console.log(`✅ [GET_AD_REQUESTS] Retornando ${adRequests.length} solicitudes de anuncios`);
+  return successResponse(adRequests);
 }
 
 async function getProviderRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
@@ -673,9 +760,28 @@ async function approveAdRequest(event: APIGatewayProxyEventV2): Promise<APIGatew
   }
 
   const requestId = extractIdFromPath(event.requestContext.http.path, '/api/admin/ad-requests/', '/approve');
+  const prisma = getPrismaClient();
   
-  // TODO: Implementar aprobación real cuando exista el modelo
-  console.log(`✅ [APPROVE_AD_REQUEST] Solicitud ${requestId} aprobada (mock)`);
+  // Buscar el anuncio
+  const ad = await prisma.provider_ads.findUnique({
+    where: { id: requestId },
+  });
+
+  if (!ad) {
+    console.error(`❌ [APPROVE_AD_REQUEST] Anuncio no encontrado: ${requestId}`);
+    return notFoundResponse('Ad request not found');
+  }
+
+  // Actualizar estado a APPROVED y activar el anuncio
+  await prisma.provider_ads.update({
+    where: { id: requestId },
+    data: {
+      status: 'APPROVED',
+      is_active: true,
+    },
+  });
+
+  console.log(`✅ [APPROVE_AD_REQUEST] Solicitud ${requestId} aprobada exitosamente`);
   return successResponse({ success: true });
 }
 
@@ -688,6 +794,8 @@ async function rejectAdRequest(event: APIGatewayProxyEventV2): Promise<APIGatewa
   }
 
   const requestId = extractIdFromPath(event.requestContext.http.path, '/api/admin/ad-requests/', '/reject');
+  const prisma = getPrismaClient();
+  
   let reason: string | undefined = undefined;
   if (event.body) {
     try {
@@ -697,8 +805,26 @@ async function rejectAdRequest(event: APIGatewayProxyEventV2): Promise<APIGatewa
       // Si el body no tiene reason, está bien, es opcional
     }
   }
+
+  // Buscar el anuncio
+  const ad = await prisma.provider_ads.findUnique({
+    where: { id: requestId },
+  });
+
+  if (!ad) {
+    console.error(`❌ [REJECT_AD_REQUEST] Anuncio no encontrado: ${requestId}`);
+    return notFoundResponse('Ad request not found');
+  }
+
+  // Actualizar estado a REJECTED y desactivar el anuncio
+  await prisma.provider_ads.update({
+    where: { id: requestId },
+    data: {
+      status: 'REJECTED',
+      is_active: false,
+    },
+  });
   
-  // TODO: Implementar rechazo real cuando exista el modelo
   console.log(`❌ [REJECT_AD_REQUEST] Solicitud ${requestId} rechazada. Razón: ${reason || 'No especificada'}`);
   return successResponse({ success: true });
 }
