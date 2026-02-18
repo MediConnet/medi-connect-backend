@@ -37,6 +37,7 @@ export const registerSchema = z.object({
   price: z.union([z.string(), z.number()]).optional(),
   chainId: z.string().optional(),
   type: z.string().optional(),
+  invitationToken: z.string().optional(), // Token de invitación de clínica
 });
 
 export const loginSchema = z.object({
@@ -387,7 +388,7 @@ export const acceptInvitationSchema = z.object({
     .refine((val) => validSpecialties.includes(val as any), {
       message: `Specialty must be one of: ${validSpecialties.join(', ')}`,
     }),
-  password: z.string().min(8, 'Password must be at least 8 characters'),
+  password: z.string().min(8, 'Password must be at least 8 characters').optional(), // Opcional para usuarios ya registrados
   phone: z.string().regex(/^\d{10}$/, 'Phone must be exactly 10 digits').optional(),
   whatsapp: z.string().regex(/^\d{10}$/, 'WhatsApp must be exactly 10 digits').optional(),
 });
