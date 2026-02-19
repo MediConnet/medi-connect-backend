@@ -100,35 +100,35 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       return result;
     }
 
-    // PUT /api/admin/ad-requests/{id}/approve
-    if (method === 'PUT' && path.startsWith('/api/admin/ad-requests/') && path.endsWith('/approve')) {
-      console.log('✅ [ADMIN] PUT /api/admin/ad-requests/{id}/approve - Aprobando anuncio');
+    // POST/PUT /api/admin/ad-requests/{id}/approve (soporta ambos métodos para compatibilidad con frontend)
+    if ((method === 'POST' || method === 'PUT') && path.startsWith('/api/admin/ad-requests/') && path.endsWith('/approve')) {
+      console.log(`✅ [ADMIN] ${method} /api/admin/ad-requests/{id}/approve - Aprobando anuncio`);
       const result = await approveAdRequest(event);
-      console.log(`✅ [ADMIN] PUT /api/admin/ad-requests/{id}/approve - Completado con status ${result.statusCode}`);
+      console.log(`✅ [ADMIN] ${method} /api/admin/ad-requests/{id}/approve - Completado con status ${result.statusCode}`);
       return result;
     }
 
-    // PUT /api/admin/ad-requests/{id}/reject
-    if (method === 'PUT' && path.startsWith('/api/admin/ad-requests/') && path.endsWith('/reject')) {
-      console.log('✅ [ADMIN] PUT /api/admin/ad-requests/{id}/reject - Rechazando anuncio');
+    // POST/PUT /api/admin/ad-requests/{id}/reject (soporta ambos métodos para compatibilidad con frontend)
+    if ((method === 'POST' || method === 'PUT') && path.startsWith('/api/admin/ad-requests/') && path.endsWith('/reject')) {
+      console.log(`✅ [ADMIN] ${method} /api/admin/ad-requests/{id}/reject - Rechazando anuncio`);
       const result = await rejectAdRequest(event);
-      console.log(`✅ [ADMIN] PUT /api/admin/ad-requests/{id}/reject - Completado con status ${result.statusCode}`);
+      console.log(`✅ [ADMIN] ${method} /api/admin/ad-requests/{id}/reject - Completado con status ${result.statusCode}`);
       return result;
     }
 
-    // PUT /api/admin/requests/{id}/approve
-    if (method === 'PUT' && path.startsWith('/api/admin/requests/') && path.endsWith('/approve')) {
-      console.log('✅ [ADMIN] PUT /api/admin/requests/{id}/approve - Aprobando solicitud');
+    // POST/PUT /api/admin/requests/{id}/approve (soporta ambos métodos para compatibilidad con frontend)
+    if ((method === 'POST' || method === 'PUT') && path.startsWith('/api/admin/requests/') && path.endsWith('/approve')) {
+      console.log(`✅ [ADMIN] ${method} /api/admin/requests/{id}/approve - Aprobando solicitud`);
       const result = await approveRequest(event);
-      console.log(`✅ [ADMIN] PUT /api/admin/requests/{id}/approve - Completado con status ${result.statusCode}`);
+      console.log(`✅ [ADMIN] ${method} /api/admin/requests/{id}/approve - Completado con status ${result.statusCode}`);
       return result;
     }
 
-    // PUT /api/admin/requests/{id}/reject
-    if (method === 'PUT' && path.startsWith('/api/admin/requests/') && path.endsWith('/reject')) {
-      console.log('✅ [ADMIN] PUT /api/admin/requests/{id}/reject - Rechazando solicitud');
+    // POST/PUT /api/admin/requests/{id}/reject (soporta ambos métodos para compatibilidad con frontend)
+    if ((method === 'POST' || method === 'PUT') && path.startsWith('/api/admin/requests/') && path.endsWith('/reject')) {
+      console.log(`✅ [ADMIN] ${method} /api/admin/requests/{id}/reject - Rechazando solicitud`);
       const result = await rejectRequest(event);
-      console.log(`✅ [ADMIN] PUT /api/admin/requests/{id}/reject - Completado con status ${result.statusCode}`);
+      console.log(`✅ [ADMIN] ${method} /api/admin/requests/{id}/reject - Completado con status ${result.statusCode}`);
       return result;
     }
 

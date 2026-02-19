@@ -246,6 +246,96 @@ async function createProviderProfile(prisma: any, userId: string, body: any) {
   return providerId;
 }
 
+// Helper para procesar invitación de clínica
+async function processClinicInvitation(
+  prisma: any,
+  userId: string,
+  userEmail: string,
+  invitationToken: string | null | undefined,
+  userName: string | null | undefined,
+): Promise<void> {
+  if (!invitationToken) return;
+
+  try {
+    console.log(`🔍 [REGISTER] Procesando invitación de clínica: ${invitationToken}`);
+
+    // Buscar invitación válida
+    const invitation = await prisma.doctor_invitations.findFirst({
+      where: {
+        invitation_token: invitationToken,
+        status: 'pending',
+        expires_at: { gte: new Date() },
+        email: userEmail, // Verificar que el email coincida
+      },
+      include: {
+        clinics: true,
+      },
+    });
+
+    if (!invitation) {
+      console.log(`⚠️ [REGISTER] Invitación no encontrada o inválida: ${invitationToken}`);
+      return;
+    }
+
+    if (!invitation.clinic_id) {
+      console.log(`⚠️ [REGISTER] Invitación sin clínica asociada`);
+      return;
+    }
+
+    // Buscar provider del usuario
+    const provider = await prisma.providers.findFirst({
+      where: { user_id: userId },
+    });
+
+    if (!provider) {
+      console.log(`⚠️ [REGISTER] Provider no encontrado para usuario ${userId}`);
+      return;
+    }
+
+    // Verificar que no esté ya asociado a esta clínica
+    const existingAssociation = await prisma.clinic_doctors.findFirst({
+      where: {
+        user_id: userId,
+        clinic_id: invitation.clinic_id,
+      },
+    });
+
+    if (existingAssociation) {
+      console.log(`⚠️ [REGISTER] Usuario ya está asociado a esta clínica`);
+      // Marcar invitación como aceptada de todas formas
+      await prisma.doctor_invitations.update({
+        where: { id: invitation.id },
+        data: { status: 'accepted' },
+      });
+      return;
+    }
+
+    // Asociar médico a la clínica
+    await prisma.clinic_doctors.create({
+      data: {
+        id: randomUUID(),
+        clinic_id: invitation.clinic_id,
+        user_id: userId,
+        email: userEmail,
+        name: userName || provider.commercial_name || userEmail,
+        is_invited: false, // Ya aceptó la invitación
+        is_active: true,
+      },
+    });
+
+    // Marcar invitación como aceptada
+    await prisma.doctor_invitations.update({
+      where: { id: invitation.id },
+      data: { status: 'accepted' },
+    });
+
+    console.log(`✅ [REGISTER] Médico asociado a clínica ${invitation.clinic_id} mediante invitación`);
+  } catch (error: any) {
+    console.error(`❌ [REGISTER] Error al procesar invitación:`, error.message);
+    // No lanzar error para no bloquear el registro
+  }
+}
+
 // --- CONTROLLERS ---
 
 export async function register(
@@ -499,6 +589,17 @@ export async function register(
           ...body,
           documents: uploadedDocuments,
         });
+
+        // Procesar invitación de clínica si existe
+        const invitationToken = body.invitationToken || 
+                               (event.queryStringParameters?.invitationToken) ||
+                               null;
+        if (invitationToken) {
+          const userName = body.name || 
+                          [body.firstName, body.lastName].filter(Boolean).join(" ") ||
+                          null;
+          await processClinicInvitation(prisma, user.id, user.email, invitationToken, userName);
+        }
       }
 
       return successResponse(
@@ -553,6 +654,17 @@ export async function register(
         ...body,
         documents: uploadedDocuments,
       });
+
+      // Procesar invitación de clínica si existe
+      const invitationToken = body.invitationToken || 
+                             (event.queryStringParameters?.invitationToken) ||
+                             null;
+      if (invitationToken) {
+        const userName = body.name || 
+                        [body.firstName, body.lastName].filter(Boolean).join(" ") ||
+                        null;
+        await processClinicInvitation(prisma, user.id, user.email, invitationToken, userName);
+      }
     }
 
     return successResponse(

@@ -471,14 +471,107 @@ export async function acceptInvitation(event: APIGatewayProxyEventV2): Promise<A
       return errorResponse('Invitation token is no longer valid', 400);
     }
 
-    // Verificar que el email no esté ya registrado como usuario
+    // Verificar si el usuario ya existe
     const existingUser = await prisma.users.findFirst({
       where: { email: invitation.email },
     });
 
+    // CASO: Usuario ya registrado - verificar autenticación y asociar
     if (existingUser) {
-      console.error(`❌ [CLINICS] El email ${invitation.email} ya está registrado`);
-      return errorResponse('Email already registered', 400);
+      console.log(`🔍 [CLINICS] Usuario ya registrado, verificando autenticación...`);
+      
+      // Verificar autenticación (opcional pero recomendado)
+      try {
+        const authResult = await requireRole(event, [enum_roles.provider]);
+        if ('statusCode' in authResult) {
+          // Si no está autenticado, permitir continuar pero con advertencia
+          console.log(`⚠️ [CLINICS] Usuario no autenticado, pero continuando con asociación`);
+        } else {
+          const authContext = authResult as AuthContext;
+          // Verificar que el usuario autenticado es el mismo de la invitación
+          if (authContext.user.id !== existingUser.id) {
+            console.error(`❌ [CLINICS] Usuario autenticado no coincide con el email de la invitación`);
+            return errorResponse('You can only accept invitations for your own email', 403);
+          }
+        }
+      } catch (authError) {
+        // Si falla la autenticación, continuar de todas formas (para casos donde no se requiere)
+        console.log(`⚠️ [CLINICS] Error en autenticación, continuando sin verificar`);
+      }
+
+      // Verificar que es provider
+      if (existingUser.role !== enum_roles.provider) {
+        console.error(`❌ [CLINICS] Usuario no es provider`);
+        return errorResponse('Only providers can accept clinic invitations', 400);
+      }
+
+      // Verificar que no esté ya asociado a esta clínica
+      const existingAssociation = await prisma.clinic_doctors.findFirst({
+        where: {
+          user_id: existingUser.id,
+          clinic_id: invitation.clinic_id,
+        },
+      });
+
+      if (existingAssociation) {
+        // Ya está asociado, solo marcar invitación como aceptada
+        await prisma.doctor_invitations.update({
+          where: { id: invitation.id },
+          data: { status: 'accepted' },
+        });
+
+        console.log(`✅ [CLINICS] Usuario ya estaba asociado a esta clínica`);
+        return successResponse({
+          message: 'Already associated with this clinic',
+          clinicId: invitation.clinic_id,
+          userId: existingUser.id,
+        });
+      }
+
+      // Buscar provider
+      const provider = await prisma.providers.findFirst({
+        where: { user_id: existingUser.id },
+      });
+
+      if (!provider) {
+        console.error(`❌ [CLINICS] Provider no encontrado para usuario ${existingUser.id}`);
+        return errorResponse('Provider profile not found', 404);
+      }
+
+      // Asociar médico a la clínica
+      await prisma.clinic_doctors.create({
+        data: {
+          id: randomUUID(),
+          clinic_id: invitation.clinic_id,
+          user_id: existingUser.id,
+          email: invitation.email,
+          name: body.name || provider.commercial_name || existingUser.email,
+          specialty: body.specialty || null,
+          phone: body.phone || null,
+          whatsapp: body.whatsapp || null,
+          is_invited: false, // Ya aceptó
+          is_active: true,
+        },
+      });
+
+      // Marcar invitación como aceptada
+      await prisma.doctor_invitations.update({
+        where: { id: invitation.id },
+        data: { status: 'accepted' },
+      });
+
+      console.log(`✅ [CLINICS] Médico existente asociado a clínica ${invitation.clinic_id}`);
+
+      return successResponse({
+        message: 'Invitation accepted successfully',
+        clinicId: invitation.clinic_id,
+        userId: existingUser.id,
+        doctor: {
+          clinicId: invitation.clinic_id,
+          userId: existingUser.id,
+          name: body.name || provider.commercial_name,
+        },
+      });
     }
 
     // Buscar la categoría de servicio "doctor"
@@ -493,10 +586,19 @@ export async function acceptInvitation(event: APIGatewayProxyEventV2): Promise<A
       return errorResponse('Doctor service category not found', 500);
     }
 
+    // CASO: Usuario NO existe - crear nuevo usuario
+    // Validar que se proporcionó password para nuevo usuario
+    if (!body.password) {
+      return errorResponse('Password is required for new user registration', 400);
+    }
+
+    // Guardar password en variable para que TypeScript sepa que no es undefined
+    const password = body.password;
+
     // TRANSACCIÓN: Crear usuario, provider, actualizar médico e invitación
     const result = await prisma.$transaction(async (tx: Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>) => {
       // Crear hash de contraseña
-      const passwordHash = createHash('sha256').update(body.password).digest('hex');
+      const passwordHash = createHash('sha256').update(password).digest('hex');
 
       // Crear usuario
       const user = await tx.users.create({

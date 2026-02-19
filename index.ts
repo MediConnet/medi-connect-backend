@@ -296,10 +296,28 @@ if (clinicsHandler) {
   app.use('/api/clinics', async (req, res) => {
     const path = req.originalUrl.split('?')[0];
     console.log(`🔍 [CLINICS] Ruta recibida: ${req.method} ${path}`);
-    await handleLambdaResponse(clinicsHandler, req, res, path);
+    console.log(`🔍 [CLINICS] Handler disponible:`, typeof clinicsHandler);
+    try {
+      await handleLambdaResponse(clinicsHandler, req, res, path);
+    } catch (error: any) {
+      console.error(`❌ [CLINICS] Error en handler:`, error.message);
+      console.error(`❌ [CLINICS] Stack:`, error.stack);
+      res.status(500).json({
+        success: false,
+        message: error.message || 'Internal server error',
+      });
+    }
   });
 } else {
   console.error('❌ [CLINICS] Handler de clínicas no disponible - Las rutas no se registrarán');
+  // Agregar un fallback para diagnosticar
+  app.use('/api/clinics', (req, res) => {
+    console.error(`❌ [CLINICS] Petición recibida pero handler no disponible: ${req.method} ${req.originalUrl}`);
+    res.status(500).json({
+      success: false,
+      message: 'Clinics handler not available. Check server logs.',
+    });
+  });
 }
 
 // Health check

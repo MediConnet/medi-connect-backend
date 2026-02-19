@@ -61,7 +61,8 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     }
 
     // --- Rutas de Invitación de Médicos ---
-    if (path === '/api/clinics/doctors/invite/link') {
+    // Soporta ambas rutas para compatibilidad con frontend
+    if (path === '/api/clinics/invite' || path === '/api/clinics/doctors/invite/link') {
       if (method === 'POST') return await generateInvitationLink(event);
     }
 
@@ -166,26 +167,48 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     }
 
     // --- Rutas de Pagos ---
-    if (path === '/api/clinics/payments' || (path.startsWith('/api/clinics/payments') && path.includes('?'))) {
-      if (method === 'GET') return await getClinicPayments(event);
-    }
-
+    // IMPORTANTE: Las rutas más específicas deben ir ANTES de las generales
+    
+    // Ruta: POST /api/clinics/payments/:id/distribute
     if (path.startsWith('/api/clinics/payments/') && path.endsWith('/distribute')) {
-      if (method === 'POST') return await distributePayment(event);
+      if (method === 'POST') {
+        console.log(`✅ [CLINICS HANDLER] Ruta de distribuir pago encontrada: ${path}`);
+        return await distributePayment(event);
+      }
     }
 
+    // Ruta: GET /api/clinics/payments/:id/distribution
     if (path.startsWith('/api/clinics/payments/') && path.endsWith('/distribution')) {
-      if (method === 'GET') return await getPaymentDistribution(event);
+      if (method === 'GET') {
+        console.log(`✅ [CLINICS HANDLER] Ruta de distribución encontrada: ${path}`);
+        return await getPaymentDistribution(event);
+      }
     }
 
+    // Ruta: GET /api/clinics/payments/:id (detalle de pago específico)
     if (path.startsWith('/api/clinics/payments/') && 
         !path.includes('/distribute') && 
         !path.includes('/distribution')) {
-      if (method === 'GET') return await getClinicPaymentDetail(event);
+      if (method === 'GET') {
+        console.log(`✅ [CLINICS HANDLER] Ruta de detalle de pago encontrada: ${path}`);
+        return await getClinicPaymentDetail(event);
+      }
     }
 
+    // Ruta base: GET /api/clinics/payments (debe ir DESPUÉS de las rutas específicas)
+    if (path === '/api/clinics/payments') {
+      if (method === 'GET') {
+        console.log(`✅ [CLINICS HANDLER] Ruta de pagos encontrada: ${path}`);
+        return await getClinicPayments(event);
+      }
+    }
+
+    // Ruta: GET /api/clinics/doctors/payments
     if (path === '/api/clinics/doctors/payments') {
-      if (method === 'GET') return await getDoctorPayments(event);
+      if (method === 'GET') {
+        console.log(`✅ [CLINICS HANDLER] Ruta de pagos a médicos encontrada: ${path}`);
+        return await getDoctorPayments(event);
+      }
     }
 
     if (path.startsWith('/api/clinics/doctors/') && path.endsWith('/pay')) {

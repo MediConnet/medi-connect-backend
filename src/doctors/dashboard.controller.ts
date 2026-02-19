@@ -1,4 +1,5 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResult } from 'aws-lambda';
+import { randomUUID } from 'crypto';
 import { enum_roles } from '../generated/prisma/client';
 import { AuthContext, requireRole } from '../shared/auth';
 import { getPrismaClient } from '../shared/prisma';
@@ -17,7 +18,7 @@ export async function getDashboard(event: APIGatewayProxyEventV2): Promise<APIGa
   // 1. Verificar si el médico está asociado a una clínica
   // IMPORTANTE: Solo buscar médicos que YA aceptaron la invitación (is_invited: false)
   // y que estén activos (is_active: true) y tengan clínica asignada (clinic_id not null)
-  const clinicDoctor = await prisma.clinic_doctors.findFirst({
+  let clinicDoctor = await prisma.clinic_doctors.findFirst({
     where: { 
       user_id: userId,
       is_active: true,
@@ -40,7 +41,7 @@ export async function getDashboard(event: APIGatewayProxyEventV2): Promise<APIGa
 
   // Determinar si el doctor está realmente asociado a una clínica
   // Solo si clinicDoctor existe, tiene clínica, y está activo
-  const isClinicAssociated = clinicDoctor && 
+  let isClinicAssociated = clinicDoctor && 
                               clinicDoctor.clinic_id && 
                               clinicDoctor.clinics && 
                               clinicDoctor.is_active && 
@@ -57,6 +58,112 @@ export async function getDashboard(event: APIGatewayProxyEventV2): Promise<APIGa
     });
   } else {
     console.log(`🔍 [DOCTORS DASHBOARD] Doctor NO está asociado a ninguna clínica`);
+  }
+
+  // Si NO está asociado, verificar si hay invitaciones pendientes y asociar automáticamente
+  if (!isClinicAssociated) {
+    const user = await prisma.users.findFirst({
+      where: { id: userId },
+      select: { email: true },
+    });
+
+    if (user) {
+      const pendingInvitation = await prisma.doctor_invitations.findFirst({
+        where: {
+          email: user.email,
+          status: 'pending',
+          expires_at: { gte: new Date() },
+        },
+        include: {
+          clinics: {
+            select: {
+              id: true,
+              name: true,
+              logo_url: true,
+              address: true,
+              phone: true,
+              whatsapp: true,
+            },
+          },
+        },
+      });
+
+      // Si hay invitación pendiente, asociar automáticamente
+      if (pendingInvitation && pendingInvitation.clinic_id) {
+        const provider = await prisma.providers.findFirst({
+          where: { user_id: userId },
+        });
+
+        if (provider) {
+          // Verificar que no esté ya asociado
+          const existingAssociation = await prisma.clinic_doctors.findFirst({
+            where: {
+              user_id: userId,
+              clinic_id: pendingInvitation.clinic_id,
+            },
+          });
+
+          if (!existingAssociation) {
+            try {
+              // Asociar automáticamente
+              await prisma.clinic_doctors.create({
+                data: {
+                  id: randomUUID(),
+                  clinic_id: pendingInvitation.clinic_id,
+                  user_id: userId,
+                  email: user.email,
+                  name: provider.commercial_name || user.email,
+                  is_invited: false,
+                  is_active: true,
+                },
+              });
+
+              // Marcar invitación como aceptada
+              await prisma.doctor_invitations.update({
+                where: { id: pendingInvitation.id },
+                data: { status: 'accepted' },
+              });
+
+              console.log(`✅ [DOCTORS DASHBOARD] Invitación aceptada automáticamente para clínica ${pendingInvitation.clinic_id}`);
+
+              // Re-buscar clinicDoctor después de asociar
+              const updatedClinicDoctor = await prisma.clinic_doctors.findFirst({
+                where: {
+                  user_id: userId,
+                  is_active: true,
+                  is_invited: false,
+                  clinic_id: { not: null },
+                },
+                include: {
+                  clinics: {
+                    select: {
+                      id: true,
+                      name: true,
+                      logo_url: true,
+                      address: true,
+                      phone: true,
+                      whatsapp: true,
+                    },
+                  },
+                },
+              });
+
+              // Actualizar variables
+              if (updatedClinicDoctor) {
+                clinicDoctor = updatedClinicDoctor;
+                isClinicAssociated = updatedClinicDoctor.clinic_id &&
+                                    updatedClinicDoctor.clinics &&
+                                    updatedClinicDoctor.is_active &&
+                                    !updatedClinicDoctor.is_invited;
+              }
+            } catch (error: any) {
+              console.error(`❌ [DOCTORS DASHBOARD] Error al asociar automáticamente:`, error.message);
+              // Continuar sin bloquear el dashboard
+            }
+          }
+        }
+      }
+    }
   }
 
   // 2. Buscar Provider
