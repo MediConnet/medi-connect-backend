@@ -12,6 +12,7 @@ import {
   getAppointments,
   startPaymentProcess,
 } from "./appointments.controller";
+import { updateDeviceToken } from "./device.controller";
 import {
   addFavorite,
   getFavorites,
@@ -154,6 +155,11 @@ export async function handler(
     // DELETE /api/patients/reminders/{id}
     if (path.startsWith("/api/patients/reminders/") && method === "DELETE") {
       return await deleteReminder(event);
+    }
+
+    // --- Rutas de Dispositivo (Token Push) ---
+    if (path === "/api/patients/device/token" && method === "PUT") {
+      return await updateDeviceToken(event);
     }
 
     // Si no coincide ninguna ruta
