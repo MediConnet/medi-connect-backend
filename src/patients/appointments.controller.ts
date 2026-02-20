@@ -49,6 +49,11 @@ export async function createAppointment(
 
     const body = parseBody(event.body, createAppointmentSchema);
 
+    // Validar que envíen la especialidad
+    if (!body.specialtyId) {
+      return errorResponse("El campo specialtyId es requerido", 400);
+    }
+
     const doctor = await prisma.providers.findUnique({
       where: { id: body.doctorId },
       include: {
@@ -56,6 +61,10 @@ export async function createAppointment(
         service_categories: { select: { slug: true } },
         provider_branches: {
           where: { is_main: true, is_active: true },
+          take: 1,
+        },
+        provider_specialties: {
+          where: { specialty_id: body.specialtyId },
           take: 1,
         },
       },
@@ -69,9 +78,19 @@ export async function createAppointment(
       return errorResponse("Doctor has no active branch", 400);
     }
 
-    const appointmentCost = mainBranch.consultation_fee || 0;
+    const specialtyRecord = doctor.provider_specialties[0];
+    if (!specialtyRecord) {
+      return errorResponse(
+        "El doctor no ofrece la especialidad seleccionada o no tiene tarifa configurada",
+        400,
+      );
+    }
+
+    const appointmentCost = specialtyRecord.fee
+      ? Number(specialtyRecord.fee)
+      : 0;
     console.log(
-      `💰 [DEBUG] Costo de cita capturado de sucursal: ${appointmentCost}`,
+      `💰 [DEBUG] Costo de cita capturado de la especialidad: ${appointmentCost}`,
     );
 
     const scheduledFor = new Date(`${body.date}T${body.time}:00`);
@@ -123,6 +142,7 @@ export async function createAppointment(
         provider_id: body.doctorId,
         branch_id: mainBranch.id,
         clinic_id: body.clinicId || null,
+        specialty_id: body.specialtyId,
         scheduled_for: scheduledFor,
         status: initialStatus,
         reason: body.reason,
@@ -137,16 +157,18 @@ export async function createAppointment(
           },
         },
         provider_branches: true,
+        specialties: true,
       },
     });
 
     console.log(
-      `✅ [PATIENTS] Cita creada. Estado: ${initialStatus} | Costo: ${appointmentCost}`,
+      `✅ [PATIENTS] Cita creada. Estado: ${initialStatus} | Costo: ${appointmentCost} | Especialidad: ${body.specialtyId}`,
     );
 
     const appointmentWithRelations = appointment as any;
     const provider = appointmentWithRelations.providers;
     const branch = appointmentWithRelations.provider_branches;
+    const specialtyInfo = appointmentWithRelations.specialties;
 
     const expiresAt = isOnlinePayment
       ? addMinutes(new Date(), PAYMENT_TIMEOUT_MINUTES).toISOString()
@@ -168,6 +190,12 @@ export async function createAppointment(
         paymentRequired: isOnlinePayment,
         expiresAt: expiresAt,
         cost: appointmentCost,
+        specialty: specialtyInfo
+          ? {
+              id: specialtyInfo.id,
+              name: specialtyInfo.name,
+            }
+          : null,
         provider: provider
           ? {
               id: provider.id,
@@ -294,6 +322,7 @@ export async function getAppointments(
           },
         },
         provider_branches: true,
+        specialties: true,
       },
       orderBy: { scheduled_for: "desc" },
       take: limit,
@@ -314,6 +343,12 @@ export async function getAppointments(
           isPaid: apt.is_paid || false,
           cost: apt.cost,
           createdAt: creationDate,
+          specialty: aptWithRelations.specialties
+            ? {
+                id: aptWithRelations.specialties.id,
+                name: aptWithRelations.specialties.name,
+              }
+            : null,
           provider: aptWithRelations.providers
             ? {
                 id: aptWithRelations.providers.id,
@@ -384,6 +419,7 @@ export async function getAppointmentById(
           },
         },
         provider_branches: true,
+        specialties: true,
       },
     });
 
@@ -398,6 +434,7 @@ export async function getAppointmentById(
     const appointmentWithRelations = appointment as any;
     const provider = appointmentWithRelations.providers;
     const branch = appointmentWithRelations.provider_branches;
+    const specialtyInfo = appointmentWithRelations.specialties;
     const creationDate =
       appointmentWithRelations.createdAt || appointmentWithRelations.created_at;
 
@@ -409,6 +446,12 @@ export async function getAppointmentById(
       isPaid: appointment.is_paid || false,
       cost: appointment.cost,
       createdAt: creationDate,
+      specialty: specialtyInfo
+        ? {
+            id: specialtyInfo.id,
+            name: specialtyInfo.name,
+          }
+        : null,
       provider: provider
         ? {
             id: provider.id,

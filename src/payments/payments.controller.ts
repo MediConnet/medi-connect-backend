@@ -72,26 +72,27 @@ export async function generatePaymentLink(
       return errorResponse("Esta cita ya se encuentra pagada", 400);
     }
 
-    const branchFee = appointment.provider_branches?.consultation_fee;
+    const costDecimal = Number(appointment.cost);
 
-    const rawPrice =
-      branchFee !== null && branchFee !== undefined
-        ? branchFee
-        : appointment.cost;
-
-    const costDecimal = Number(rawPrice);
-
-    console.log(
-      `💰 [DEBUG] Fee Sucursal: ${branchFee} | Costo Cita Backup: ${appointment.cost}`,
-    );
     console.log(`💰 [DEBUG] Costo Final a Procesar (USD): ${costDecimal}`);
 
     if (isNaN(costDecimal) || costDecimal <= 0) {
       return errorResponse(
-        `El costo de la consulta ($${costDecimal}) no es válido para procesar el pago. Verifica la configuración de la sucursal.`,
+        `El costo de la consulta ($${costDecimal}) no es válido para procesar el pago.`,
         400,
       );
     }
+
+    // Cálculo de comisiones exactas de PayPhone (5% + 15% IVA sobre la comisión)
+    const commissionBase = costDecimal * 0.05;
+    const commissionIva = commissionBase * 0.15;
+    const platformFee = Number((commissionBase + commissionIva).toFixed(2));
+
+    const providerAmount = Number((costDecimal - platformFee).toFixed(2));
+
+    console.log(
+      `💰 [DEBUG] Comisión calculada: $${platformFee} | A pagar al médico: $${providerAmount}`,
+    );
 
     const amountInCents = Math.round(costDecimal * 100);
 
@@ -112,8 +113,8 @@ export async function generatePaymentLink(
         id: randomUUID(),
         appointment_id: appointment.id,
         amount_total: costDecimal,
-        provider_amount: costDecimal,
-        platform_fee: 0,
+        provider_amount: providerAmount,
+        platform_fee: platformFee,
         status: "PENDING",
         payment_source: "PAYPHONE",
         payment_method: "CARD",
@@ -161,7 +162,7 @@ export async function generatePaymentLink(
         detailedError.includes("Amount"))
     ) {
       return errorResponse(
-        "Error de validación con PayPhone. Verifica que el monto o los datos de la sucursal sean correctos.",
+        "Error de validación con PayPhone. Verifica que el monto sea correcto.",
         400,
       );
     }
@@ -273,6 +274,7 @@ export async function handlePayphoneWebhook(
           where: { id: payment.appointment_id },
           data: {
             status: "CONFIRMED",
+            is_paid: true,
           },
         });
       }
