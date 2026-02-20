@@ -31,7 +31,13 @@ function mapDoctorData(doctor: any) {
     doctor.provider_branches[0];
 
   const clinicName = doctor.users?.clinic_doctors?.[0]?.clinics?.name || null;
-  const especialidadesList = doctor.specialties?.map((s: any) => s.name) || [];
+
+  const primarySpecialtyRecord = doctor.provider_specialties?.[0] || null;
+  const especialidadesList =
+    doctor.provider_specialties
+      ?.map((ps: any) => ps.specialties?.name)
+      .filter(Boolean) || [];
+
   const schedules = mainBranch?.provider_schedules || [];
 
   return {
@@ -40,7 +46,7 @@ function mapDoctorData(doctor: any) {
     apellido: "",
 
     especialidad: especialidadesList[0] || "",
-    especialidadId: doctor.specialties?.[0]?.id || "",
+    especialidadId: primarySpecialtyRecord?.specialty_id || "",
 
     especialidades: especialidadesList,
     clinica: clinicName,
@@ -63,8 +69,8 @@ function mapDoctorData(doctor: any) {
     latitud: mainBranch?.latitude ? Number(mainBranch.latitude) : null,
     longitud: mainBranch?.longitude ? Number(mainBranch.longitude) : null,
     tarifas: {
-      consulta: mainBranch?.consultation_fee
-        ? Number(mainBranch.consultation_fee)
+      consulta: primarySpecialtyRecord?.fee
+        ? Number(primarySpecialtyRecord.fee)
         : 0,
     },
     formasPago: mainBranch?.payment_methods || [],
@@ -97,12 +103,10 @@ export async function getAllDoctors(
   try {
     const prisma = getPrismaClient();
 
-    // Parámetros de paginación
     const page = parseInt(queryParams.page || "1", 10);
     const limit = parseInt(queryParams.limit || "20", 10);
     const offset = (page - 1) * limit;
 
-    // Filtros directos de base de datos
     const specialtyId = queryParams.specialtyId;
     const cityParam = queryParams.city;
 
@@ -120,8 +124,8 @@ export async function getAllDoctors(
     };
 
     if (specialtyId) {
-      where.specialties = {
-        some: { id: specialtyId },
+      where.provider_specialties = {
+        some: { specialty_id: specialtyId },
       };
     }
 
@@ -141,8 +145,12 @@ export async function getAllDoctors(
             },
           },
         },
-        specialties: {
-          select: { id: true, name: true, color_hex: true },
+        provider_specialties: {
+          include: {
+            specialties: {
+              select: { id: true, name: true, color_hex: true },
+            },
+          },
         },
         provider_branches: {
           where: { is_active: true },
@@ -272,12 +280,16 @@ export async function getDoctorById(
             },
           },
         },
-        specialties: {
-          select: {
-            id: true,
-            name: true,
-            color_hex: true,
-            description: true,
+        provider_specialties: {
+          include: {
+            specialties: {
+              select: {
+                id: true,
+                name: true,
+                color_hex: true,
+                description: true,
+              },
+            },
           },
         },
         provider_branches: {

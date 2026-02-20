@@ -1,17 +1,19 @@
-import { APIGatewayProxyEventV2, APIGatewayProxyResult } from 'aws-lambda';
-import { getPrismaClient } from '../shared/prisma';
-import { successResponse, errorResponse } from '../shared/response';
-import { requireAuth, AuthContext } from '../shared/auth';
-import { randomUUID } from 'crypto';
+import { APIGatewayProxyEventV2, APIGatewayProxyResult } from "aws-lambda";
+import { randomUUID } from "crypto";
+import { AuthContext, requireAuth } from "../shared/auth";
+import { getPrismaClient } from "../shared/prisma";
+import { errorResponse, successResponse } from "../shared/response";
 
 /**
  * GET /api/doctors/clinic-info
  * Obtener información básica de la clínica a la que está asociado el médico
  */
-export async function getClinicInfo(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+export async function getClinicInfo(
+  event: APIGatewayProxyEventV2,
+): Promise<APIGatewayProxyResult> {
   try {
     const authResult = await requireAuth(event);
-    if ('statusCode' in authResult) {
+    if ("statusCode" in authResult) {
       return authResult;
     }
     const authContext = authResult as AuthContext;
@@ -28,7 +30,7 @@ export async function getClinicInfo(event: APIGatewayProxyEventV2): Promise<APIG
           include: {
             clinic_schedules: {
               orderBy: {
-                day_of_week: 'asc',
+                day_of_week: "asc",
               },
             },
           },
@@ -37,33 +39,41 @@ export async function getClinicInfo(event: APIGatewayProxyEventV2): Promise<APIG
     });
 
     if (!doctorAssociation || !doctorAssociation.clinics) {
-      return errorResponse('No estás asociado a ninguna clínica', 404);
+      return errorResponse("No estás asociado a ninguna clínica", 404);
     }
 
     const clinic = doctorAssociation.clinics;
 
     // Helper para convertir número de día a nombre
     const dayNumberToName = (day: number): string => {
-      const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-      return days[day] || 'monday';
+      const days = [
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+        "sunday",
+      ];
+      return days[day] || "monday";
     };
 
     // Helper para formatear Time a string HH:mm
     const formatTime = (time: Date | null): string => {
-      if (!time) return '09:00';
+      if (!time) return "09:00";
       const date = new Date(time);
-      return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+      return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
     };
 
     // Construir objeto de horarios
     const schedule: Record<string, any> = {
-      monday: { enabled: false, startTime: '09:00', endTime: '18:00' },
-      tuesday: { enabled: false, startTime: '09:00', endTime: '18:00' },
-      wednesday: { enabled: false, startTime: '09:00', endTime: '18:00' },
-      thursday: { enabled: false, startTime: '09:00', endTime: '18:00' },
-      friday: { enabled: false, startTime: '09:00', endTime: '18:00' },
-      saturday: { enabled: false, startTime: '09:00', endTime: '13:00' },
-      sunday: { enabled: false, startTime: '09:00', endTime: '13:00' },
+      monday: { enabled: false, startTime: "09:00", endTime: "18:00" },
+      tuesday: { enabled: false, startTime: "09:00", endTime: "18:00" },
+      wednesday: { enabled: false, startTime: "09:00", endTime: "18:00" },
+      thursday: { enabled: false, startTime: "09:00", endTime: "18:00" },
+      friday: { enabled: false, startTime: "09:00", endTime: "18:00" },
+      saturday: { enabled: false, startTime: "09:00", endTime: "13:00" },
+      sunday: { enabled: false, startTime: "09:00", endTime: "13:00" },
     };
 
     // Mapear horarios de la BD
@@ -86,8 +96,11 @@ export async function getClinicInfo(event: APIGatewayProxyEventV2): Promise<APIG
       generalSchedule: schedule,
     });
   } catch (error: any) {
-    console.error('Error getting clinic info:', error);
-    return errorResponse(error.message || 'Error al obtener información de la clínica', 500);
+    console.error("Error getting clinic info:", error);
+    return errorResponse(
+      error.message || "Error al obtener información de la clínica",
+      500,
+    );
   }
 }
 
@@ -95,10 +108,12 @@ export async function getClinicInfo(event: APIGatewayProxyEventV2): Promise<APIG
  * GET /api/doctors/clinic/profile
  * Obtener perfil profesional del médico asociado a una clínica
  */
-export async function getClinicProfile(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+export async function getClinicProfile(
+  event: APIGatewayProxyEventV2,
+): Promise<APIGatewayProxyResult> {
   try {
     const authResult = await requireAuth(event);
-    if ('statusCode' in authResult) {
+    if ("statusCode" in authResult) {
       return authResult;
     }
     const authContext = authResult as AuthContext;
@@ -116,10 +131,44 @@ export async function getClinicProfile(event: APIGatewayProxyEventV2): Promise<A
     });
 
     if (!doctorAssociation || !doctorAssociation.clinics) {
-      return errorResponse('No estás asociado a ninguna clínica', 404);
+      return errorResponse("No estás asociado a ninguna clínica", 404);
+    }
+
+    // Buscamos la información global del doctor
+    const provider = await prisma.providers.findFirst({
+      where: { user_id: authContext.user.id },
+      include: {
+        users: true,
+        provider_branches: { where: { is_main: true }, take: 1 },
+        provider_specialties: { include: { specialties: true } },
+      },
+    });
+
+    if (!provider) {
+      return errorResponse(
+        "No se encontró el perfil profesional del médico",
+        404,
+      );
     }
 
     const clinic = doctorAssociation.clinics;
+    const mainBranch = provider.provider_branches[0];
+    const specialtiesList = provider.provider_specialties
+      .map((ps) => ps.specialties?.name)
+      .filter(Boolean);
+
+    // Parseamos el JSON documents para recuperar educación y certificaciones
+    let parsedDocs: any = {};
+    if (provider.documents) {
+      try {
+        parsedDocs =
+          typeof provider.documents === "string"
+            ? JSON.parse(provider.documents)
+            : provider.documents;
+      } catch (e) {
+        console.warn("Could not parse documents JSON", e);
+      }
+    }
 
     return successResponse({
       id: doctorAssociation.id,
@@ -132,19 +181,20 @@ export async function getClinicProfile(event: APIGatewayProxyEventV2): Promise<A
         whatsapp: clinic.whatsapp,
         logoUrl: clinic.logo_url,
       },
-      specialty: doctorAssociation.specialty,
-      experience: doctorAssociation.experience,
-      bio: doctorAssociation.bio,
-      education: doctorAssociation.education || [],
-      certifications: doctorAssociation.certifications || [],
-      profileImageUrl: doctorAssociation.profile_image_url,
-      phone: doctorAssociation.phone,
-      whatsapp: doctorAssociation.whatsapp,
-      email: doctorAssociation.email,
+      specialty: specialtiesList[0] || "Medicina General",
+      experience: provider.years_of_experience || 0,
+      bio: provider.description || "",
+      education: parsedDocs.education || [],
+      certifications: parsedDocs.certifications || [],
+      profileImageUrl:
+        provider.users?.profile_picture_url || provider.logo_url || null,
+      phone: mainBranch?.phone_contact || "",
+      whatsapp: mainBranch?.phone_contact || "",
+      email: provider.users?.email || "",
     });
   } catch (error: any) {
-    console.error('Error getting clinic profile:', error);
-    return errorResponse(error.message || 'Error al obtener perfil', 500);
+    console.error("Error getting clinic profile:", error);
+    return errorResponse(error.message || "Error al obtener perfil", 500);
   }
 }
 
@@ -152,16 +202,18 @@ export async function getClinicProfile(event: APIGatewayProxyEventV2): Promise<A
  * PUT /api/doctors/clinic/profile
  * Actualizar perfil profesional del médico asociado
  */
-export async function updateClinicProfile(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+export async function updateClinicProfile(
+  event: APIGatewayProxyEventV2,
+): Promise<APIGatewayProxyResult> {
   try {
     const authResult = await requireAuth(event);
-    if ('statusCode' in authResult) {
+    if ("statusCode" in authResult) {
       return authResult;
     }
     const authContext = authResult as AuthContext;
 
-    const body = JSON.parse(event.body || '{}');
-    const { specialty, experience, bio, education, certifications, phone, whatsapp } = body;
+    const body = JSON.parse(event.body || "{}");
+    const { experience, bio, education, certifications, phone } = body;
 
     const prisma = getPrismaClient();
 
@@ -170,59 +222,67 @@ export async function updateClinicProfile(event: APIGatewayProxyEventV2): Promis
         user_id: authContext.user.id,
         is_active: true,
       },
-    });
-
-    if (!doctorAssociation) {
-      return errorResponse('No estás asociado a ninguna clínica', 404);
-    }
-
-    const updated = await prisma.clinic_doctors.update({
-      where: { id: doctorAssociation.id },
-      data: {
-        specialty,
-        bio,
-        experience,
-        education,
-        certifications,
-        phone,
-        whatsapp,
-        updated_at: new Date(),
-      },
       include: {
         clinics: true,
       },
     });
 
-    if (!updated.clinics) {
-      return errorResponse('Error al obtener información de la clínica', 500);
+    if (!doctorAssociation) {
+      return errorResponse("No estás asociado a ninguna clínica", 404);
     }
 
-    const clinic = updated.clinics;
-
-    return successResponse({
-      id: updated.id,
-      clinicId: clinic.id,
-      clinicInfo: {
-        id: clinic.id,
-        name: clinic.name,
-        address: clinic.address,
-        phone: clinic.phone,
-        whatsapp: clinic.whatsapp,
-        logoUrl: clinic.logo_url,
-      },
-      specialty: updated.specialty,
-      experience: updated.experience,
-      bio: updated.bio,
-      education: updated.education,
-      certifications: updated.certifications,
-      profileImageUrl: updated.profile_image_url,
-      phone: updated.phone,
-      whatsapp: updated.whatsapp,
-      email: updated.email,
+    // Buscamos al provider actual para mantener sus documents existentes
+    const provider = await prisma.providers.findFirst({
+      where: { user_id: authContext.user.id },
+      include: { provider_branches: { where: { is_main: true }, take: 1 } },
     });
+
+    if (!provider) {
+      return errorResponse("Proveedor no encontrado", 404);
+    }
+
+    let parsedDocs: any = {};
+    if (provider.documents) {
+      try {
+        parsedDocs =
+          typeof provider.documents === "string"
+            ? JSON.parse(provider.documents)
+            : provider.documents;
+      } catch (e) {}
+    }
+
+    // Actualizamos las propiedades dentro del JSON
+    if (education !== undefined) parsedDocs.education = education;
+    if (certifications !== undefined)
+      parsedDocs.certifications = certifications;
+
+    // Actualizamos la información global del médico
+    await prisma.providers.update({
+      where: { id: provider.id },
+      data: {
+        description: bio !== undefined ? bio : provider.description,
+        years_of_experience:
+          experience !== undefined
+            ? Number(experience)
+            : provider.years_of_experience,
+        documents: parsedDocs,
+      },
+    });
+
+    // Actualizamos el teléfono de contacto de la sucursal principal
+    if (provider.provider_branches.length > 0 && phone !== undefined) {
+      await prisma.provider_branches.update({
+        where: { id: provider.provider_branches[0].id },
+        data: {
+          phone_contact: phone,
+        },
+      });
+    }
+
+    return await getClinicProfile(event);
   } catch (error: any) {
-    console.error('Error updating clinic profile:', error);
-    return errorResponse(error.message || 'Error al actualizar perfil', 500);
+    console.error("Error updating clinic profile:", error);
+    return errorResponse(error.message || "Error al actualizar perfil", 500);
   }
 }
 
@@ -230,10 +290,12 @@ export async function updateClinicProfile(event: APIGatewayProxyEventV2): Promis
  * GET /api/doctors/clinic/appointments
  * Obtener citas confirmadas del médico asociado (sin información financiera)
  */
-export async function getClinicAppointments(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+export async function getClinicAppointments(
+  event: APIGatewayProxyEventV2,
+): Promise<APIGatewayProxyResult> {
   try {
     const authResult = await requireAuth(event);
-    if ('statusCode' in authResult) {
+    if ("statusCode" in authResult) {
       return authResult;
     }
     const authContext = authResult as AuthContext;
@@ -248,7 +310,7 @@ export async function getClinicAppointments(event: APIGatewayProxyEventV2): Prom
     });
 
     if (!doctorAssociation) {
-      return errorResponse('No estás asociado a ninguna clínica', 404);
+      return errorResponse("No estás asociado a ninguna clínica", 404);
     }
 
     const provider = await prisma.providers.findFirst({
@@ -264,36 +326,36 @@ export async function getClinicAppointments(event: APIGatewayProxyEventV2): Prom
         provider_id: provider.id,
         clinic_id: doctorAssociation.clinic_id,
         status: {
-          in: ['CONFIRMED', 'COMPLETED', 'NO_SHOW'],
+          in: ["CONFIRMED", "COMPLETED", "NO_SHOW"],
         },
       },
       include: {
         patients: true,
       },
-      orderBy: [
-        { scheduled_for: 'asc' },
-      ],
+      orderBy: [{ scheduled_for: "asc" }],
     });
 
     const formattedAppointments = appointments.map((apt) => {
-      const scheduledFor = apt.scheduled_for ? new Date(apt.scheduled_for) : null;
-      
+      const scheduledFor = apt.scheduled_for
+        ? new Date(apt.scheduled_for)
+        : null;
+
       return {
         id: apt.id,
         patientId: apt.patient_id,
-        patientName: apt.patients?.full_name || 'Paciente',
-        patientPhone: apt.patients?.phone || '',
-        date: scheduledFor ? scheduledFor.toISOString().split('T')[0] : '',
-        time: scheduledFor ? scheduledFor.toTimeString().slice(0, 5) : '',
-        reason: apt.reason || 'Consulta general',
+        patientName: apt.patients?.full_name || "Paciente",
+        patientPhone: apt.patients?.phone || "",
+        date: scheduledFor ? scheduledFor.toISOString().split("T")[0] : "",
+        time: scheduledFor ? scheduledFor.toTimeString().slice(0, 5) : "",
+        reason: apt.reason || "Consulta general",
         status: apt.status,
       };
     });
 
     return successResponse(formattedAppointments);
   } catch (error: any) {
-    console.error('Error getting clinic appointments:', error);
-    return errorResponse(error.message || 'Error al obtener citas', 500);
+    console.error("Error getting clinic appointments:", error);
+    return errorResponse(error.message || "Error al obtener citas", 500);
   }
 }
 
@@ -301,24 +363,29 @@ export async function getClinicAppointments(event: APIGatewayProxyEventV2): Prom
  * PATCH /api/doctors/clinic/appointments/:appointmentId/status
  * Actualizar estado de cita (marcar como atendida o no asistió)
  */
-export async function updateClinicAppointmentStatus(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+export async function updateClinicAppointmentStatus(
+  event: APIGatewayProxyEventV2,
+): Promise<APIGatewayProxyResult> {
   try {
     const authResult = await requireAuth(event);
-    if ('statusCode' in authResult) {
+    if ("statusCode" in authResult) {
       return authResult;
     }
     const authContext = authResult as AuthContext;
 
     const appointmentId = event.pathParameters?.appointmentId;
     if (!appointmentId) {
-      return errorResponse('ID de cita requerido', 400);
+      return errorResponse("ID de cita requerido", 400);
     }
 
-    const body = JSON.parse(event.body || '{}');
+    const body = JSON.parse(event.body || "{}");
     const { status } = body;
 
-    if (!status || !['COMPLETED', 'NO_SHOW'].includes(status)) {
-      return errorResponse('Estado inválido. Debe ser COMPLETED o NO_SHOW', 400);
+    if (!status || !["COMPLETED", "NO_SHOW"].includes(status)) {
+      return errorResponse(
+        "Estado inválido. Debe ser COMPLETED o NO_SHOW",
+        400,
+      );
     }
 
     const prisma = getPrismaClient();
@@ -331,7 +398,7 @@ export async function updateClinicAppointmentStatus(event: APIGatewayProxyEventV
     });
 
     if (!doctorAssociation) {
-      return errorResponse('No estás asociado a ninguna clínica', 404);
+      return errorResponse("No estás asociado a ninguna clínica", 404);
     }
 
     const provider = await prisma.providers.findFirst({
@@ -339,7 +406,7 @@ export async function updateClinicAppointmentStatus(event: APIGatewayProxyEventV
     });
 
     if (!provider) {
-      return errorResponse('Proveedor no encontrado', 404);
+      return errorResponse("Proveedor no encontrado", 404);
     }
 
     const appointment = await prisma.appointments.findFirst({
@@ -351,7 +418,10 @@ export async function updateClinicAppointmentStatus(event: APIGatewayProxyEventV
     });
 
     if (!appointment) {
-      return errorResponse('Cita no encontrada o no tienes permiso para modificarla', 404);
+      return errorResponse(
+        "Cita no encontrada o no tienes permiso para modificarla",
+        404,
+      );
     }
 
     const updated = await prisma.appointments.update({
@@ -362,21 +432,26 @@ export async function updateClinicAppointmentStatus(event: APIGatewayProxyEventV
       },
     });
 
-    const scheduledFor = updated.scheduled_for ? new Date(updated.scheduled_for) : null;
+    const scheduledFor = updated.scheduled_for
+      ? new Date(updated.scheduled_for)
+      : null;
 
     return successResponse({
       id: updated.id,
       patientId: updated.patient_id,
-      patientName: updated.patients?.full_name || 'Paciente',
-      patientPhone: updated.patients?.phone || '',
-      date: scheduledFor ? scheduledFor.toISOString().split('T')[0] : '',
-      time: scheduledFor ? scheduledFor.toTimeString().slice(0, 5) : '',
-      reason: updated.reason || 'Consulta general',
+      patientName: updated.patients?.full_name || "Paciente",
+      patientPhone: updated.patients?.phone || "",
+      date: scheduledFor ? scheduledFor.toISOString().split("T")[0] : "",
+      time: scheduledFor ? scheduledFor.toTimeString().slice(0, 5) : "",
+      reason: updated.reason || "Consulta general",
       status: updated.status,
     });
   } catch (error: any) {
-    console.error('Error updating appointment status:', error);
-    return errorResponse(error.message || 'Error al actualizar estado de cita', 500);
+    console.error("Error updating appointment status:", error);
+    return errorResponse(
+      error.message || "Error al actualizar estado de cita",
+      500,
+    );
   }
 }
 
@@ -384,10 +459,12 @@ export async function updateClinicAppointmentStatus(event: APIGatewayProxyEventV
  * GET /api/doctors/clinic/reception/messages
  * Obtener mensajes entre el médico y la recepción de la clínica
  */
-export async function getReceptionMessages(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+export async function getReceptionMessages(
+  event: APIGatewayProxyEventV2,
+): Promise<APIGatewayProxyResult> {
   try {
     const authResult = await requireAuth(event);
-    if ('statusCode' in authResult) {
+    if ("statusCode" in authResult) {
       return authResult;
     }
     const authContext = authResult as AuthContext;
@@ -402,8 +479,14 @@ export async function getReceptionMessages(event: APIGatewayProxyEventV2): Promi
     });
 
     if (!doctorAssociation) {
-      return errorResponse('No estás asociado a ninguna clínica', 404);
+      return errorResponse("No estás asociado a ninguna clínica", 404);
     }
+
+    const provider = await prisma.providers.findFirst({
+      where: { user_id: authContext.user.id },
+    });
+
+    const doctorName = provider?.commercial_name || "Doctor";
 
     const messages = await prisma.reception_messages.findMany({
       where: {
@@ -413,7 +496,7 @@ export async function getReceptionMessages(event: APIGatewayProxyEventV2): Promi
         clinics: true,
       },
       orderBy: {
-        created_at: 'desc',
+        created_at: "desc",
       },
     });
 
@@ -425,15 +508,16 @@ export async function getReceptionMessages(event: APIGatewayProxyEventV2): Promi
       message: msg.message,
       timestamp: msg.created_at,
       isRead: msg.is_read,
-      senderName: msg.sender_type === 'reception' 
-        ? `Recepción ${msg.clinics?.name || 'Clínica'}` 
-        : doctorAssociation.name || 'Doctor',
+      senderName:
+        msg.sender_type === "reception"
+          ? `Recepción ${msg.clinics?.name || "Clínica"}`
+          : doctorName,
     }));
 
     return successResponse(formattedMessages);
   } catch (error: any) {
-    console.error('Error getting reception messages:', error);
-    return errorResponse(error.message || 'Error al obtener mensajes', 500);
+    console.error("Error getting reception messages:", error);
+    return errorResponse(error.message || "Error al obtener mensajes", 500);
   }
 }
 
@@ -441,19 +525,21 @@ export async function getReceptionMessages(event: APIGatewayProxyEventV2): Promi
  * POST /api/doctors/clinic/reception/messages
  * Enviar mensaje a la recepción de la clínica
  */
-export async function createReceptionMessage(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+export async function createReceptionMessage(
+  event: APIGatewayProxyEventV2,
+): Promise<APIGatewayProxyResult> {
   try {
     const authResult = await requireAuth(event);
-    if ('statusCode' in authResult) {
+    if ("statusCode" in authResult) {
       return authResult;
     }
     const authContext = authResult as AuthContext;
 
-    const body = JSON.parse(event.body || '{}');
+    const body = JSON.parse(event.body || "{}");
     const { message } = body;
 
-    if (!message || message.trim() === '') {
-      return errorResponse('El mensaje no puede estar vacío', 400);
+    if (!message || message.trim() === "") {
+      return errorResponse("El mensaje no puede estar vacío", 400);
     }
 
     const prisma = getPrismaClient();
@@ -469,8 +555,14 @@ export async function createReceptionMessage(event: APIGatewayProxyEventV2): Pro
     });
 
     if (!doctorAssociation) {
-      return errorResponse('No estás asociado a ninguna clínica', 404);
+      return errorResponse("No estás asociado a ninguna clínica", 404);
     }
+
+    const provider = await prisma.providers.findFirst({
+      where: { user_id: authContext.user.id },
+    });
+
+    const doctorName = provider?.commercial_name || "Doctor";
 
     const newMessage = await prisma.reception_messages.create({
       data: {
@@ -478,7 +570,7 @@ export async function createReceptionMessage(event: APIGatewayProxyEventV2): Pro
         clinic_id: doctorAssociation.clinic_id,
         doctor_id: doctorAssociation.id,
         message: message.trim(),
-        sender_type: 'doctor',
+        sender_type: "doctor",
         is_read: false,
         created_at: new Date(),
       },
@@ -495,11 +587,11 @@ export async function createReceptionMessage(event: APIGatewayProxyEventV2): Pro
       message: newMessage.message,
       timestamp: newMessage.created_at,
       isRead: newMessage.is_read,
-      senderName: doctorAssociation.name || 'Doctor',
+      senderName: doctorName,
     });
   } catch (error: any) {
-    console.error('Error sending reception message:', error);
-    return errorResponse(error.message || 'Error al enviar mensaje', 500);
+    console.error("Error sending reception message:", error);
+    return errorResponse(error.message || "Error al enviar mensaje", 500);
   }
 }
 
@@ -507,19 +599,21 @@ export async function createReceptionMessage(event: APIGatewayProxyEventV2): Pro
  * PATCH /api/doctors/clinic/reception/messages/read
  * Marcar mensajes como leídos
  */
-export async function markReceptionMessagesAsRead(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+export async function markReceptionMessagesAsRead(
+  event: APIGatewayProxyEventV2,
+): Promise<APIGatewayProxyResult> {
   try {
     const authResult = await requireAuth(event);
-    if ('statusCode' in authResult) {
+    if ("statusCode" in authResult) {
       return authResult;
     }
     const authContext = authResult as AuthContext;
 
-    const body = JSON.parse(event.body || '{}');
+    const body = JSON.parse(event.body || "{}");
     const { messageIds } = body;
 
     if (!Array.isArray(messageIds) || messageIds.length === 0) {
-      return errorResponse('Debe proporcionar al menos un ID de mensaje', 400);
+      return errorResponse("Debe proporcionar al menos un ID de mensaje", 400);
     }
 
     const prisma = getPrismaClient();
@@ -532,7 +626,7 @@ export async function markReceptionMessagesAsRead(event: APIGatewayProxyEventV2)
     });
 
     if (!doctorAssociation) {
-      return errorResponse('No estás asociado a ninguna clínica', 404);
+      return errorResponse("No estás asociado a ninguna clínica", 404);
     }
 
     await prisma.reception_messages.updateMany({
@@ -547,8 +641,11 @@ export async function markReceptionMessagesAsRead(event: APIGatewayProxyEventV2)
 
     return successResponse({ success: true });
   } catch (error: any) {
-    console.error('Error marking messages as read:', error);
-    return errorResponse(error.message || 'Error al marcar mensajes como leídos', 500);
+    console.error("Error marking messages as read:", error);
+    return errorResponse(
+      error.message || "Error al marcar mensajes como leídos",
+      500,
+    );
   }
 }
 
@@ -556,10 +653,12 @@ export async function markReceptionMessagesAsRead(event: APIGatewayProxyEventV2)
  * GET /api/doctors/clinic/date-blocks
  * Obtener solicitudes de bloqueo de fechas del médico
  */
-export async function getDateBlocks(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+export async function getDateBlocks(
+  event: APIGatewayProxyEventV2,
+): Promise<APIGatewayProxyResult> {
   try {
     const authResult = await requireAuth(event);
-    if ('statusCode' in authResult) {
+    if ("statusCode" in authResult) {
       return authResult;
     }
     const authContext = authResult as AuthContext;
@@ -574,7 +673,7 @@ export async function getDateBlocks(event: APIGatewayProxyEventV2): Promise<APIG
     });
 
     if (!doctorAssociation) {
-      return errorResponse('No estás asociado a ninguna clínica', 404);
+      return errorResponse("No estás asociado a ninguna clínica", 404);
     }
 
     const dateBlocks = await prisma.date_block_requests.findMany({
@@ -582,7 +681,7 @@ export async function getDateBlocks(event: APIGatewayProxyEventV2): Promise<APIG
         doctor_id: doctorAssociation.id,
       },
       orderBy: {
-        created_at: 'desc',
+        created_at: "desc",
       },
     });
 
@@ -590,8 +689,8 @@ export async function getDateBlocks(event: APIGatewayProxyEventV2): Promise<APIG
       id: block.id,
       doctorId: block.doctor_id,
       clinicId: block.clinic_id,
-      startDate: block.date.toISOString().split('T')[0],
-      endDate: block.date.toISOString().split('T')[0],
+      startDate: block.date.toISOString().split("T")[0],
+      endDate: block.date.toISOString().split("T")[0],
       reason: block.reason,
       status: block.status,
       createdAt: block.created_at,
@@ -602,8 +701,11 @@ export async function getDateBlocks(event: APIGatewayProxyEventV2): Promise<APIG
 
     return successResponse(formattedBlocks);
   } catch (error: any) {
-    console.error('Error getting date blocks:', error);
-    return errorResponse(error.message || 'Error al obtener bloqueos de fechas', 500);
+    console.error("Error getting date blocks:", error);
+    return errorResponse(
+      error.message || "Error al obtener bloqueos de fechas",
+      500,
+    );
   }
 }
 
@@ -611,26 +713,31 @@ export async function getDateBlocks(event: APIGatewayProxyEventV2): Promise<APIG
  * POST /api/doctors/clinic/date-blocks/request
  * Solicitar bloqueo de fechas
  */
-export async function requestDateBlock(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+export async function requestDateBlock(
+  event: APIGatewayProxyEventV2,
+): Promise<APIGatewayProxyResult> {
   try {
     const authResult = await requireAuth(event);
-    if ('statusCode' in authResult) {
+    if ("statusCode" in authResult) {
       return authResult;
     }
     const authContext = authResult as AuthContext;
 
-    const body = JSON.parse(event.body || '{}');
+    const body = JSON.parse(event.body || "{}");
     const { startDate, endDate, reason } = body;
 
     if (!startDate || !endDate) {
-      return errorResponse('Las fechas de inicio y fin son requeridas', 400);
+      return errorResponse("Las fechas de inicio y fin son requeridas", 400);
     }
 
     const start = new Date(startDate);
     const end = new Date(endDate);
 
     if (start > end) {
-      return errorResponse('La fecha de inicio debe ser anterior a la fecha de fin', 400);
+      return errorResponse(
+        "La fecha de inicio debe ser anterior a la fecha de fin",
+        400,
+      );
     }
 
     const prisma = getPrismaClient();
@@ -643,7 +750,7 @@ export async function requestDateBlock(event: APIGatewayProxyEventV2): Promise<A
     });
 
     if (!doctorAssociation) {
-      return errorResponse('No estás asociado a ninguna clínica', 404);
+      return errorResponse("No estás asociado a ninguna clínica", 404);
     }
 
     const dateBlock = await prisma.date_block_requests.create({
@@ -652,8 +759,8 @@ export async function requestDateBlock(event: APIGatewayProxyEventV2): Promise<A
         clinic_id: doctorAssociation.clinic_id,
         doctor_id: doctorAssociation.id,
         date: start,
-        reason: reason || 'Sin especificar',
-        status: 'pending',
+        reason: reason || "Sin especificar",
+        status: "pending",
         created_at: new Date(),
         updated_at: new Date(),
       },
@@ -673,8 +780,11 @@ export async function requestDateBlock(event: APIGatewayProxyEventV2): Promise<A
       rejectionReason: null,
     });
   } catch (error: any) {
-    console.error('Error requesting date block:', error);
-    return errorResponse(error.message || 'Error al solicitar bloqueo de fechas', 500);
+    console.error("Error requesting date block:", error);
+    return errorResponse(
+      error.message || "Error al solicitar bloqueo de fechas",
+      500,
+    );
   }
 }
 
@@ -682,18 +792,21 @@ export async function requestDateBlock(event: APIGatewayProxyEventV2): Promise<A
  * GET /api/doctors/clinic/notifications
  * Obtener notificaciones del médico asociado
  */
-export async function getClinicNotifications(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+export async function getClinicNotifications(
+  event: APIGatewayProxyEventV2,
+): Promise<APIGatewayProxyResult> {
   try {
     const authResult = await requireAuth(event);
-    if ('statusCode' in authResult) {
+    if ("statusCode" in authResult) {
       return authResult;
     }
 
-    // Por ahora retornamos un array vacío
-    // Se puede implementar una tabla específica para notificaciones de médicos asociados
     return successResponse([]);
   } catch (error: any) {
-    console.error('Error getting clinic notifications:', error);
-    return errorResponse(error.message || 'Error al obtener notificaciones', 500);
+    console.error("Error getting clinic notifications:", error);
+    return errorResponse(
+      error.message || "Error al obtener notificaciones",
+      500,
+    );
   }
 }

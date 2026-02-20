@@ -45,21 +45,71 @@ export async function getDoctorAvailability(
     }
 
     const requestDate = new Date(`${dateString}T00:00:00`);
-
     const dayOfWeek = new Date(dateString).getUTCDay();
 
-    const schedule = await prisma.provider_schedules.findFirst({
-      where: {
-        provider_branches: {
-          provider_id: doctorId,
-          ...(branchId ? { id: branchId } : {}),
+    const provider = await prisma.providers.findUnique({
+      where: { id: doctorId },
+      include: {
+        users: {
+          include: {
+            clinic_doctors: {
+              where: { is_active: true },
+              take: 1,
+            },
+          },
         },
-        day_of_week: dayOfWeek,
-        is_active: true,
       },
     });
 
-    if (!schedule || !schedule.start_time || !schedule.end_time) {
+    let scheduleSource: any = null;
+    let isClinicFlow = false;
+
+    if (
+      provider?.users?.clinic_doctors &&
+      provider.users.clinic_doctors.length > 0
+    ) {
+      isClinicFlow = true;
+      const clinicDoctor = provider.users.clinic_doctors[0];
+
+      // Doctor de Clínica usando el Horario General de la Clínica
+      const clinicSchedule = await prisma.clinic_schedules.findFirst({
+        where: {
+          clinic_id: clinicDoctor.clinic_id,
+          day_of_week: dayOfWeek,
+          enabled: true,
+        },
+      });
+
+      if (
+        clinicSchedule &&
+        clinicSchedule.start_time &&
+        clinicSchedule.end_time
+      ) {
+        scheduleSource = clinicSchedule;
+      }
+    } else {
+      // Doctor Independiente (Flujo Normal)
+      const provSchedule = await prisma.provider_schedules.findFirst({
+        where: {
+          provider_branches: {
+            provider_id: doctorId,
+            ...(branchId ? { id: branchId } : {}),
+          },
+          day_of_week: dayOfWeek,
+          is_active: true,
+        },
+      });
+
+      if (provSchedule && provSchedule.start_time && provSchedule.end_time) {
+        scheduleSource = provSchedule;
+      }
+    }
+
+    if (
+      !scheduleSource ||
+      !scheduleSource.start_time ||
+      !scheduleSource.end_time
+    ) {
       return successResponse({
         date: dateString,
         availableSlots: [],
@@ -68,14 +118,17 @@ export async function getDoctorAvailability(
 
     let allSlots: Date[] = [];
 
-    const startDateTime = mergeDateAndTime(requestDate, schedule.start_time);
-    const endDateTime = mergeDateAndTime(requestDate, schedule.end_time);
+    const startDateTime = mergeDateAndTime(
+      requestDate,
+      scheduleSource.start_time,
+    );
+    const endDateTime = mergeDateAndTime(requestDate, scheduleSource.end_time);
 
     let breakStart: Date | null = null;
     let breakEnd: Date | null = null;
-    if (schedule.break_start && schedule.break_end) {
-      breakStart = mergeDateAndTime(requestDate, schedule.break_start);
-      breakEnd = mergeDateAndTime(requestDate, schedule.break_end);
+    if (scheduleSource.break_start && scheduleSource.break_end) {
+      breakStart = mergeDateAndTime(requestDate, scheduleSource.break_start);
+      breakEnd = mergeDateAndTime(requestDate, scheduleSource.break_end);
     }
 
     let currentSlot = startDateTime;
@@ -120,27 +173,63 @@ export async function getDoctorAvailability(
 
     allSlots = allSlots.filter((slot) => !busyTimestamps.has(slot.getTime()));
 
-    // blocked_slots cuelga de provider_branches (branch_id). Filtramos por branches del doctor.
-    const blockedRanges = await prisma.blocked_slots.findMany({
-      where: {
-        provider_branches: {
-          provider_id: doctorId,
-          ...(branchId ? { id: branchId } : {}),
+    if (!isClinicFlow) {
+      const blockedRanges = await prisma.blocked_slots.findMany({
+        where: {
+          provider_branches: {
+            provider_id: doctorId,
+            ...(branchId ? { id: branchId } : {}),
+          },
+          date: requestDate,
         },
-        date: requestDate,
-      },
-      select: { start_time: true, end_time: true },
-    });
-
-    if (blockedRanges.length > 0) {
-      allSlots = allSlots.filter((slot) => {
-        const isBlocked = blockedRanges.some((block: any) => {
-          const blockStart = mergeDateAndTime(requestDate, block.start_time);
-          const blockEnd = mergeDateAndTime(requestDate, block.end_time);
-          return slot >= blockStart && slot < blockEnd;
-        });
-        return !isBlocked;
+        select: { start_time: true, end_time: true },
       });
+
+      if (blockedRanges.length > 0) {
+        allSlots = allSlots.filter((slot) => {
+          const isBlocked = blockedRanges.some((block: any) => {
+            const blockStart = mergeDateAndTime(requestDate, block.start_time);
+            const blockEnd = mergeDateAndTime(requestDate, block.end_time);
+            return slot >= blockStart && slot < blockEnd;
+          });
+          return !isBlocked;
+        });
+      }
+    } else {
+      const clinicDoctor = provider?.users?.clinic_doctors?.[0];
+      if (clinicDoctor) {
+        const blockRequests = await prisma.date_block_requests.findMany({
+          where: {
+            clinic_id: clinicDoctor.clinic_id,
+            doctor_id: clinicDoctor.id,
+            date: requestDate,
+            status: "approved",
+          },
+          select: { start_time: true, end_time: true },
+        });
+
+        if (blockRequests.length > 0) {
+          const isFullDayBlocked = blockRequests.some(
+            (block) => !block.start_time || !block.end_time,
+          );
+
+          if (isFullDayBlocked) {
+            allSlots = [];
+          } else {
+            allSlots = allSlots.filter((slot) => {
+              const isBlocked = blockRequests.some((block: any) => {
+                const blockStart = mergeDateAndTime(
+                  requestDate,
+                  block.start_time,
+                );
+                const blockEnd = mergeDateAndTime(requestDate, block.end_time);
+                return slot >= blockStart && slot < blockEnd;
+              });
+              return !isBlocked;
+            });
+          }
+        }
+      }
     }
 
     const ecuadorNow = getEcuadorTime();
