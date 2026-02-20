@@ -432,9 +432,62 @@ export async function deleteUser(event: APIGatewayProxyEventV2): Promise<APIGate
     console.log(`🗑️ [ADMIN] Eliminando ${userType}: ${userName} (${userToDelete.email}) - ID: ${userId}`);
     console.log(`👤 [ADMIN] Solicitado por admin: ${authResult.user.email} (ID: ${requestingUserId})`);
 
-    // 4. Eliminar usuario (CASCADE eliminará datos relacionados automáticamente)
-    // Las foreign keys en el schema tienen onDelete: Cascade configurado
-    console.log(`🔄 [ADMIN] Ejecutando DELETE en la base de datos...`);
+    // 4. Eliminar datos relacionados que tienen onDelete: NoAction
+    // Esto debe hacerse ANTES de eliminar el usuario
+    
+    // 4.1. Si el usuario tiene un paciente, eliminar sus citas primero
+    if (userToDelete.patients.length > 0) {
+      const patientId = userToDelete.patients[0].id;
+      console.log(`🔄 [ADMIN] Eliminando citas del paciente ${patientId}...`);
+      
+      const appointmentsCount = await prisma.appointments.count({
+        where: { patient_id: patientId },
+      });
+      
+      if (appointmentsCount > 0) {
+        await prisma.appointments.deleteMany({
+          where: { patient_id: patientId },
+        });
+        console.log(`✅ [ADMIN] ${appointmentsCount} citas eliminadas`);
+      }
+    }
+
+    // 4.2. Si el usuario es un proveedor, eliminar citas asociadas
+    if (userToDelete.providers.length > 0) {
+      for (const provider of userToDelete.providers) {
+        console.log(`🔄 [ADMIN] Eliminando citas del proveedor ${provider.id}...`);
+        
+        const appointmentsCount = await prisma.appointments.count({
+          where: { provider_id: provider.id },
+        });
+        
+        if (appointmentsCount > 0) {
+          await prisma.appointments.deleteMany({
+            where: { provider_id: provider.id },
+          });
+          console.log(`✅ [ADMIN] ${appointmentsCount} citas del proveedor eliminadas`);
+        }
+      }
+    }
+
+    // 4.3. Si el usuario tiene una clínica, eliminar citas asociadas
+    if (userToDelete.clinics) {
+      console.log(`🔄 [ADMIN] Eliminando citas de la clínica ${userToDelete.clinics.id}...`);
+      
+      const appointmentsCount = await prisma.appointments.count({
+        where: { clinic_id: userToDelete.clinics.id },
+      });
+      
+      if (appointmentsCount > 0) {
+        await prisma.appointments.deleteMany({
+          where: { clinic_id: userToDelete.clinics.id },
+        });
+        console.log(`✅ [ADMIN] ${appointmentsCount} citas de la clínica eliminadas`);
+      }
+    }
+
+    // 5. Ahora sí, eliminar el usuario (CASCADE eliminará el resto de datos relacionados)
+    console.log(`🔄 [ADMIN] Ejecutando DELETE del usuario en la base de datos...`);
     
     try {
       const deleteResult = await prisma.users.delete({
@@ -449,7 +502,7 @@ export async function deleteUser(event: APIGatewayProxyEventV2): Promise<APIGate
       throw deleteError; // Re-lanzar para que sea capturado por el catch principal
     }
 
-    // 5. Verificar que se eliminó
+    // 6. Verificar que se eliminó
     console.log(`🔍 [ADMIN] Verificando eliminación...`);
     const userStillExists = await prisma.users.findUnique({
       where: { id: userId },
@@ -480,7 +533,7 @@ export async function deleteUser(event: APIGatewayProxyEventV2): Promise<APIGate
     
     if (error.code === 'P2003') {
       console.error('❌ [ADMIN] Error de foreign key constraint');
-      return internalErrorResponse('No se puede eliminar el usuario porque tiene datos relacionados. Contacta al administrador del sistema.');
+      return errorResponse('No se puede eliminar el usuario porque tiene datos relacionados. Contacta al administrador del sistema.', 400);
     }
     
     return internalErrorResponse(`Error al eliminar usuario: ${error.message}`);

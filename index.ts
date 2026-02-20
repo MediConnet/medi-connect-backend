@@ -21,7 +21,7 @@ app.use(express.json({ limit: '10mb' })); // ⭐ Aumentar límite para subida de
 app.use(express.urlencoded({ extended: true, limit: '10mb' })); // ⭐ Aumentar límite para subida de imágenes
 
 // Middleware de logging para todas las requests
-app.use((req, res, next) => {
+app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.log(`\n🌐 [INCOMING] ${req.method} ${req.originalUrl}`);
   console.log(`🔍 [INCOMING] Todos los headers:`, Object.keys(req.headers).join(', '));
   const authHeader = Array.isArray(req.headers.authorization) 
@@ -186,7 +186,7 @@ try {
 }
 
 // Routes - Auth
-app.use('/api/auth', async (req, res) => {
+app.use('/api/auth', async (req: express.Request, res: express.Response) => {
   // Usar originalUrl para obtener el path completo
   const path = req.originalUrl.split('?')[0]; // Remover query string si existe
   await handleLambdaResponse(authHandler, req, res, path);
@@ -194,55 +194,55 @@ app.use('/api/auth', async (req, res) => {
 
 // Routes - Public (doctors, pharmacies, etc.)
 console.log('✅ [PUBLIC] Registrando rutas públicas en /api/public');
-app.use('/api/public', async (req, res) => {
+app.use('/api/public', async (req: express.Request, res: express.Response) => {
   const path = req.originalUrl.split('?')[0];
   console.log(`🔍 [PUBLIC ROUTE] ${req.method} ${path} - originalUrl: ${req.originalUrl}`);
   await handleLambdaResponse(publicHandler, req, res, path);
 });
 
 // Routes - Doctors
-app.use('/api/doctors', async (req, res) => {
+app.use('/api/doctors', async (req: express.Request, res: express.Response) => {
   const path = req.originalUrl.split('?')[0];
   await handleLambdaResponse(doctorsHandler, req, res, path);
 });
 
-app.use('/api/specialties', async (req, res) => {
+app.use('/api/specialties', async (req: express.Request, res: express.Response) => {
   const path = req.originalUrl.split('?')[0]; 
   await handleLambdaResponse(doctorsHandler, req, res, path);
 });
 
 // Routes - Admin
-app.use('/api/admin', async (req, res) => {
+app.use('/api/admin', async (req: express.Request, res: express.Response) => {
   const path = req.originalUrl.split('?')[0];
   await handleLambdaResponse(adminHandler, req, res, path);
 });
 
 // Routes - Providers (registro de proveedores)
-app.use('/api/providers', async (req, res) => {
+app.use('/api/providers', async (req: express.Request, res: express.Response) => {
   const path = req.originalUrl.split('?')[0];
   await handleLambdaResponse(adminHandler, req, res, path);
 });
 
 // Routes - Ads (Anuncios)
-app.use('/api/ads', async (req, res) => {
+app.use('/api/ads', async (req: express.Request, res: express.Response) => {
   const path = req.originalUrl.split('?')[0];
   await handleLambdaResponse(adsHandler, req, res, path);
 });
 
 // Routes - Home
-app.use('/api/home', async (req, res) => {
+app.use('/api/home', async (req: express.Request, res: express.Response) => {
   const path = req.originalUrl.split('?')[0];
   await handleLambdaResponse(homeHandler, req, res, path);
 });
 
 // Routes - Supplies
-app.use('/api/supplies', async (req, res) => {
+app.use('/api/supplies', async (req: express.Request, res: express.Response) => {
   const path = req.originalUrl.split('?')[0];
   await handleLambdaResponse(suppliesHandler, req, res, path);
 });
 
 // Routes - Pharmacy Chains (público)
-app.use('/api/pharmacy-chains', async (req, res) => {
+app.use('/api/pharmacy-chains', async (req: express.Request, res: express.Response) => {
   const path = req.originalUrl.split('?')[0];
   await handleLambdaResponse(pharmaciesHandler, req, res, path);
 });
@@ -250,14 +250,14 @@ app.use('/api/pharmacy-chains', async (req, res) => {
 // Routes - Patients
 if (patientsHandler) {
   console.log('✅ [PATIENTS] Registrando rutas de pacientes en /api/patients');
-  app.use('/api/patients', async (req, res) => {
+  app.use('/api/patients', async (req: express.Request, res: express.Response) => {
     const path = req.originalUrl.split('?')[0];
     console.log(`🔍 [PATIENTS ROUTE] ${req.method} ${path} - originalUrl: ${req.originalUrl}`);
     await handleLambdaResponse(patientsHandler, req, res, path);
   });
 } else {
   console.error('❌ [PATIENTS] Handler de pacientes no disponible - Las rutas no se registrarán');
-  app.use('/api/patients', (req, res) => {
+  app.use('/api/patients', (req: express.Request, res: express.Response) => {
     console.error(`❌ [PATIENTS] Petición recibida pero handler no disponible: ${req.method} ${req.originalUrl}`);
     res.status(500).json({ 
       success: false, 
@@ -268,7 +268,7 @@ if (patientsHandler) {
 
 // Routes - Pharmacies
 console.log('✅ [PHARMACIES] Registrando rutas de farmacias en /api/pharmacies');
-app.use('/api/pharmacies', async (req, res) => {
+app.use('/api/pharmacies', async (req: express.Request, res: express.Response) => {
   const path = req.originalUrl.split('?')[0];
   console.log(`🔍 [PHARMACIES ROUTE] ${req.method} ${path} - originalUrl: ${req.originalUrl}`);
   await handleLambdaResponse(pharmaciesHandler, req, res, path);
@@ -276,7 +276,7 @@ app.use('/api/pharmacies', async (req, res) => {
 
 // Routes - Laboratories (si existe)
 if (laboratoriesHandler) {
-  app.use('/api/laboratories', async (req, res) => {
+  app.use('/api/laboratories', async (req: express.Request, res: express.Response) => {
     const path = req.originalUrl.split('?')[0];
     await handleLambdaResponse(laboratoriesHandler, req, res, path);
   });
@@ -284,7 +284,7 @@ if (laboratoriesHandler) {
 
 // Routes - Ambulances (ahora manejadas por publicHandler)
 console.log('✅ [AMBULANCES] Registrando rutas de ambulancias en /api/ambulances (usando publicHandler)');
-app.use('/api/ambulances', async (req, res) => {
+app.use('/api/ambulances', async (req: express.Request, res: express.Response) => {
   const path = req.originalUrl.split('?')[0];
   console.log(`🔍 [AMBULANCES ROUTE] ${req.method} ${path} - originalUrl: ${req.originalUrl}`);
   await handleLambdaResponse(publicHandler, req, res, path);
@@ -293,7 +293,7 @@ app.use('/api/ambulances', async (req, res) => {
 // Routes - Clinics (si existe)
 if (clinicsHandler) {
   console.log('✅ [CLINICS] Registrando rutas de clínicas');
-  app.use('/api/clinics', async (req, res) => {
+  app.use('/api/clinics', async (req: express.Request, res: express.Response) => {
     const path = req.originalUrl.split('?')[0];
     console.log(`🔍 [CLINICS] Ruta recibida: ${req.method} ${path}`);
     console.log(`🔍 [CLINICS] Handler disponible:`, typeof clinicsHandler);
@@ -311,7 +311,7 @@ if (clinicsHandler) {
 } else {
   console.error('❌ [CLINICS] Handler de clínicas no disponible - Las rutas no se registrarán');
   // Agregar un fallback para diagnosticar
-  app.use('/api/clinics', (req, res) => {
+  app.use('/api/clinics', (req: express.Request, res: express.Response) => {
     console.error(`❌ [CLINICS] Petición recibida pero handler no disponible: ${req.method} ${req.originalUrl}`);
     res.status(500).json({
       success: false,
@@ -321,7 +321,7 @@ if (clinicsHandler) {
 }
 
 // Health check
-app.get('/health', (req, res) => {
+app.get('/health', (req: express.Request, res: express.Response) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
