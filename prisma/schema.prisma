@@ -128,13 +128,10 @@ model patient_reminders {
   start_date DateTime           @db.Date
   time       DateTime           @db.Time(6)
   is_active  Boolean            @default(true)
-
-  frequency Int? @default(0)
-
-  created_at DateTime? @default(now()) @db.Timestamp(6)
-  updated_at DateTime? @default(now()) @updatedAt @db.Timestamp(6)
-
-  patients patients @relation(fields: [patient_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  frequency  Int?               @default(0)
+  created_at DateTime?          @default(now()) @db.Timestamp(6)
+  updated_at DateTime?          @default(now()) @updatedAt @db.Timestamp(6)
+  patients   patients           @relation(fields: [patient_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([patient_id])
   @@index([start_date])
@@ -260,7 +257,6 @@ model provider_branches {
   rating_cache       Float?               @default(0)
   is_main            Boolean?             @default(false)
   is_active          Boolean?             @default(false)
-  consultation_fee   Decimal?             @db.Decimal(10, 2)
   payment_methods    String[]
   ambulance_types    String[]             @default([])
   coverage_area      String?              @db.VarChar(255)
@@ -334,10 +330,10 @@ model providers {
   provider_bank_details provider_bank_details[]
   provider_branches     provider_branches[]
   provider_catalog      provider_catalog[]
+  provider_specialties  provider_specialties[]
   service_categories    service_categories?     @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   pharmacy_chains       pharmacy_chains?        @relation(fields: [chain_id], references: [id], onUpdate: NoAction)
   users                 users?                  @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  specialties           specialties[]           @relation("providersTospecialties")
 }
 
 model reviews {
@@ -374,13 +370,13 @@ model sessions {
 }
 
 model specialties {
-  id          String      @id @db.Uuid
-  name        String      @db.VarChar(255)
-  description String?
-  color_hex   String?     @db.VarChar(7)
-  created_at  DateTime?   @default(now()) @db.Timestamp(6)
-  updated_at  DateTime?   @default(now()) @db.Timestamp(6)
-  providers   providers[] @relation("providersTospecialties")
+  id                   String                 @id @db.Uuid
+  name                 String                 @db.VarChar(255)
+  description          String?
+  color_hex            String?                @db.VarChar(7)
+  created_at           DateTime?              @default(now()) @db.Timestamp(6)
+  updated_at           DateTime?              @default(now()) @db.Timestamp(6)
+  provider_specialties provider_specialties[]
 }
 
 model users {
@@ -390,8 +386,8 @@ model users {
   role                enum_roles        @default(patient)
   profile_picture_url String?           @db.VarChar(255)
   is_active           Boolean?          @default(true)
-  push_token          String?           @db.VarChar(255)
   created_at          DateTime?         @default(now()) @db.Timestamp(6)
+  push_token          String?           @db.VarChar(255)
   clinic_doctors      clinic_doctors[]
   clinics             clinics?
   password_resets     password_resets[]
@@ -568,6 +564,20 @@ model password_resets {
   @@index([email])
   @@index([expires_at])
   @@index([token])
+}
+
+model provider_specialties {
+  provider_id  String      @db.Uuid
+  specialty_id String      @db.Uuid
+  fee          Decimal     @default(0) @db.Decimal(10, 2)
+  created_at   DateTime?   @default(now()) @db.Timestamp(6)
+  updated_at   DateTime?   @default(now()) @db.Timestamp(6)
+  providers    providers   @relation(fields: [provider_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  specialties  specialties @relation(fields: [specialty_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([provider_id, specialty_id])
+  @@index([provider_id])
+  @@index([specialty_id])
 }
 
 enum enum_appt_status {
