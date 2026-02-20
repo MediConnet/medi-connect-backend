@@ -61,6 +61,12 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     }
 
     // --- Rutas de Invitación de Médicos ---
+    // POST /api/clinics/invitations (nueva ruta)
+    if (path === '/api/clinics/invitations') {
+      console.log(`✅ [CLINICS HANDLER] Ruta de invitations encontrada`);
+      if (method === 'POST') return await sendInvitation(event);
+    }
+
     // Soporta ambas rutas para compatibilidad con frontend
     if (path === '/api/clinics/invite' || path === '/api/clinics/doctors/invite/link') {
       if (method === 'POST') return await generateInvitationLink(event);
