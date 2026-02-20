@@ -448,7 +448,7 @@ async function getRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayPro
           id: true,
           city_id: true,
           address_text: true,
-          phone_contact: true,
+          phone_contact: true,  // ✅ Este es el campo correcto
         },
         take: 1, // Solo la primera sucursal
       },
@@ -485,6 +485,16 @@ async function getRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayPro
     const city = branch?.city_id ? cityMap[branch.city_id] : undefined;
     const docs = Array.isArray((provider as any).documents) ? (provider as any).documents : [];
 
+    // 🔍 DEBUG: Log de datos de la sucursal
+    console.log(`🔍 [GET_REQUESTS] Provider ${provider.id}:`, {
+      hasBranch: !!branch,
+      branchId: branch?.id,
+      phone: branch?.phone_contact,
+      address: branch?.address_text,
+      cityId: branch?.city_id,
+      cityName: city?.name,
+    });
+
     return {
       id: provider.id,
       providerName: provider.commercial_name || 'Sin nombre',
@@ -499,8 +509,8 @@ async function getRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayPro
               provider.verification_status === 'REJECTED' ? 'REJECTED' :
               'PENDING',
       rejectionReason: null, // TODO: Agregar campo de razón de rechazo
-      phone: branch?.phone_contact || '',
-      whatsapp: branch?.phone_contact || '',
+      phone: branch?.phone_contact || '',           // ✅ Desde provider_branches.phone_contact
+      whatsapp: branch?.phone_contact || '',     // ✅ Mismo teléfono para whatsapp
       city: city?.name || 'Sin ciudad',
       address: branch?.address_text || '',
       description: provider.description || '',
@@ -549,6 +559,16 @@ async function getRequestDetail(event: APIGatewayProxyEventV2): Promise<APIGatew
 
   const docs = Array.isArray((provider as any).documents) ? (provider as any).documents : [];
 
+  // 🔍 DEBUG: Log de datos de la sucursal
+  console.log(`🔍 [GET_REQUEST_DETAIL] Provider ${provider.id}:`, {
+    hasBranch: !!branch,
+    branchId: branch?.id,
+    phone: branch?.phone_contact,
+    address: branch?.address_text,
+    cityId: branch?.city_id,
+    cityName: city?.name,
+  });
+
   return successResponse({
     id: provider.id,
     providerName: provider.commercial_name || 'Sin nombre',
@@ -563,8 +583,8 @@ async function getRequestDetail(event: APIGatewayProxyEventV2): Promise<APIGatew
             provider.verification_status === 'REJECTED' ? 'REJECTED' :
             'PENDING',
     rejectionReason: null,
-    phone: branch?.phone_contact || '',
-    whatsapp: branch?.phone_contact || '',
+    phone: branch?.phone_contact || '',           // ✅ Desde provider_branches.phone_contact
+    whatsapp: branch?.phone_contact || '',     // ✅ Mismo teléfono para whatsapp
     city: city?.name || 'Sin ciudad',
     address: branch?.address_text || '',
     description: provider.description || '',

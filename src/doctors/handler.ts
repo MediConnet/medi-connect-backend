@@ -29,6 +29,10 @@ import {
   createBlockedSlot,
   deleteBlockedSlot,
 } from "./clinic.controller";
+import { 
+  getConsultationPrices, 
+  updateConsultationPrices 
+} from "./consultation-prices.controller";
 import { getDashboard } from "./dashboard.controller";
 import { createDiagnosis, getDiagnosis } from "./diagnoses.controller";
 import { 
@@ -63,6 +67,12 @@ export async function handler(
     // --- Dashboard ---
     if (path === "/api/doctors/dashboard") {
       if (method === "GET") return await getDashboard(event);
+    }
+
+    // --- Consultation Prices (Tarifas de Consulta) ---
+    if (path === "/api/doctors/consultation-prices") {
+      if (method === "GET") return await getConsultationPrices(event);
+      if (method === "PUT") return await updateConsultationPrices(event);
     }
 
     // --- Appointments ---

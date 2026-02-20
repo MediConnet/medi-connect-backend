@@ -189,10 +189,26 @@ async function createProviderProfile(prisma: any, userId: string, body: any) {
 
       years_of_experience: yearsExp,
 
-      specialties: specialtiesConnect,
+      // ⚠️ specialties ya no existe como relación directa
+      // Ahora se usa provider_specialties (tabla intermedia)
       documents: body.documents ?? [],
     },
   });
+
+  // ⭐ Crear especialidades si se proporcionaron (usando provider_specialties)
+  if (body.specialties && Array.isArray(body.specialties) && body.specialties.length > 0) {
+    const specialtyCreations = body.specialties.map((specialtyId: string) => {
+      return prisma.provider_specialties.create({
+        data: {
+          provider_id: providerId,
+          specialty_id: specialtyId,
+          fee: body.price ? parseFloat(body.price.toString()) : 0,
+        },
+      });
+    });
+    
+    await Promise.all(specialtyCreations);
+  }
 
   // Datos Adicionales para la Sucursal
 
@@ -204,26 +220,57 @@ async function createProviderProfile(prisma: any, userId: string, body: any) {
     if (!isNaN(parsed)) fee = parsed;
   }
 
-  // Crear Sucursal (Local Físico)
-  await prisma.provider_branches.create({
-    data: {
-      id: randomUUID(),
-
-      providers: { connect: { id: providerId } },
-
-      ...(isValidCityId ? { cities: { connect: { id: body.cityId } } } : {}),
-
-      name: businessName,
-      address_text: fullAddress,
-      description: body.description || null,
-      consultation_fee: fee,
-
-      phone_contact: body.phone || body.whatsapp || null,
-      email_contact: body.email,
-      is_main: true,
-      is_active: true,
-    },
+  // 🔍 DEBUG: Log de datos de sucursal antes de crear
+  console.log(`🔍 [REGISTER] Datos de sucursal a crear:`, {
+    phone: body.phone,
+    whatsapp: body.whatsapp,
+    phone_contact: body.phone || body.whatsapp || null,
+    address: body.address,
+    fullAddress,
+    cityId: body.cityId,
+    isValidCityId,
   });
+
+  // Crear Sucursal (Local Físico)
+  try {
+    const createdBranch = await prisma.provider_branches.create({
+      data: {
+        id: randomUUID(),
+
+        providers: { connect: { id: providerId } },
+
+        ...(isValidCityId ? { cities: { connect: { id: body.cityId } } } : {}),
+
+        name: businessName,
+        address_text: fullAddress,
+        description: body.description || null,
+        // ❌ consultation_fee NO existe en provider_branches
+
+        phone_contact: body.phone || body.whatsapp || null,
+        email_contact: body.email,
+        is_main: true,
+        is_active: true,
+      },
+    });
+
+    console.log(`✅ [REGISTER] Sucursal creada exitosamente:`, {
+      branchId: createdBranch.id,
+      providerId: providerId,
+      phone: createdBranch.phone_contact,
+      address: createdBranch.address_text,
+      cityId: body.cityId,
+    });
+  } catch (branchError: any) {
+    console.error(`❌ [REGISTER] ERROR al crear sucursal:`, {
+      error: branchError.message,
+      code: branchError.code,
+      providerId,
+      phone: body.phone,
+      address: body.address,
+      cityId: body.cityId,
+    });
+    throw branchError; // Re-lanzar para que el registro falle
+  }
 
   // Lógica Clínicas
   if (body.type === "clinic") {
