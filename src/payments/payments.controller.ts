@@ -72,10 +72,6 @@ export async function generatePaymentLink(
       return errorResponse("Esta cita ya se encuentra pagada", 400);
     }
 
-    // =================================================================
-    // 3. CÁLCULOS MONETARIOS
-    // =================================================================
-
     const branchFee = appointment.provider_branches?.consultation_fee;
 
     const rawPrice =
@@ -136,7 +132,7 @@ export async function generatePaymentLink(
       tax: tax,
       currency: "USD",
       clientTransactionId: clientTransactionId,
-      reference: description.substring(0, 100),
+      reference: description.substring(0, 50),
     });
 
     console.log(`✅ Link generado: ${paymentUrl}`);
@@ -147,15 +143,25 @@ export async function generatePaymentLink(
       amount: costDecimal,
     });
   } catch (error: any) {
-    console.error("❌ Error en generatePaymentLink:", error);
+    let detailedError = error.message;
+
+    if (error.response?.data) {
+      detailedError = JSON.stringify(error.response.data, null, 2);
+    } else if (error.message && error.message.startsWith("{")) {
+      try {
+        detailedError = JSON.stringify(JSON.parse(error.message), null, 2);
+      } catch (e) {}
+    }
+
+    console.error(`❌ Error en generatePaymentLink:\n${detailedError}\n`);
 
     if (
-      error.message &&
-      (error.message.includes("Validaciones fallidas") ||
-        error.message.includes("Amount"))
+      detailedError &&
+      (detailedError.includes("Validaciones fallidas") ||
+        detailedError.includes("Amount"))
     ) {
       return errorResponse(
-        "Error de validación con PayPhone. El monto calculado no es aceptado por la pasarela.",
+        "Error de validación con PayPhone. Verifica que el monto o los datos de la sucursal sean correctos.",
         400,
       );
     }
@@ -165,5 +171,144 @@ export async function generatePaymentLink(
     return internalErrorResponse(
       "No se pudo generar el enlace de pago. Por favor intenta de nuevo.",
     );
+  }
+}
+
+export async function handlePayphoneWebhook(
+  event: APIGatewayProxyEventV2,
+): Promise<APIGatewayProxyResult> {
+  console.log("🔔 [PAYMENTS] Webhook NotificacionPago invocado");
+
+  const prisma = getPrismaClient();
+
+  try {
+    let body;
+    try {
+      body =
+        typeof event.body === "string" ? JSON.parse(event.body) : event.body;
+    } catch (e) {
+      console.error("❌ [WEBHOOK] Error de deserialización:", e);
+      return {
+        statusCode: 400,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ Response: false, ErrorCode: "111" }),
+      };
+    }
+
+    const {
+      Amount,
+      AuthorizationCode,
+      ClientTransactionId,
+      StatusCode,
+      TransactionStatus,
+      StoreId,
+      TransactionId,
+    } = body;
+
+    if (
+      Amount == null ||
+      !AuthorizationCode ||
+      !ClientTransactionId ||
+      StatusCode == null ||
+      !TransactionStatus ||
+      !StoreId ||
+      TransactionId == null
+    ) {
+      console.warn("⚠️ [WEBHOOK] Faltan variables requeridas:", body);
+      return {
+        statusCode: 400,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ Response: false, ErrorCode: "444" }),
+      };
+    }
+
+    if (StoreId !== process.env.PAYPHONE_STORE_ID) {
+      console.warn(
+        `⚠️ [WEBHOOK] StoreId no coincide. Recibido: ${StoreId}, Esperado: ${process.env.PAYPHONE_STORE_ID}`,
+      );
+      return {
+        statusCode: 400,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ Response: false, ErrorCode: "666" }),
+      };
+    }
+
+    const payment = await prisma.payments.findFirst({
+      where: { external_transaction_id: ClientTransactionId },
+    });
+
+    if (!payment) {
+      console.warn(
+        `⚠️ [WEBHOOK] Pago no encontrado para ClientTxId: ${ClientTransactionId}`,
+      );
+      return {
+        statusCode: 404,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ Response: false, ErrorCode: "222" }),
+      };
+    }
+
+    if (payment.status === "PAID" || payment.status === "COMPLETED") {
+      console.log(
+        `ℹ️ [WEBHOOK] Transacción ${TransactionId} ya estaba procesada.`,
+      );
+      return {
+        statusCode: 200,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ Response: false, ErrorCode: "333" }),
+      };
+    }
+
+    if (StatusCode === 3 && TransactionStatus === "Approved") {
+      await prisma.payments.update({
+        where: { id: payment.id },
+        data: {
+          status: "PAID",
+          paid_at: new Date(),
+        },
+      });
+
+      if (payment.appointment_id) {
+        await prisma.appointments.update({
+          where: { id: payment.appointment_id },
+          data: {
+            status: "CONFIRMED",
+          },
+        });
+      }
+
+      console.log(
+        `✅ [WEBHOOK] Pago ${TransactionId} APROBADO y guardado con éxito.`,
+      );
+
+      // RESPUESTA DE ÉXITO A PAYPHONE (000)
+      return {
+        statusCode: 200,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ Response: true, ErrorCode: "000" }),
+      };
+    } else {
+      await prisma.payments.update({
+        where: { id: payment.id },
+        data: { status: "FAILED" },
+      });
+
+      console.log(
+        `❌ [WEBHOOK] Pago ${TransactionId} fue rechazado o cancelado.`,
+      );
+
+      return {
+        statusCode: 200,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ Response: true, ErrorCode: "000" }),
+      };
+    }
+  } catch (error: any) {
+    console.error("❌ [WEBHOOK] Error interno procesando notificación:", error);
+    return {
+      statusCode: 500,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ Response: false, ErrorCode: "222" }),
+    };
   }
 }

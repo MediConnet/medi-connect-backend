@@ -5,7 +5,10 @@ import {
   internalErrorResponse,
   optionsResponse,
 } from "../shared/response";
-import { generatePaymentLink } from "./payments.controller";
+import {
+  generatePaymentLink,
+  handlePayphoneWebhook,
+} from "./payments.controller";
 
 export async function handler(
   event: APIGatewayProxyEventV2,
@@ -29,11 +32,11 @@ export async function handler(
       return await generatePaymentLink(event);
     }
 
-    // Aquí se podría agregar endpoints para verificar los pagos, por ejemplo:
-    // POST /api/payments/payphone/webhook (Para confirmar pagos automáticamente)
-    // GET /api/payments/history (Para ver historial de transacciones)
+    // POST /api/payments/NotificacionPago
+    if (path === "/api/payments/NotificacionPago" && method === "POST") {
+      return await handlePayphoneWebhook(event);
+    }
 
-    // Si la ruta no coincide con ninguna definida en este handler
     console.warn(`⚠️ [PAYMENTS] Ruta no encontrada: ${method} ${path}`);
     return errorResponse("Route not found in payments module", 404);
   } catch (error: any) {

@@ -24,9 +24,7 @@ const PROCESSING_TIMEOUT_MINUTES = 20;
 export async function createAppointment(
   event: APIGatewayProxyEventV2,
 ): Promise<APIGatewayProxyResult> {
-  console.log(
-    "✅ [PATIENTS] POST /api/patients/appointments - Creando cita (con bloqueo)",
-  );
+  console.log("✅ [PATIENTS] POST /api/patients/appointments - Creando cita");
 
   const authResult = await requireAuth(event);
   if ("statusCode" in authResult) {
@@ -49,10 +47,8 @@ export async function createAppointment(
       );
     }
 
-    // 2. Parsear Body
     const body = parseBody(event.body, createAppointmentSchema);
 
-    // 3. Validar Doctor y Sucursal
     const doctor = await prisma.providers.findUnique({
       where: { id: body.doctorId },
       include: {
@@ -111,7 +107,6 @@ export async function createAppointment(
       );
     }
 
-    // Determinar Estado Inicial y Método de Pago
     const isOnlinePayment =
       body.paymentMethod === "CARD" || body.paymentMethod === "TRANSFER";
     const paymentMethod =
@@ -229,7 +224,7 @@ export async function startPaymentProcess(
 
     // Validar estado
     if (appointment.status === "CANCELLED") {
-      return errorResponse("El tiempo de reserva ha expirado.", 408); // 408 Timeout
+      return errorResponse("El tiempo de reserva ha expirado.", 408);
     }
     if (
       appointment.status === "CONFIRMED" ||
@@ -269,7 +264,6 @@ export async function startPaymentProcess(
 export async function getAppointments(
   event: APIGatewayProxyEventV2,
 ): Promise<APIGatewayProxyResult> {
-  // ... (Autenticación igual)
   const authResult = await requireAuth(event);
   if ("statusCode" in authResult) return authResult;
   const authContext = authResult as AuthContext;
@@ -368,7 +362,6 @@ export async function getAppointmentById(
       "",
     );
 
-    // Buscar el paciente
     const patient = await prisma.patients.findFirst({
       where: { user_id: authContext.user.id },
     });
@@ -377,7 +370,6 @@ export async function getAppointmentById(
       return notFoundResponse("Patient not found");
     }
 
-    // Obtener la cita
     const appointment = await prisma.appointments.findUnique({
       where: { id: appointmentId },
       include: {
@@ -399,12 +391,9 @@ export async function getAppointmentById(
       return notFoundResponse("Appointment not found");
     }
 
-    // Verificar que la cita pertenece al paciente
     if (appointment.patient_id !== patient.id) {
       return errorResponse("Access denied", 403);
     }
-
-    console.log("✅ [PATIENTS] Cita obtenida exitosamente");
 
     const appointmentWithRelations = appointment as any;
     const provider = appointmentWithRelations.providers;
@@ -454,7 +443,7 @@ export async function cancelAppointment(
   event: APIGatewayProxyEventV2,
 ): Promise<APIGatewayProxyResult> {
   console.log(
-    "✅ [PATIENTS] DELETE /api/patients/appointments/:id - Cancelando cita",
+    "✅ [PATIENTS] DELETE /api/patients/appointments/:id - Cancelando cita y pago",
   );
 
   const authResult = await requireAuth(event);
@@ -490,12 +479,10 @@ export async function cancelAppointment(
       return notFoundResponse("Appointment not found");
     }
 
-    // Verificar que la cita pertenece al paciente
     if (appointment.patient_id !== patient.id) {
       return errorResponse("Access denied", 403);
     }
 
-    // Verificar que la cita no esté en el pasado
     if (
       appointment.scheduled_for &&
       new Date(appointment.scheduled_for) < new Date()
@@ -503,7 +490,6 @@ export async function cancelAppointment(
       return errorResponse("Cannot cancel past appointments", 400);
     }
 
-    // Actualizar estado a CANCELLED
     const updatedAppointment = await prisma.appointments.update({
       where: { id: appointmentId },
       data: {
@@ -511,11 +497,21 @@ export async function cancelAppointment(
       },
     });
 
-    console.log("✅ [PATIENTS] Cita cancelada exitosamente");
+    await prisma.payments.updateMany({
+      where: {
+        appointment_id: appointmentId,
+        status: { in: ["PENDING", "PROCESSING"] },
+      },
+      data: {
+        status: "CANCELLED",
+      },
+    });
+
+    console.log("✅ [PATIENTS] Cita y pago pendientes cancelados exitosamente");
     return successResponse({
       id: updatedAppointment.id,
       status: updatedAppointment.status,
-      message: "Appointment cancelled successfully",
+      message: "Appointment and pending payments cancelled successfully",
     });
   } catch (error: any) {
     console.error("❌ [PATIENTS] Error al cancelar cita:", error.message);
