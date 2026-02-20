@@ -6,21 +6,19 @@ import {
   optionsResponse,
 } from "../shared/response";
 import {
-  createSupplyStoreReview,
-  getSupplyStoreById,
-  getSupplyStoreDashboard,
-  getSupplyStoreReviews,
+  createProduct,
+  deleteProduct,
+  getProducts,
+  updateProduct,
+} from "./products.controller";
+import {
   getMySupplyStoreReviews,
   getSuppliesProfile,
+  getSupplyStoreById,
+  getSupplyStoreDashboard,
   getSupplyStores,
   updateSuppliesProfile,
 } from "./supplies.controller";
-import {
-  createProduct,
-  updateProduct,
-  deleteProduct,
-  getProducts,
-} from "./products.controller";
 
 export async function handler(
   event: APIGatewayProxyEventV2,
@@ -58,7 +56,7 @@ export async function handler(
     }
 
     // === PRODUCTOS ===
-    
+
     // 4. GET /api/supplies/products - Listar productos
     if (path === "/api/supplies/products" && method === "GET") {
       return await getProducts(event);
@@ -75,7 +73,10 @@ export async function handler(
     }
 
     // 7. DELETE /api/supplies/products/:id - Eliminar producto
-    if (path.match(/^\/api\/supplies\/products\/[^/]+$/) && method === "DELETE") {
+    if (
+      path.match(/^\/api\/supplies\/products\/[^/]+$/) &&
+      method === "DELETE"
+    ) {
       return await deleteProduct(event);
     }
 
@@ -86,17 +87,7 @@ export async function handler(
       return await getMySupplyStoreReviews(event);
     }
 
-    // 9. GET /api/supplies/:id/reviews - Obtener reseñas de una tienda (público)
-    if (path.match(/^\/api\/supplies\/[^/]+\/reviews$/) && method === "GET") {
-      return await getSupplyStoreReviews(event);
-    }
-
-    // 10. POST /api/supplies/:id/reviews
-    if (path.match(/^\/api\/supplies\/[^/]+\/reviews$/) && method === "POST") {
-      return await createSupplyStoreReview(event);
-    }
-
-    // 11. GET /api/supplies/:id - Detalle de tienda
+    // 9. GET /api/supplies/:id - Detalle de tienda
     if (path.match(/^\/api\/supplies\/[^/]+$/) && method === "GET") {
       return await getSupplyStoreById(event);
     }

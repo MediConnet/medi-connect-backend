@@ -1,5 +1,6 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResult } from "aws-lambda";
 import { randomUUID } from "crypto";
+import { z } from "zod";
 import { AuthContext, requireAuth } from "../shared/auth";
 import { formatSmartSchedule } from "../shared/helpers/scheduleFormatter";
 import { getPrismaClient } from "../shared/prisma";
@@ -8,7 +9,6 @@ import {
   internalErrorResponse,
   successResponse,
 } from "../shared/response";
-import { z } from "zod";
 import { parseBody } from "../shared/validators";
 
 const extractStoreId = (path: string): string | null => {
@@ -27,7 +27,9 @@ const suppliesProfileSchema = z.object({
   logoUrl: z
     .union([
       z.string().url("Invalid logo URL"),
-      z.string().startsWith("data:image/", "Logo must be a valid URL or base64 image"),
+      z
+        .string()
+        .startsWith("data:image/", "Logo must be a valid URL or base64 image"),
       z.literal(""),
     ])
     .optional()
@@ -50,7 +52,11 @@ async function getSuppliesProviderByUserId(prisma: any, userId: string) {
   return provider;
 }
 
-async function getOrCreateMainBranch(prisma: any, providerId: string, email: string) {
+async function getOrCreateMainBranch(
+  prisma: any,
+  providerId: string,
+  email: string,
+) {
   let branch = await prisma.provider_branches.findFirst({
     where: { provider_id: providerId, is_main: true },
     orderBy: { id: "desc" },
@@ -85,9 +91,11 @@ export async function getSuppliesProfile(
 
     const prisma = getPrismaClient();
 
-    const provider = await getSuppliesProviderByUserId(prisma, authContext.user.id);
+    const provider = await getSuppliesProviderByUserId(
+      prisma,
+      authContext.user.id,
+    );
     if (!provider) {
-      // Perfil nuevo: retornar vacío con id null (pero manteniendo shape esperado)
       return successResponse({
         id: null,
         name: "",
@@ -101,7 +109,11 @@ export async function getSuppliesProfile(
       });
     }
 
-    const branch = await getOrCreateMainBranch(prisma, provider.id, authContext.user.email);
+    const branch = await getOrCreateMainBranch(
+      prisma,
+      provider.id,
+      authContext.user.email,
+    );
 
     return successResponse({
       id: provider.id,
@@ -115,7 +127,10 @@ export async function getSuppliesProfile(
       isActive: Boolean(branch.is_active),
     });
   } catch (error: any) {
-    console.error("❌ [SUPPLIES] Error getting supplies profile:", error.message);
+    console.error(
+      "❌ [SUPPLIES] Error getting supplies profile:",
+      error.message,
+    );
     return internalErrorResponse("Error al obtener perfil de insumos");
   }
 }
@@ -140,7 +155,8 @@ export async function updateSuppliesProfile(
       where: { slug: "supplies" },
       select: { id: true },
     });
-    if (!suppliesCategory) return errorResponse("Categoría de insumos no encontrada", 404);
+    if (!suppliesCategory)
+      return errorResponse("Categoría de insumos no encontrada", 404);
 
     let provider = await prisma.providers.findFirst({
       where: { user_id: authContext.user.id, category_id: suppliesCategory.id },
@@ -160,25 +176,43 @@ export async function updateSuppliesProfile(
       });
     }
 
-    const branch = await getOrCreateMainBranch(prisma, provider.id, authContext.user.email);
+    const branch = await getOrCreateMainBranch(
+      prisma,
+      provider.id,
+      authContext.user.email,
+    );
 
     const updatedProvider = await prisma.providers.update({
       where: { id: provider.id },
       data: {
-        commercial_name: body.name !== undefined ? body.name : provider.commercial_name,
-        description: body.description !== undefined ? body.description : provider.description,
+        commercial_name:
+          body.name !== undefined ? body.name : provider.commercial_name,
+        description:
+          body.description !== undefined
+            ? body.description
+            : provider.description,
         logo_url:
-          body.logoUrl !== undefined ? (body.logoUrl === "" ? null : body.logoUrl) : provider.logo_url,
+          body.logoUrl !== undefined
+            ? body.logoUrl === ""
+              ? null
+              : body.logoUrl
+            : provider.logo_url,
       },
     });
 
     const updatedBranch = await prisma.provider_branches.update({
       where: { id: branch.id },
       data: {
-        phone_contact: body.phone !== undefined ? body.phone : branch.phone_contact,
-        address_text: body.address !== undefined ? body.address : branch.address_text,
-        opening_hours_text: body.schedule !== undefined ? body.schedule : branch.opening_hours_text,
-        is_active: body.isActive !== undefined ? body.isActive : branch.is_active,
+        phone_contact:
+          body.phone !== undefined ? body.phone : branch.phone_contact,
+        address_text:
+          body.address !== undefined ? body.address : branch.address_text,
+        opening_hours_text:
+          body.schedule !== undefined
+            ? body.schedule
+            : branch.opening_hours_text,
+        is_active:
+          body.isActive !== undefined ? body.isActive : branch.is_active,
       },
     });
 
@@ -194,7 +228,10 @@ export async function updateSuppliesProfile(
       isActive: Boolean(updatedBranch.is_active),
     });
   } catch (error: any) {
-    console.error("❌ [SUPPLIES] Error updating supplies profile:", error.message);
+    console.error(
+      "❌ [SUPPLIES] Error updating supplies profile:",
+      error.message,
+    );
     return internalErrorResponse("Error al actualizar perfil de insumos");
   }
 }
@@ -368,42 +405,6 @@ export async function getSupplyStoreById(
   }
 }
 
-export async function getSupplyStoreReviews(
-  event: APIGatewayProxyEventV2,
-): Promise<APIGatewayProxyResult> {
-  try {
-    const storeId = extractStoreId(event.requestContext.http.path);
-    if (!storeId) return errorResponse("ID requerido", 400);
-
-    const prisma = getPrismaClient();
-    const branches = await prisma.provider_branches.findMany({
-      where: { provider_id: storeId },
-      select: { id: true },
-    });
-    const branchIds = branches.map((b) => b.id);
-
-    const reviews = await prisma.reviews.findMany({
-      where: { branch_id: { in: branchIds } },
-      include: { patients: { select: { full_name: true } } },
-      orderBy: { created_at: "desc" },
-    });
-
-    const formattedReviews = reviews.map((review) => ({
-      id: review.id,
-      supplyStoreId: storeId,
-      userId: review.patient_id,
-      userName: review.patients?.full_name || "Usuario",
-      rating: review.rating || 0,
-      comment: review.comment,
-      createdAt: review.created_at,
-    }));
-
-    return successResponse(formattedReviews);
-  } catch (error: any) {
-    return internalErrorResponse("Error al obtener reseñas");
-  }
-}
-
 /**
  * GET /api/supplies/reviews
  * Obtener reseñas del panel de insumos (requiere autenticación)
@@ -411,19 +412,27 @@ export async function getSupplyStoreReviews(
 export async function getMySupplyStoreReviews(
   event: APIGatewayProxyEventV2,
 ): Promise<APIGatewayProxyResult> {
-  console.log('✅ [SUPPLIES] GET /api/supplies/reviews - Obteniendo reseñas del panel');
-  
+  console.log(
+    "✅ [SUPPLIES] GET /api/supplies/reviews - Obteniendo reseñas del panel",
+  );
+
   try {
     const authResult = await requireAuth(event);
-    if ('statusCode' in authResult) {
-      console.error('❌ [SUPPLIES] Error de autenticación');
+    if ("statusCode" in authResult) {
+      console.error("❌ [SUPPLIES] Error de autenticación");
       return authResult;
     }
     const authContext = authResult as AuthContext;
 
-    if (authContext.user.role !== 'provider') {
-      console.error('❌ [SUPPLIES] Usuario no autorizado:', authContext.user.role);
-      return errorResponse('No autorizado. Debe ser proveedor', 403);
+    if (
+      authContext.user.role !== "provider" &&
+      authContext.user.role !== "supplies"
+    ) {
+      console.error(
+        "❌ [SUPPLIES] Usuario no autorizado:",
+        authContext.user.role,
+      );
+      return errorResponse("No autorizado. Debe ser proveedor", 403);
     }
 
     const prisma = getPrismaClient();
@@ -434,7 +443,9 @@ export async function getMySupplyStoreReviews(
     });
 
     if (!provider) {
-      console.log('⚠️ [SUPPLIES] Provider no encontrado, retornando array vacío');
+      console.log(
+        "⚠️ [SUPPLIES] Provider no encontrado, retornando array vacío",
+      );
       return successResponse({
         reviews: [],
         averageRating: 0,
@@ -442,18 +453,16 @@ export async function getMySupplyStoreReviews(
       });
     }
 
-    console.log('🔍 [SUPPLIES] Provider encontrado:', provider.id);
+    console.log("🔍 [SUPPLIES] Provider encontrado:", provider.id);
 
-    // Obtener todas las sucursales del provider
     const branches = await prisma.provider_branches.findMany({
       where: { provider_id: provider.id },
       select: { id: true },
     });
 
     const branchIds = branches.map((b) => b.id);
-    console.log('🔍 [SUPPLIES] Branch IDs:', branchIds);
+    console.log("🔍 [SUPPLIES] Branch IDs:", branchIds);
 
-    // Obtener reseñas de todas las sucursales del provider
     const reviews = await prisma.reviews.findMany({
       where: { branch_id: { in: branchIds } },
       include: {
@@ -476,23 +485,25 @@ export async function getMySupplyStoreReviews(
         },
       },
       orderBy: {
-        created_at: 'desc',
+        created_at: "desc",
       },
     });
 
-    // Calcular promedio de calificaciones
-    const averageRating = reviews.length > 0
-      ? reviews.reduce((sum, r) => sum + (r.rating || 0), 0) / reviews.length
-      : 0;
+    const averageRating =
+      reviews.length > 0
+        ? reviews.reduce((sum, r) => sum + (r.rating || 0), 0) / reviews.length
+        : 0;
 
-    console.log(`✅ [SUPPLIES] Reseñas obtenidas exitosamente (${reviews.length} reseñas)`);
+    console.log(
+      `✅ [SUPPLIES] Reseñas obtenidas exitosamente (${reviews.length} reseñas)`,
+    );
 
     return successResponse({
       reviews: reviews.map((review) => ({
         id: review.id,
         rating: review.rating || 0,
         comment: review.comment,
-        patientName: review.patients?.full_name || 'Usuario',
+        patientName: review.patients?.full_name || "Usuario",
         profilePictureUrl: review.patients?.users?.profile_picture_url || null,
         date: review.created_at,
         branchName: review.provider_branches?.name || null,
@@ -501,80 +512,8 @@ export async function getMySupplyStoreReviews(
       totalReviews: reviews.length,
     });
   } catch (error: any) {
-    console.error('❌ [SUPPLIES] Error al obtener reseñas:', error.message);
-    return internalErrorResponse(error.message || 'Error al obtener reseñas');
-  }
-}
-
-export async function createSupplyStoreReview(
-  event: APIGatewayProxyEventV2,
-): Promise<APIGatewayProxyResult> {
-  try {
-    const authResult = await requireAuth(event);
-    if ("statusCode" in authResult) return authResult;
-    const authContext = authResult as AuthContext;
-
-    const storeId = extractStoreId(event.requestContext.http.path);
-    if (!storeId) return errorResponse("ID requerido", 400);
-
-    const body = JSON.parse(event.body || "{}");
-    const { rating, comment } = body;
-
-    if (!rating || rating < 1 || rating > 5)
-      return errorResponse("Rating inválido", 400);
-
-    const prisma = getPrismaClient();
-    const provider = await prisma.providers.findUnique({
-      where: { id: storeId },
-      include: { provider_branches: { where: { is_main: true }, take: 1 } },
-    });
-
-    if (!provider || provider.provider_branches.length === 0)
-      return errorResponse("Tienda no encontrada", 404);
-
-    const mainBranch = provider.provider_branches[0];
-    const patient = await prisma.patients.findFirst({
-      where: { user_id: authContext.user.id },
-    });
-
-    if (!patient) return errorResponse("Paciente no encontrado", 404);
-
-    const review = await prisma.reviews.create({
-      data: {
-        id: randomUUID(),
-        branch_id: mainBranch.id,
-        patient_id: patient.id,
-        rating,
-        comment: comment || null,
-        created_at: new Date(),
-      },
-      include: { patients: { select: { full_name: true } } },
-    });
-
-    const avgRating = await prisma.reviews.aggregate({
-      where: { branch_id: mainBranch.id },
-      _avg: { rating: true },
-    });
-
-    await prisma.provider_branches.update({
-      where: { id: mainBranch.id },
-      data: { rating_cache: avgRating._avg.rating || 0 },
-    });
-
-    return successResponse(
-      {
-        id: review.id,
-        supplyStoreId: storeId,
-        userId: patient.id,
-        userName: review.patients?.full_name || "Usuario",
-        rating: review.rating || 0,
-        comment: review.comment,
-        createdAt: review.created_at,
-      },
-      201,
-    );
-  } catch (error: any) {
-    return internalErrorResponse("Error al crear reseña");
+    console.error("❌ [SUPPLIES] Error al obtener reseñas:", error.message);
+    return internalErrorResponse(error.message || "Error al obtener reseñas");
   }
 }
 

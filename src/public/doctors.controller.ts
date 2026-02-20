@@ -32,11 +32,30 @@ function mapDoctorData(doctor: any) {
 
   const clinicName = doctor.users?.clinic_doctors?.[0]?.clinics?.name || null;
 
-  const primarySpecialtyRecord = doctor.provider_specialties?.[0] || null;
+  // Extraer nombres de especialidades
   const especialidadesList =
     doctor.provider_specialties
       ?.map((ps: any) => ps.specialties?.name)
       .filter(Boolean) || [];
+
+  const tarifasPorEspecialidad: Record<string, number> = {};
+
+  if (
+    doctor.provider_specialties &&
+    Array.isArray(doctor.provider_specialties)
+  ) {
+    doctor.provider_specialties.forEach((ps: any) => {
+      const specName = ps.specialties?.name;
+      if (specName) {
+        tarifasPorEspecialidad[specName] = ps.fee ? Number(ps.fee) : 0;
+      }
+    });
+  }
+
+  const primarySpecialtyRecord = doctor.provider_specialties?.[0] || null;
+  const tarifaBase = primarySpecialtyRecord?.fee
+    ? Number(primarySpecialtyRecord.fee)
+    : 0;
 
   const schedules = mainBranch?.provider_schedules || [];
 
@@ -68,11 +87,12 @@ function mapDoctorData(doctor: any) {
       : 0,
     latitud: mainBranch?.latitude ? Number(mainBranch.latitude) : null,
     longitud: mainBranch?.longitude ? Number(mainBranch.longitude) : null,
+
     tarifas: {
-      consulta: primarySpecialtyRecord?.fee
-        ? Number(primarySpecialtyRecord.fee)
-        : 0,
+      consulta: tarifaBase,
+      ...tarifasPorEspecialidad,
     },
+
     formasPago: mainBranch?.payment_methods || [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),

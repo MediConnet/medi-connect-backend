@@ -10,7 +10,9 @@ import { errorResponse, successResponse } from "../shared/response";
 export async function getAmbulanceProfile(
   event: APIGatewayProxyEventV2,
 ): Promise<APIGatewayProxyResult> {
-  console.log("✅ [AMBULANCES] GET /api/ambulances/profile - Obteniendo perfil");
+  console.log(
+    "✅ [AMBULANCES] GET /api/ambulances/profile - Obteniendo perfil",
+  );
 
   try {
     const authResult = await requireAuth(event);
@@ -36,9 +38,9 @@ export async function getAmbulanceProfile(
       where: {
         user_id: authContext.user.id,
         service_categories: {
-          slug: "ambulance", // ⭐ Filtrar específicamente por tipo ambulance
+          slug: "ambulance",
         },
-        verification_status: "APPROVED", // Solo providers aprobados
+        verification_status: "APPROVED",
       },
       include: {
         service_categories: { select: { slug: true, name: true } },
@@ -60,7 +62,7 @@ export async function getAmbulanceProfile(
         },
       },
       orderBy: {
-        id: "desc", // Más reciente primero
+        id: "desc",
       },
     });
 
@@ -69,7 +71,6 @@ export async function getAmbulanceProfile(
         "⚠️ [AMBULANCES] Provider de tipo 'ambulance' no encontrado para user_id:",
         authContext.user.id,
       );
-      // Retornar estructura completa para evitar errores en el frontend
       return successResponse({
         id: null,
         name: "Servicio de Ambulancia",
@@ -110,8 +111,6 @@ export async function getAmbulanceProfile(
       `✅ [AMBULANCES] Perfil obtenido exitosamente (${totalTrips} viajes, ${provider.provider_branches.length} branches)`,
     );
 
-    // Estructura completa del perfil para el frontend
-    // Asegurar que todos los campos estén presentes (incluso si son null/empty) para evitar errores en el frontend
     const profileData = {
       id: provider.id,
       name: provider.commercial_name || "Servicio de Ambulancia",
@@ -129,15 +128,16 @@ export async function getAmbulanceProfile(
       city: mainBranch?.cities?.name || null,
       latitude: mainBranch?.latitude ? Number(mainBranch.latitude) : null,
       longitude: mainBranch?.longitude ? Number(mainBranch.longitude) : null,
-      // Campos adicionales que el frontend podría necesitar
       status: provider.verification_status || "APPROVED",
-      // Nuevos campos de ambulancia
       is24h: mainBranch?.is_24h ?? false,
       ambulanceTypes: mainBranch?.ambulance_types || [],
       coverageArea: mainBranch?.coverage_area || null,
     };
 
-    console.log(`📦 [AMBULANCES] Estructura de respuesta:`, JSON.stringify(profileData, null, 2));
+    console.log(
+      `📦 [AMBULANCES] Estructura de respuesta:`,
+      JSON.stringify(profileData, null, 2),
+    );
 
     return successResponse(profileData);
   } catch (error: any) {
@@ -171,7 +171,16 @@ export async function updateAmbulanceProfile(
     }
 
     const body = JSON.parse(event.body || "{}");
-    const { name, description, phone, whatsapp, address, is24h, ambulanceTypes, coverageArea } = body;
+    const {
+      name,
+      description,
+      phone,
+      whatsapp,
+      address,
+      is24h,
+      ambulanceTypes,
+      coverageArea,
+    } = body;
 
     const prisma = getPrismaClient();
 
@@ -208,8 +217,14 @@ export async function updateAmbulanceProfile(
           phone_contact: phone,
           address_text: address,
           is_24h: is24h !== undefined ? is24h : mainBranch.is_24h,
-          ambulance_types: ambulanceTypes !== undefined ? ambulanceTypes : mainBranch.ambulance_types,
-          coverage_area: coverageArea !== undefined ? coverageArea : mainBranch.coverage_area,
+          ambulance_types:
+            ambulanceTypes !== undefined
+              ? ambulanceTypes
+              : mainBranch.ambulance_types,
+          coverage_area:
+            coverageArea !== undefined
+              ? coverageArea
+              : mainBranch.coverage_area,
         },
       });
     }
@@ -339,8 +354,6 @@ export async function getAmbulanceSettings(
       );
     }
 
-    // Por ahora retornamos configuración por defecto
-    // Se puede implementar una tabla específica para configuraciones
     const defaultSettings = {
       notifications: {
         email: true,

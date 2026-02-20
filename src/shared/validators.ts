@@ -655,8 +655,7 @@ export const createReviewSchema = z.object({
     .nullable(),
 });
 
-// Doctor review validators (simplified, branch_id is obtained from doctor)
-export const createDoctorReviewSchema = z.object({
+export const createProviderReviewSchema = z.object({
   rating: z
     .number()
     .int()
@@ -725,14 +724,16 @@ export function extractIdFromPath(
  * @param time - Tiempo en formato HH:mm
  * @returns true si es válido, false si no
  */
-export function isValid30MinuteInterval(time: string | null | undefined): boolean {
+export function isValid30MinuteInterval(
+  time: string | null | undefined,
+): boolean {
   if (!time) return true; // null/undefined son válidos (campos opcionales)
-  
+
   const timeRegex = /^([0-1]?[0-9]|2[0-3]):([0-5][0-9])$/;
   const match = time.match(timeRegex);
-  
+
   if (!match) return false; // Formato inválido
-  
+
   const minutes = parseInt(match[2], 10);
   return minutes === 0 || minutes === 30;
 }
@@ -742,18 +743,20 @@ export function isValid30MinuteInterval(time: string | null | undefined): boolea
  * @param times - Objeto con propiedades de tiempo
  * @returns Error message si hay tiempos inválidos, null si todo está bien
  */
-export function validate30MinuteIntervals(times: Record<string, string | null | undefined>): string | null {
+export function validate30MinuteIntervals(
+  times: Record<string, string | null | undefined>,
+): string | null {
   const invalidTimes: string[] = [];
-  
+
   for (const [key, value] of Object.entries(times)) {
     if (value && !isValid30MinuteInterval(value)) {
       invalidTimes.push(key);
     }
   }
-  
+
   if (invalidTimes.length > 0) {
-    return `Los siguientes horarios deben estar en intervalos de 30 minutos (:00 o :30): ${invalidTimes.join(', ')}`;
+    return `Los siguientes horarios deben estar en intervalos de 30 minutos (:00 o :30): ${invalidTimes.join(", ")}`;
   }
-  
+
   return null;
 }
