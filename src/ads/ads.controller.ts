@@ -257,8 +257,25 @@ export async function getMyAd(event: APIGatewayProxyEventV2): Promise<APIGateway
     const provider = await prisma.providers.findFirst({ where: { user_id: user.id } });
     if (!provider) return successResponse(null);
 
+    const now = new Date();
+
+    // Obtener el anuncio más reciente que esté activo o pendiente
     const latestAd = await prisma.provider_ads.findFirst({
-      where: { provider_id: provider.id },
+      where: { 
+        provider_id: provider.id,
+        OR: [
+          { status: 'PENDING' },
+          { 
+            status: 'APPROVED',
+            is_active: true,
+            start_date: { lte: now },
+            OR: [
+              { end_date: null },
+              { end_date: { gte: now } }
+            ]
+          }
+        ]
+      },
       orderBy: { start_date: 'desc' } 
     });
 
