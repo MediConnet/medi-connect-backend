@@ -55,6 +55,9 @@ export async function getUsers(event: APIGatewayProxyEventV2): Promise<APIGatewa
       where,
       include: {
         providers: {
+          where: {
+            verification_status: 'APPROVED', // ✅ Solo providers aprobados
+          },
           select: {
             id: true,
             commercial_name: true,
@@ -92,19 +95,34 @@ export async function getUsers(event: APIGatewayProxyEventV2): Promise<APIGatewa
       skip: offset,
     });
 
-    console.log(`📊 [ADMIN] Total usuarios obtenidos: ${users.length}`);
+    // ✅ Filtrar usuarios que solo tienen providers rechazados/pendientes
+    // Solo mostrar usuarios que:
+    // 1. Son admin, O
+    // 2. Tienen clínica, O
+    // 3. Tienen paciente, O
+    // 4. Tienen provider APROBADO (ya filtrado en la query)
+    const filteredUsers = users.filter(user => {
+      const hasClinic = !!user.clinics;
+      const hasPatient = user.patients.length > 0;
+      const hasApprovedProvider = user.providers.length > 0; // Ya filtrado por APPROVED
+      const isAdmin = user.role === 'admin';
+      
+      return isAdmin || hasClinic || hasPatient || hasApprovedProvider;
+    });
+
+    console.log(`📊 [ADMIN] Total usuarios obtenidos: ${users.length}, después de filtrar: ${filteredUsers.length}`);
     
     // Debug: Contar cuántos de cada tipo
     const typeCounts = {
-      withClinic: users.filter(u => u.clinics).length,
-      withProvider: users.filter(u => u.providers.length > 0).length,
-      withPatient: users.filter(u => u.patients.length > 0).length,
-      admins: users.filter(u => u.role === 'admin').length,
+      withClinic: filteredUsers.filter(u => u.clinics).length,
+      withProvider: filteredUsers.filter(u => u.providers.length > 0).length,
+      withPatient: filteredUsers.filter(u => u.patients.length > 0).length,
+      admins: filteredUsers.filter(u => u.role === 'admin').length,
     };
     console.log(`📊 [ADMIN] Distribución:`, typeCounts);
     
     // Debug: Mostrar usuarios con clínica
-    const usersWithClinic = users.filter(u => u.clinics);
+    const usersWithClinic = filteredUsers.filter(u => u.clinics);
     if (usersWithClinic.length > 0) {
       console.log(`🏥 [ADMIN] Usuarios con clínica:`, usersWithClinic.map(u => ({
         email: u.email,
@@ -114,7 +132,7 @@ export async function getUsers(event: APIGatewayProxyEventV2): Promise<APIGatewa
     }
 
     // Mapear a formato del frontend
-    const mappedUsers = users.map((user) => {
+    const mappedUsers = filteredUsers.map((user) => {
       let displayName = user.email;
       let additionalInfo = '';
       let frontendRole: string = user.role; // Usar string en lugar de enum
@@ -193,11 +211,13 @@ export async function getUsers(event: APIGatewayProxyEventV2): Promise<APIGatewa
     });
 
     // Obtener total de usuarios para paginación
+    // NOTA: Este count incluye TODOS los usuarios, pero en la práctica
+    // solo mostramos los que tienen providers aprobados, clínicas, pacientes o son admin
     const totalUsers = await prisma.users.count({ where });
 
     // Debug final
     const clinicsInResponse = mappedUsers.filter(u => u.clinic).length;
-    console.log(`✅ [ADMIN] ${mappedUsers.length} usuarios mapeados (total: ${totalUsers})`);
+    console.log(`✅ [ADMIN] ${mappedUsers.length} usuarios mapeados (total en BD: ${totalUsers}, filtrados: ${filteredUsers.length})`);
     console.log(`🏥 [ADMIN] ${clinicsInResponse} clínicas en la respuesta`);
     
     if (clinicsInResponse > 0) {
@@ -209,7 +229,7 @@ export async function getUsers(event: APIGatewayProxyEventV2): Promise<APIGatewa
 
     return successResponse({
       users: mappedUsers,
-      total: totalUsers,
+      total: filteredUsers.length, // ✅ Usar el total filtrado, no el total de BD
       limit,
       offset,
     });
