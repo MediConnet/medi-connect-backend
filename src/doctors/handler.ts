@@ -25,6 +25,9 @@ import {
   requestDateBlock,
   updateClinicAppointmentStatus,
   updateClinicProfile,
+  getBlockedSlots,
+  createBlockedSlot,
+  deleteBlockedSlot,
 } from "./clinic.controller";
 import { getDashboard } from "./dashboard.controller";
 import { createDiagnosis, getDiagnosis } from "./diagnoses.controller";
@@ -167,6 +170,19 @@ export async function handler(
       path.startsWith("/api/doctors/clinic/notifications?")
     ) {
       if (method === "GET") return await getClinicNotifications(event);
+    }
+
+    // --- Blocked Slots (Independent Doctors) ---
+    if (
+      path === "/api/doctors/blocked-slots" ||
+      path.startsWith("/api/doctors/blocked-slots?")
+    ) {
+      if (method === "GET") return await getBlockedSlots(event);
+      if (method === "POST") return await createBlockedSlot(event);
+    }
+
+    if (path.startsWith("/api/doctors/blocked-slots/")) {
+      if (method === "DELETE") return await deleteBlockedSlot(event);
     }
 
     return errorResponse("Not found", 404);

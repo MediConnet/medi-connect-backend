@@ -24,10 +24,12 @@ model appointments {
   reception_status  String?             @db.VarChar(50)
   created_at        DateTime            @default(now()) @db.Timestamp(6)
   updated_at        DateTime            @updatedAt @db.Timestamp(6)
+  specialty_id      String?             @db.Uuid
   provider_branches provider_branches?  @relation(fields: [branch_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   clinics           clinics?            @relation(fields: [clinic_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   patients          patients?           @relation(fields: [patient_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   providers         providers?          @relation(fields: [provider_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  specialties       specialties?        @relation(fields: [specialty_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   medical_history   medical_history[]
   payments          payments[]
   reviews           reviews[]
@@ -36,6 +38,7 @@ model appointments {
   @@index([patient_id])
   @@index([scheduled_for])
   @@index([status])
+  @@index([specialty_id])
 }
 
 model cities {
@@ -376,6 +379,7 @@ model specialties {
   color_hex            String?                @db.VarChar(7)
   created_at           DateTime?              @default(now()) @db.Timestamp(6)
   updated_at           DateTime?              @default(now()) @db.Timestamp(6)
+  appointments         appointments[]
   provider_specialties provider_specialties[]
 }
 

@@ -697,3 +697,227 @@ export async function getClinicNotifications(event: APIGatewayProxyEventV2): Pro
     return errorResponse(error.message || 'Error al obtener notificaciones', 500);
   }
 }
+
+/**
+ * GET /api/doctors/blocked-slots
+ * Obtener horarios bloqueados del médico independiente
+ */
+export async function getBlockedSlots(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  try {
+    const authResult = await requireAuth(event);
+    if ('statusCode' in authResult) {
+      return authResult;
+    }
+    const authContext = authResult as AuthContext;
+
+    const prisma = getPrismaClient();
+
+    // Verificar que sea un médico independiente (provider)
+    const provider = await prisma.providers.findFirst({
+      where: {
+        user_id: authContext.user.id,
+        service_categories: {
+          slug: 'doctor',
+        },
+      },
+      include: {
+        provider_branches: {
+          where: { is_active: true },
+          select: { id: true },
+        },
+      },
+    });
+
+    if (!provider || provider.provider_branches.length === 0) {
+      return errorResponse('No se encontró perfil de médico independiente', 404);
+    }
+
+    const branchIds = provider.provider_branches.map((b) => b.id);
+
+    // Obtener todos los blocked_slots del médico
+    const blockedSlots = await prisma.blocked_slots.findMany({
+      where: {
+        branch_id: { in: branchIds },
+      },
+      orderBy: [
+        { date: 'asc' },
+        { start_time: 'asc' },
+      ],
+    });
+
+    const formattedSlots = blockedSlots.map((slot) => ({
+      id: slot.id,
+      branchId: slot.branch_id,
+      date: slot.date.toISOString().split('T')[0],
+      startTime: slot.start_time.toISOString().split('T')[1].substring(0, 5),
+      endTime: slot.end_time.toISOString().split('T')[1].substring(0, 5),
+      reason: slot.reason,
+      createdAt: slot.created_at,
+    }));
+
+    return successResponse(formattedSlots);
+  } catch (error: any) {
+    console.error('Error getting blocked slots:', error);
+    return errorResponse(error.message || 'Error al obtener horarios bloqueados', 500);
+  }
+}
+
+/**
+ * POST /api/doctors/blocked-slots
+ * Crear un nuevo horario bloqueado para médico independiente
+ */
+export async function createBlockedSlot(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  try {
+    const authResult = await requireAuth(event);
+    if ('statusCode' in authResult) {
+      return authResult;
+    }
+    const authContext = authResult as AuthContext;
+
+    const body = JSON.parse(event.body || '{}');
+    const { date, startTime, endTime, reason } = body;
+
+    if (!date || !startTime || !endTime) {
+      return errorResponse('Los campos date, startTime y endTime son requeridos', 400);
+    }
+
+    // Validar formato de fecha
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(date)) {
+      return errorResponse('La fecha debe estar en formato YYYY-MM-DD', 400);
+    }
+
+    // Validar formato de tiempo
+    const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
+    if (!timeRegex.test(startTime) || !timeRegex.test(endTime)) {
+      return errorResponse('Los tiempos deben estar en formato HH:mm', 400);
+    }
+
+    // Validar que startTime < endTime
+    const [startHour, startMin] = startTime.split(':').map(Number);
+    const [endHour, endMin] = endTime.split(':').map(Number);
+    const startMinutes = startHour * 60 + startMin;
+    const endMinutes = endHour * 60 + endMin;
+
+    if (startMinutes >= endMinutes) {
+      return errorResponse('La hora de inicio debe ser anterior a la hora de fin', 400);
+    }
+
+    const prisma = getPrismaClient();
+
+    // Verificar que sea un médico independiente
+    const provider = await prisma.providers.findFirst({
+      where: {
+        user_id: authContext.user.id,
+        service_categories: {
+          slug: 'doctor',
+        },
+      },
+      include: {
+        provider_branches: {
+          where: { is_active: true },
+          select: { id: true },
+        },
+      },
+    });
+
+    if (!provider || provider.provider_branches.length === 0) {
+      return errorResponse('No se encontró perfil de médico independiente', 404);
+    }
+
+    const branchId = provider.provider_branches[0].id;
+
+    // Crear el blocked_slot
+    const blockedSlot = await prisma.blocked_slots.create({
+      data: {
+        id: randomUUID(),
+        branch_id: branchId,
+        date: new Date(date),
+        start_time: new Date(`1970-01-01T${startTime}:00Z`),
+        end_time: new Date(`1970-01-01T${endTime}:00Z`),
+        reason: reason || 'Sin especificar',
+        created_at: new Date(),
+      },
+    });
+
+    return successResponse({
+      id: blockedSlot.id,
+      branchId: blockedSlot.branch_id,
+      date: blockedSlot.date.toISOString().split('T')[0],
+      startTime: blockedSlot.start_time.toISOString().split('T')[1].substring(0, 5),
+      endTime: blockedSlot.end_time.toISOString().split('T')[1].substring(0, 5),
+      reason: blockedSlot.reason,
+      createdAt: blockedSlot.created_at,
+    });
+  } catch (error: any) {
+    console.error('Error creating blocked slot:', error);
+    return errorResponse(error.message || 'Error al crear horario bloqueado', 500);
+  }
+}
+
+/**
+ * DELETE /api/doctors/blocked-slots/:id
+ * Eliminar un horario bloqueado
+ */
+export async function deleteBlockedSlot(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  try {
+    const authResult = await requireAuth(event);
+    if ('statusCode' in authResult) {
+      return authResult;
+    }
+    const authContext = authResult as AuthContext;
+
+    const path = event.requestContext.http.path;
+    const slotId = path.split('/').pop();
+
+    if (!slotId) {
+      return errorResponse('ID de horario bloqueado no proporcionado', 400);
+    }
+
+    const prisma = getPrismaClient();
+
+    // Verificar que sea un médico independiente
+    const provider = await prisma.providers.findFirst({
+      where: {
+        user_id: authContext.user.id,
+        service_categories: {
+          slug: 'doctor',
+        },
+      },
+      include: {
+        provider_branches: {
+          where: { is_active: true },
+          select: { id: true },
+        },
+      },
+    });
+
+    if (!provider || provider.provider_branches.length === 0) {
+      return errorResponse('No se encontró perfil de médico independiente', 404);
+    }
+
+    const branchIds = provider.provider_branches.map((b) => b.id);
+
+    // Verificar que el blocked_slot pertenece al médico
+    const blockedSlot = await prisma.blocked_slots.findFirst({
+      where: {
+        id: slotId,
+        branch_id: { in: branchIds },
+      },
+    });
+
+    if (!blockedSlot) {
+      return errorResponse('Horario bloqueado no encontrado o no autorizado', 404);
+    }
+
+    // Eliminar el blocked_slot
+    await prisma.blocked_slots.delete({
+      where: { id: slotId },
+    });
+
+    return successResponse({ message: 'Horario bloqueado eliminado exitosamente' });
+  } catch (error: any) {
+    console.error('Error deleting blocked slot:', error);
+    return errorResponse(error.message || 'Error al eliminar horario bloqueado', 500);
+  }
+}

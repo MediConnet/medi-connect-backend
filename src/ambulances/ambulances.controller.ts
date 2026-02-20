@@ -131,6 +131,10 @@ export async function getAmbulanceProfile(
       longitude: mainBranch?.longitude ? Number(mainBranch.longitude) : null,
       // Campos adicionales que el frontend podría necesitar
       status: provider.verification_status || "APPROVED",
+      // Nuevos campos de ambulancia
+      is24h: mainBranch?.is_24h ?? false,
+      ambulanceTypes: mainBranch?.ambulance_types || [],
+      coverageArea: mainBranch?.coverage_area || null,
     };
 
     console.log(`📦 [AMBULANCES] Estructura de respuesta:`, JSON.stringify(profileData, null, 2));
@@ -167,7 +171,7 @@ export async function updateAmbulanceProfile(
     }
 
     const body = JSON.parse(event.body || "{}");
-    const { name, description, phone, whatsapp, address } = body;
+    const { name, description, phone, whatsapp, address, is24h, ambulanceTypes, coverageArea } = body;
 
     const prisma = getPrismaClient();
 
@@ -203,6 +207,9 @@ export async function updateAmbulanceProfile(
         data: {
           phone_contact: phone,
           address_text: address,
+          is_24h: is24h !== undefined ? is24h : mainBranch.is_24h,
+          ambulance_types: ambulanceTypes !== undefined ? ambulanceTypes : mainBranch.ambulance_types,
+          coverage_area: coverageArea !== undefined ? coverageArea : mainBranch.coverage_area,
         },
       });
     }
@@ -226,6 +233,9 @@ export async function updateAmbulanceProfile(
         ? parseFloat(updatedBranch.rating_cache.toString())
         : 0,
       totalTrips,
+      is24h: updatedBranch?.is_24h ?? false,
+      ambulanceTypes: updatedBranch?.ambulance_types || [],
+      coverageArea: updatedBranch?.coverage_area || null,
     });
   } catch (error: any) {
     console.error("Error updating ambulance profile:", error);
