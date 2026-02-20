@@ -31,6 +31,11 @@ import {
 } from "./clinic.controller";
 import { getDashboard } from "./dashboard.controller";
 import { createDiagnosis, getDiagnosis } from "./diagnoses.controller";
+import { 
+  addSpecialty, 
+  updateSpecialtyFee, 
+  removeSpecialty 
+} from "./manage-specialties.controller";
 import { getPatients } from "./patients.controller";
 import { getDoctorPaymentById, getDoctorPayments } from "./payments.controller";
 import { getProfile, updateProfile } from "./profile.controller";
@@ -119,6 +124,19 @@ export async function handler(
     // --- Specialties ---
     if (path === "/api/specialties") {
       if (method === "GET") return await getSpecialties(event);
+    }
+
+    // --- Manage Specialties (Individual) ---
+    if (path === "/api/doctors/specialties") {
+      if (method === "POST") return await addSpecialty(event);
+    }
+
+    if (path.startsWith("/api/doctors/specialties/")) {
+      const specialtyId = path.split('/').pop();
+      if (specialtyId && specialtyId !== 'specialties') {
+        if (method === "PUT") return await updateSpecialtyFee(event);
+        if (method === "DELETE") return await removeSpecialty(event);
+      }
     }
 
     // --- Clinic Associated Doctor Routes ---

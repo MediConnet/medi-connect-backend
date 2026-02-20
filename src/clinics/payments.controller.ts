@@ -271,10 +271,26 @@ export async function distributePayment(event: APIGatewayProxyEventV2): Promise<
     // Crear distribuciones
     const distributions = await Promise.all(
       distribution.map(async (d: any) => {
-        // Obtener nombre del médico
+        // Obtener nombre del médico desde provider
         const doctor = await prisma.clinic_doctors.findUnique({
           where: { id: d.doctorId },
+          include: {
+            users: {
+              select: {
+                id: true
+              }
+            }
+          }
         });
+
+        let doctorName = 'Doctor';
+        if (doctor?.user_id) {
+          const provider = await prisma.providers.findFirst({
+            where: { user_id: doctor.user_id },
+            select: { commercial_name: true }
+          });
+          doctorName = provider?.commercial_name || 'Doctor';
+        }
 
         const distRecord = await prisma.clinic_payment_distributions.create({
           data: {
@@ -289,7 +305,7 @@ export async function distributePayment(event: APIGatewayProxyEventV2): Promise<
 
         return {
           doctorId: d.doctorId,
-          doctorName: doctor?.name || 'Doctor',
+          doctorName: doctorName,
           amount: Number(distRecord.amount),
           percentage: Number(distRecord.percentage || 0),
           status: distRecord.status,
@@ -360,6 +376,11 @@ export async function getDoctorPayments(event: APIGatewayProxyEventV2): Promise<
         clinic_doctors: {
           include: {
             doctor_bank_accounts: true,
+            users: {
+              select: {
+                id: true
+              }
+            }
           },
         },
         payouts: true,
@@ -370,25 +391,48 @@ export async function getDoctorPayments(event: APIGatewayProxyEventV2): Promise<
       take: 500,
     });
 
+    // Obtener nombres de doctores desde providers
+    const doctorUserIds = distributions
+      .map(d => d.clinic_doctors?.user_id)
+      .filter((id): id is string => id !== null);
+    
+    const providers = doctorUserIds.length > 0
+      ? await prisma.providers.findMany({
+          where: { user_id: { in: doctorUserIds } },
+          select: {
+            user_id: true,
+            commercial_name: true
+          }
+        })
+      : [];
+    
+    const providerNameMap = new Map(providers.map(p => [p.user_id, p.commercial_name]));
+
     // Mapear a formato del frontend
-    const mappedPayments = distributions.map((dist) => ({
-      id: dist.id,
-      clinicId: clinic.id,
-      clinicName: clinic.name,
-      doctorId: dist.doctor_id,
-      doctorName: dist.clinic_doctors?.name || 'Doctor',
-      amount: Number(dist.amount),
-      status: dist.status,
-      paymentDate: dist.paid_at?.toISOString() || null,
-      createdAt: dist.created_at?.toISOString(),
-      clinicPaymentId: dist.payout_id,
-      doctorBankAccount: dist.clinic_doctors?.doctor_bank_accounts ? {
-        bankName: dist.clinic_doctors.doctor_bank_accounts.bank_name,
-        accountNumber: dist.clinic_doctors.doctor_bank_accounts.account_number,
-        accountType: dist.clinic_doctors.doctor_bank_accounts.account_type,
-        accountHolder: dist.clinic_doctors.doctor_bank_accounts.account_holder,
-      } : undefined,
-    }));
+    const mappedPayments = distributions.map((dist) => {
+      const doctorName = dist.clinic_doctors?.user_id 
+        ? providerNameMap.get(dist.clinic_doctors.user_id) || 'Doctor'
+        : 'Doctor';
+      
+      return {
+        id: dist.id,
+        clinicId: clinic.id,
+        clinicName: clinic.name,
+        doctorId: dist.doctor_id,
+        doctorName: doctorName,
+        amount: Number(dist.amount),
+        status: dist.status,
+        paymentDate: dist.paid_at?.toISOString() || null,
+        createdAt: dist.created_at?.toISOString(),
+        clinicPaymentId: dist.payout_id,
+        doctorBankAccount: dist.clinic_doctors?.doctor_bank_accounts ? {
+          bankName: dist.clinic_doctors.doctor_bank_accounts.bank_name,
+          accountNumber: dist.clinic_doctors.doctor_bank_accounts.account_number,
+          accountType: dist.clinic_doctors.doctor_bank_accounts.account_type,
+          accountHolder: dist.clinic_doctors.doctor_bank_accounts.account_holder,
+        } : undefined,
+      };
+    });
 
     console.log(`✅ [CLINICS] ${mappedPayments.length} pagos a médicos obtenidos`);
     return successResponse(mappedPayments);
@@ -498,24 +542,55 @@ export async function getPaymentDistribution(event: APIGatewayProxyEventV2): Pro
     const distributions = await prisma.clinic_payment_distributions.findMany({
       where: { payout_id: paymentId },
       include: {
-        clinic_doctors: true,
+        clinic_doctors: {
+          include: {
+            users: {
+              select: {
+                id: true
+              }
+            }
+          }
+        },
       },
     });
 
     const totalDistributed = distributions.reduce((sum: number, d) => sum + Number(d.amount), 0);
     const netAmount = Number(payout.total_amount || 0);
 
+    // Obtener nombres de doctores desde providers
+    const doctorUserIds = distributions
+      .map(d => d.clinic_doctors?.user_id)
+      .filter((id): id is string => id !== null);
+    
+    const providers = doctorUserIds.length > 0
+      ? await prisma.providers.findMany({
+          where: { user_id: { in: doctorUserIds } },
+          select: {
+            user_id: true,
+            commercial_name: true
+          }
+        })
+      : [];
+    
+    const providerNameMap = new Map(providers.map(p => [p.user_id, p.commercial_name]));
+
     const result = {
       clinicPaymentId: paymentId,
       totalReceived: netAmount,
-      distributions: distributions.map((d) => ({
-        doctorId: d.doctor_id,
-        doctorName: d.clinic_doctors?.name || 'Doctor',
-        amount: Number(d.amount),
-        percentage: Number(d.percentage || 0),
-        status: d.status,
-        paymentId: d.id,
-      })),
+      distributions: distributions.map((d) => {
+        const doctorName = d.clinic_doctors?.user_id 
+          ? providerNameMap.get(d.clinic_doctors.user_id) || 'Doctor'
+          : 'Doctor';
+        
+        return {
+          doctorId: d.doctor_id,
+          doctorName: doctorName,
+          amount: Number(d.amount),
+          percentage: Number(d.percentage || 0),
+          status: d.status,
+          paymentId: d.id,
+        };
+      }),
       totalDistributed,
       remaining: netAmount - totalDistributed,
       createdAt: distributions[0]?.created_at?.toISOString() || new Date().toISOString(),

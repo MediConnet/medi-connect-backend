@@ -55,7 +55,9 @@ async function cleanInvitations() {
       console.log('\n🔄 Limpiando registros de médicos invitados...');
       const deletedDoctors = await prisma.clinic_doctors.deleteMany({
         where: {
-          email: email,
+          users: {
+            email: email
+          },
           is_invited: true,
         },
       });

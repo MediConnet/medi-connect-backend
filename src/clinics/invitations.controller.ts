@@ -78,7 +78,9 @@ export async function generateInvitationLink(event: APIGatewayProxyEventV2): Pro
     const existingDoctor = await prisma.clinic_doctors.findFirst({
       where: {
         clinic_id: clinic.id,
-        email: body.email,
+        users: {
+          email: body.email
+        },
         is_invited: false, // Ya aceptó la invitación
       },
     });
@@ -204,7 +206,9 @@ export async function sendInvitation(event: APIGatewayProxyEventV2): Promise<API
     const existingDoctor = await prisma.clinic_doctors.findFirst({
       where: {
         clinic_id: clinicId,
-        email: email,
+        users: {
+          email: email
+        },
         is_invited: false, // Ya aceptó la invitación
       },
     });
@@ -544,11 +548,6 @@ export async function acceptInvitation(event: APIGatewayProxyEventV2): Promise<A
           id: randomUUID(),
           clinic_id: invitation.clinic_id,
           user_id: existingUser.id,
-          email: invitation.email,
-          name: body.name || provider.commercial_name || existingUser.email,
-          specialty: body.specialty || null,
-          phone: body.phone || null,
-          whatsapp: body.whatsapp || null,
           is_invited: false, // Ya aceptó
           is_active: true,
         },
@@ -629,11 +628,6 @@ export async function acceptInvitation(event: APIGatewayProxyEventV2): Promise<A
           id: randomUUID(),
           clinic_id: invitation.clinic_id,
           user_id: user.id,
-          email: invitation.email,
-          name: body.name,
-          specialty: body.specialty,
-          phone: body.phone || null,
-          whatsapp: body.whatsapp || null,
           is_invited: false, // Ya aceptó, no es invitado
           is_active: true, // Activo desde que acepta
           invitation_token: null,
@@ -669,8 +663,8 @@ export async function acceptInvitation(event: APIGatewayProxyEventV2): Promise<A
           id: result.doctor.id,
           clinicId: result.doctor.clinic_id,
           userId: result.doctor.user_id,
-          name: result.doctor.name,
-          specialty: result.doctor.specialty,
+          name: body.name,
+          specialty: body.specialty,
           isActive: result.doctor.is_active,
           isInvited: result.doctor.is_invited,
         },

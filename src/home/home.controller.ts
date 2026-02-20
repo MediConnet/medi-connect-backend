@@ -130,9 +130,13 @@ export async function getFeaturedServices(event: APIGatewayProxyEventV2): Promis
           },
           take: 1,
         },
-        specialties: {
-          select: {
-            name: true,
+        provider_specialties: {
+          include: {
+            specialties: {
+              select: {
+                name: true,
+              },
+            },
           },
           take: 1,
         },
@@ -147,7 +151,7 @@ export async function getFeaturedServices(event: APIGatewayProxyEventV2): Promis
       .filter((p) => p.provider_branches.length > 0)
       .map((provider) => {
         const branch = provider.provider_branches[0];
-        const specialty = provider.specialties[0];
+        const specialty = provider.provider_specialties[0]?.specialties;
         const city = branch.cities;
 
         return {

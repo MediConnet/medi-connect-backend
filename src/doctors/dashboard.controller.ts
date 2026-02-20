@@ -111,8 +111,6 @@ export async function getDashboard(event: APIGatewayProxyEventV2): Promise<APIGa
                   id: randomUUID(),
                   clinic_id: pendingInvitation.clinic_id,
                   user_id: userId,
-                  email: user.email,
-                  name: provider.commercial_name || user.email,
                   is_invited: false,
                   is_active: true,
                 },

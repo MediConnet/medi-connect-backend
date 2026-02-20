@@ -58,15 +58,27 @@ export async function sendAppointmentReminders(): Promise<void> {
     
     for (const appointment of appointments) {
       try {
-        // Obtener el doctor desde clinic_doctors
-        let doctor = null;
+        // Obtener el doctor desde clinic_doctors y su nombre desde provider
+        let doctorName: string | undefined = undefined;
         if (appointment.clinic_id && appointment.provider_id) {
-          doctor = await prisma.clinic_doctors.findFirst({
+          const doctor = await prisma.clinic_doctors.findFirst({
             where: {
               clinic_id: appointment.clinic_id,
               user_id: appointment.provider_id,
             },
+            select: {
+              id: true,
+              user_id: true
+            }
           });
+          
+          if (doctor?.user_id) {
+            const provider = await prisma.providers.findFirst({
+              where: { user_id: doctor.user_id },
+              select: { commercial_name: true }
+            });
+            doctorName = provider?.commercial_name || undefined;
+          }
         }
         
         // Verificar que el paciente tenga email
@@ -82,8 +94,8 @@ export async function sendAppointmentReminders(): Promise<void> {
           appointment.clinics?.name || 'Clínica',
           {
             appointment_id: appointment.id,
-            doctor_id: doctor?.id,
-            doctor_name: doctor?.name ?? undefined,
+            doctor_id: appointment.provider_id || undefined,
+            doctor_name: doctorName,
             patient_id: appointment.patients.id,
             patient_name: appointment.patients.full_name,
             date: formatDate(appointment.scheduled_for),

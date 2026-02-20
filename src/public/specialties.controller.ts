@@ -16,7 +16,7 @@ export async function getPublicSpecialties(
         id: true,
         name: true,
         color_hex: true,
-        _count: { select: { providers: true } },
+        _count: { select: { provider_specialties: true } },
       },
     });
 
@@ -25,7 +25,7 @@ export async function getPublicSpecialties(
       name: s.name,
       color_hex: s.color_hex,
       colorHex: s.color_hex, // compat frontend
-      doctorsCount: s._count.providers,
+      doctorsCount: s._count.provider_specialties,
     }));
 
     return successResponse(formatted, 200, event);

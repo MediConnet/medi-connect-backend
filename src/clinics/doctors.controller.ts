@@ -6,7 +6,53 @@ import { logger } from '../shared/logger';
 import { getPrismaClient } from '../shared/prisma';
 import { errorResponse, internalErrorResponse, notFoundResponse, successResponse } from '../shared/response';
 import { parseBody, inviteDoctorSchema, updateDoctorStatusSchema, updateDoctorOfficeSchema, extractIdFromPath } from '../shared/validators';
-import { createHash, randomBytes } from 'crypto';
+import { randomBytes } from 'crypto';
+
+// Helper para obtener datos del doctor desde las relaciones
+async function getDoctorData(clinicDoctor: any, prisma: any) {
+  if (!clinicDoctor.user_id) {
+    // Doctor no ha aceptado invitación
+    return {
+      email: clinicDoctor.users?.email || null,
+      name: null,
+      specialty: null,
+      phone: null,
+      whatsapp: null,
+      profileImageUrl: null,
+    };
+  }
+
+  // Doctor ha aceptado, obtener datos de provider
+  const provider = await prisma.providers.findFirst({
+    where: { user_id: clinicDoctor.user_id },
+    include: {
+      provider_specialties: {
+        include: {
+          specialties: {
+            select: { name: true }
+          }
+        },
+        take: 1
+      },
+      provider_branches: {
+        where: { is_main: true },
+        select: {
+          phone_contact: true
+        },
+        take: 1
+      }
+    }
+  });
+
+  return {
+    email: clinicDoctor.users?.email || null,
+    name: provider?.commercial_name || null,
+    specialty: provider?.provider_specialties[0]?.specialties.name || null,
+    phone: provider?.provider_branches[0]?.phone_contact || null,
+    whatsapp: provider?.provider_branches[0]?.phone_contact || null,
+    profileImageUrl: clinicDoctor.users?.profile_picture_url || provider?.logo_url || null,
+  };
+}
 
 // GET /api/clinics/doctors
 export async function getDoctors(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
@@ -37,7 +83,7 @@ export async function getDoctors(event: APIGatewayProxyEventV2): Promise<APIGate
     const status = queryParams.status || 'all';
     const where: any = { 
       clinic_id: clinic.id,
-      is_invited: false, // ⭐ SOLO mostrar médicos que ya aceptaron la invitación
+      is_invited: false, // Solo mostrar médicos que ya aceptaron
     };
     
     if (status === 'active') {
@@ -46,9 +92,17 @@ export async function getDoctors(event: APIGatewayProxyEventV2): Promise<APIGate
       where.is_active = false;
     }
 
-    // Obtener médicos
+    // Obtener médicos con relaciones
     const doctors = await prisma.clinic_doctors.findMany({
       where,
+      include: {
+        users: {
+          select: {
+            email: true,
+            profile_picture_url: true
+          }
+        }
+      },
       orderBy: {
         created_at: 'desc',
       },
@@ -57,23 +111,25 @@ export async function getDoctors(event: APIGatewayProxyEventV2): Promise<APIGate
     console.log(`✅ [CLINICS] Médicos obtenidos exitosamente (${doctors.length} médicos)`);
     
     // Mapear médicos a formato de respuesta
-    // ⭐ name y specialty siempre presentes (null si no aceptó la invitación)
-    const doctorsData = doctors.map((doctor) => ({
-      id: doctor.id,
-      clinicId: doctor.clinic_id,
-      userId: doctor.user_id || null, // null si no ha aceptado
-      email: doctor.email,
-      name: doctor.name || null, // ⭐ SIEMPRE presente (null si no aceptó)
-      specialty: doctor.specialty || null, // ⭐ SIEMPRE presente (null si no aceptó)
-      isActive: doctor.is_active ?? true,
-      isInvited: doctor.is_invited ?? false, // true si aún no aceptó
-      officeNumber: doctor.office_number || null,
-      profileImageUrl: doctor.profile_image_url || null,
-      phone: doctor.phone || null,
-      whatsapp: doctor.whatsapp || null,
-      createdAt: doctor.created_at?.toISOString() || null,
-      updatedAt: doctor.updated_at?.toISOString() || null,
-      // ❌ Removidos: invitationToken, invitationExpiresAt (datos sensibles)
+    const doctorsData = await Promise.all(doctors.map(async (doctor) => {
+      const doctorData = await getDoctorData(doctor, prisma);
+      
+      return {
+        id: doctor.id,
+        clinicId: doctor.clinic_id,
+        userId: doctor.user_id || null,
+        email: doctorData.email,
+        name: doctorData.name,
+        specialty: doctorData.specialty,
+        isActive: doctor.is_active ?? true,
+        isInvited: doctor.is_invited ?? false,
+        officeNumber: doctor.office_number || null,
+        profileImageUrl: doctorData.profileImageUrl,
+        phone: doctorData.phone,
+        whatsapp: doctorData.whatsapp,
+        createdAt: doctor.created_at?.toISOString() || null,
+        updatedAt: doctor.updated_at?.toISOString() || null,
+      };
     }));
 
     return successResponse(doctorsData);
@@ -100,7 +156,6 @@ export async function inviteDoctor(event: APIGatewayProxyEventV2): Promise<APIGa
   try {
     const body = parseBody(event.body, inviteDoctorSchema);
     
-    // Log para debugging
     console.log(`🔍 [CLINICS] Datos recibidos para invitar médico:`, {
       email: body.email,
     });
@@ -119,28 +174,25 @@ export async function inviteDoctor(event: APIGatewayProxyEventV2): Promise<APIGa
     const existingDoctor = await prisma.clinic_doctors.findFirst({
       where: {
         clinic_id: clinic.id,
-        email: body.email,
+        users: {
+          email: body.email
+        }
       },
     });
 
     if (existingDoctor) {
-      // Si el doctor ya aceptó la invitación (is_invited: false), no permitir re-invitar
       if (!existingDoctor.is_invited) {
         console.error(`❌ [CLINICS] El email ${body.email} ya está registrado y activo en esta clínica`);
         return errorResponse('Email already registered and active in this clinic', 400);
       }
       
-      // Si el doctor está invitado pero no ha aceptado (is_invited: true), actualizar la invitación
       console.log(`⚠️ [CLINICS] El email ${body.email} ya tiene una invitación pendiente. Actualizando invitación...`);
       
-      // Generar nuevo token y fecha de expiración
       const invitationToken = randomBytes(32).toString('base64url');
       const expiresAt = new Date();
-      expiresAt.setDate(expiresAt.getDate() + 7); // Expira en 7 días
+      expiresAt.setDate(expiresAt.getDate() + 7);
       
-      // Actualizar invitación existente y registro de médico
       const result = await prisma.$transaction(async (tx) => {
-        // Actualizar invitación existente
         const existingInvitation = await tx.doctor_invitations.findFirst({
           where: {
             clinic_id: clinic.id,
@@ -159,7 +211,6 @@ export async function inviteDoctor(event: APIGatewayProxyEventV2): Promise<APIGa
             },
           });
         } else {
-          // Crear nueva invitación si no existe
           await tx.doctor_invitations.create({
             data: {
               id: randomUUID(),
@@ -172,11 +223,9 @@ export async function inviteDoctor(event: APIGatewayProxyEventV2): Promise<APIGa
           });
         }
         
-        // Actualizar registro de médico con nuevo token (NO actualizar name ni specialty)
         const updatedDoctor = await tx.clinic_doctors.update({
           where: { id: existingDoctor.id },
           data: {
-            // ❌ NO actualizar name ni specialty - se completarán al aceptar
             invitation_token: invitationToken,
             invitation_expires_at: expiresAt,
             updated_at: new Date(),
@@ -202,14 +251,11 @@ export async function inviteDoctor(event: APIGatewayProxyEventV2): Promise<APIGa
       );
     }
 
-    // Generar token único y seguro (256 bits)
     const invitationToken = randomBytes(32).toString('base64url');
     const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7); // Expira en 7 días
+    expiresAt.setDate(expiresAt.getDate() + 7);
 
-    // TRANSACCIÓN: Crear invitación y registro de médico
     const result = await prisma.$transaction(async (tx) => {
-      // Crear registro en doctor_invitations
       const invitation = await tx.doctor_invitations.create({
         data: {
           id: randomUUID(),
@@ -221,14 +267,11 @@ export async function inviteDoctor(event: APIGatewayProxyEventV2): Promise<APIGa
         },
       });
 
-      // Crear registro en clinic_doctors (name y specialty = NULL)
       const doctor = await tx.clinic_doctors.create({
         data: {
           id: randomUUID(),
           clinic_id: clinic.id,
-          email: body.email,
-          name: null, // ⭐ NULL - se completará al aceptar
-          specialty: null, // ⭐ NULL - se completará al aceptar
+          user_id: null, // Se asignará al aceptar
           is_invited: true,
           is_active: true,
           invitation_token: invitationToken,
@@ -238,10 +281,6 @@ export async function inviteDoctor(event: APIGatewayProxyEventV2): Promise<APIGa
 
       return { invitation, doctor };
     });
-
-    // TODO: Enviar email con link de invitación
-    // const invitationLink = `https://app.mediconnect.com/clinic/invite?token=${invitationToken}`;
-    // await sendInvitationEmail(body.email, clinic.name, invitationLink);
 
     console.log(`✅ [CLINICS] Médico invitado exitosamente: ${body.email}`);
     return successResponse(
@@ -284,7 +323,6 @@ export async function updateDoctorStatus(event: APIGatewayProxyEventV2): Promise
     const doctorId = extractIdFromPath(event.requestContext.http.path, '/api/clinics/doctors/', '/status');
     const body = parseBody(event.body, updateDoctorStatusSchema);
 
-    // Buscar clínica del usuario autenticado
     const clinic = await prisma.clinics.findFirst({
       where: { user_id: authContext.user.id },
     });
@@ -294,7 +332,6 @@ export async function updateDoctorStatus(event: APIGatewayProxyEventV2): Promise
       return notFoundResponse('Clinic not found');
     }
 
-    // Verificar que el médico pertenece a la clínica
     const doctor = await prisma.clinic_doctors.findFirst({
       where: {
         id: doctorId,
@@ -307,7 +344,6 @@ export async function updateDoctorStatus(event: APIGatewayProxyEventV2): Promise
       return notFoundResponse('Doctor not found');
     }
 
-    // Actualizar estado
     const updatedDoctor = await prisma.clinic_doctors.update({
       where: { id: doctorId },
       data: {
@@ -349,7 +385,6 @@ export async function updateDoctorOffice(event: APIGatewayProxyEventV2): Promise
     const doctorId = extractIdFromPath(event.requestContext.http.path, '/api/clinics/doctors/', '/office');
     const body = parseBody(event.body, updateDoctorOfficeSchema);
 
-    // Buscar clínica del usuario autenticado
     const clinic = await prisma.clinics.findFirst({
       where: { user_id: authContext.user.id },
     });
@@ -359,7 +394,6 @@ export async function updateDoctorOffice(event: APIGatewayProxyEventV2): Promise
       return notFoundResponse('Clinic not found');
     }
 
-    // Verificar que el médico pertenece a la clínica
     const doctor = await prisma.clinic_doctors.findFirst({
       where: {
         id: doctorId,
@@ -372,7 +406,6 @@ export async function updateDoctorOffice(event: APIGatewayProxyEventV2): Promise
       return notFoundResponse('Doctor not found');
     }
 
-    // Actualizar consultorio
     const updatedDoctor = await prisma.clinic_doctors.update({
       where: { id: doctorId },
       data: {
@@ -413,7 +446,6 @@ export async function deleteDoctor(event: APIGatewayProxyEventV2): Promise<APIGa
   try {
     const doctorId = extractIdFromPath(event.requestContext.http.path, '/api/clinics/doctors/');
 
-    // Buscar clínica del usuario autenticado
     const clinic = await prisma.clinics.findFirst({
       where: { user_id: authContext.user.id },
     });
@@ -423,12 +455,16 @@ export async function deleteDoctor(event: APIGatewayProxyEventV2): Promise<APIGa
       return notFoundResponse('Clinic not found');
     }
 
-    // Verificar que el médico pertenece a la clínica
     const doctor = await prisma.clinic_doctors.findFirst({
       where: {
         id: doctorId,
         clinic_id: clinic.id,
       },
+      include: {
+        users: {
+          select: { email: true }
+        }
+      }
     });
 
     if (!doctor) {
@@ -436,17 +472,13 @@ export async function deleteDoctor(event: APIGatewayProxyEventV2): Promise<APIGa
       return notFoundResponse('Doctor not found or does not belong to this clinic');
     }
 
-    // Verificar que no se está eliminando a sí mismo (si el médico es el administrador)
     if (doctor.user_id === authContext.user.id) {
       console.error(`❌ [CLINICS] No se puede eliminar a sí mismo`);
       return errorResponse('Cannot delete yourself', 403);
     }
 
-    // TRANSACCIÓN: Eliminar médico y actualizar invitaciones
     await prisma.$transaction(async (tx) => {
-      // Si el médico tiene user_id (ya aceptó la invitación), hacer soft delete
       if (doctor.user_id) {
-        // Opción A: Soft Delete (recomendado)
         await tx.clinic_doctors.update({
           where: { id: doctorId },
           data: {
@@ -457,12 +489,10 @@ export async function deleteDoctor(event: APIGatewayProxyEventV2): Promise<APIGa
         
         console.log(`✅ [CLINICS] Médico desactivado (soft delete): ${doctorId}`);
       } else {
-        // Si solo está invitado (is_invited = true, user_id = NULL), hacer hard delete
-        // Actualizar invitaciones relacionadas
         await tx.doctor_invitations.updateMany({
           where: {
             clinic_id: clinic.id,
-            email: doctor.email,
+            email: doctor.users?.email || '',
             status: 'pending',
           },
           data: {
@@ -470,7 +500,6 @@ export async function deleteDoctor(event: APIGatewayProxyEventV2): Promise<APIGa
           },
         });
 
-        // Eliminar registro de clinic_doctors
         await tx.clinic_doctors.delete({
           where: { id: doctorId },
         });
@@ -510,7 +539,6 @@ export async function getDoctorProfile(event: APIGatewayProxyEventV2): Promise<A
   try {
     const doctorId = extractIdFromPath(event.requestContext.http.path, '/api/clinics/doctors/', '/profile');
 
-    // Buscar clínica del usuario autenticado
     const clinic = await prisma.clinics.findFirst({
       where: { user_id: authContext.user.id },
     });
@@ -520,12 +548,19 @@ export async function getDoctorProfile(event: APIGatewayProxyEventV2): Promise<A
       return notFoundResponse('Clinic not found');
     }
 
-    // Buscar el médico y verificar que pertenece a la clínica
     const doctor = await prisma.clinic_doctors.findFirst({
       where: {
         id: doctorId,
         clinic_id: clinic.id,
       },
+      include: {
+        users: {
+          select: {
+            email: true,
+            profile_picture_url: true
+          }
+        }
+      }
     });
 
     if (!doctor) {
@@ -533,27 +568,22 @@ export async function getDoctorProfile(event: APIGatewayProxyEventV2): Promise<A
       return notFoundResponse('Doctor not found or does not belong to this clinic');
     }
 
-    // Construir respuesta con perfil completo
+    const doctorData = await getDoctorData(doctor, prisma);
+
     const response = {
       id: doctor.id,
       clinicId: doctor.clinic_id,
       userId: doctor.user_id || null,
-      email: doctor.email,
-      name: doctor.name || null,
-      specialty: doctor.specialty || null,
+      email: doctorData.email,
+      name: doctorData.name,
+      specialty: doctorData.specialty,
       isActive: doctor.is_active ?? true,
       officeNumber: doctor.office_number || null,
-      profileImageUrl: doctor.profile_image_url || null,
-      phone: doctor.phone || null,
-      whatsapp: doctor.whatsapp || null,
+      profileImageUrl: doctorData.profileImageUrl,
+      phone: doctorData.phone,
+      whatsapp: doctorData.whatsapp,
       createdAt: doctor.created_at?.toISOString() || null,
       updatedAt: doctor.updated_at?.toISOString() || null,
-      professionalProfile: {
-        bio: doctor.bio || null,
-        experience: doctor.experience || 0,
-        education: doctor.education || [],
-        certifications: doctor.certifications || [],
-      },
     };
 
     console.log(`✅ [CLINICS] Perfil del médico obtenido exitosamente: ${doctorId}`);

@@ -53,7 +53,6 @@ export async function getReceptionMessages(event: APIGatewayProxyEventV2): Promi
         clinic_doctors: {
           select: {
             id: true,
-            name: true,
             user_id: true,
           },
         },
@@ -63,20 +62,43 @@ export async function getReceptionMessages(event: APIGatewayProxyEventV2): Promi
       },
     });
 
+    // Obtener nombres de doctores desde providers
+    const doctorUserIds = messages
+      .map(m => m.clinic_doctors?.user_id)
+      .filter((id): id is string => id !== null);
+    
+    const providers = doctorUserIds.length > 0
+      ? await prisma.providers.findMany({
+          where: { user_id: { in: doctorUserIds } },
+          select: {
+            user_id: true,
+            commercial_name: true
+          }
+        })
+      : [];
+    
+    const providerNameMap = new Map(providers.map(p => [p.user_id, p.commercial_name]));
+
     // Mapear a formato de respuesta
-    const messagesData = messages.map((msg) => ({
-      id: msg.id,
-      clinicId: msg.clinic_id || null,
-      doctorId: msg.doctor_id || null,
-      doctorName: msg.clinic_doctors?.name || 'Médico', // ⭐ REQUERIDO
-      from: msg.sender_type === 'doctor' ? 'doctor' : 'reception', // ⭐ "reception" o "doctor"
-      message: msg.message,
-      timestamp: msg.created_at?.toISOString() || new Date().toISOString(), // ⭐ Formato ISO
-      isRead: msg.is_read ?? false,
-      senderName: msg.sender_type === 'doctor' 
-        ? (msg.clinic_doctors?.name || 'Médico')
-        : (clinic.name || 'Recepción'), // ⭐ Nombre de la clínica o del médico
-    }));
+    const messagesData = messages.map((msg) => {
+      const doctorName = msg.clinic_doctors?.user_id 
+        ? providerNameMap.get(msg.clinic_doctors.user_id) || 'Médico'
+        : 'Médico';
+      
+      return {
+        id: msg.id,
+        clinicId: msg.clinic_id || null,
+        doctorId: msg.doctor_id || null,
+        doctorName: doctorName, // ⭐ REQUERIDO
+        from: msg.sender_type === 'doctor' ? 'doctor' : 'reception', // ⭐ "reception" o "doctor"
+        message: msg.message,
+        timestamp: msg.created_at?.toISOString() || new Date().toISOString(), // ⭐ Formato ISO
+        isRead: msg.is_read ?? false,
+        senderName: msg.sender_type === 'doctor' 
+          ? doctorName
+          : (clinic.name || 'Recepción'), // ⭐ Nombre de la clínica o del médico
+      };
+    });
 
     console.log(`✅ [CLINICS] Mensajes obtenidos exitosamente (${messagesData.length} mensajes)`);
     return successResponse(messagesData);
@@ -126,13 +148,23 @@ export async function createReceptionMessage(event: APIGatewayProxyEventV2): Pro
       },
       select: {
         id: true,
-        name: true,
+        user_id: true,
       },
     });
 
     if (!doctor) {
       console.error(`❌ [CLINICS] Médico no encontrado o no pertenece a esta clínica: ${body.doctorId}`);
       return errorResponse('Doctor not found or does not belong to this clinic', 400);
+    }
+
+    // Obtener nombre del doctor desde provider
+    let doctorName = 'Médico';
+    if (doctor.user_id) {
+      const provider = await prisma.providers.findFirst({
+        where: { user_id: doctor.user_id },
+        select: { commercial_name: true }
+      });
+      doctorName = provider?.commercial_name || 'Médico';
     }
 
     // Crear mensaje
@@ -145,13 +177,6 @@ export async function createReceptionMessage(event: APIGatewayProxyEventV2): Pro
         sender_type: 'reception', // ⭐ Siempre "reception" cuando se envía desde clínica
         is_read: false,
       },
-      include: {
-        clinic_doctors: {
-          select: {
-            name: true,
-          },
-        },
-      },
     });
 
     console.log(`✅ [CLINICS] Mensaje creado exitosamente: ${message.id}`);
@@ -160,7 +185,7 @@ export async function createReceptionMessage(event: APIGatewayProxyEventV2): Pro
       id: message.id,
       clinicId: message.clinic_id || null,
       doctorId: message.doctor_id || null,
-      doctorName: doctor.name || 'Médico', // ⭐ REQUERIDO
+      doctorName: doctorName, // ⭐ REQUERIDO
       from: 'reception', // ⭐ Siempre "reception"
       message: message.message,
       timestamp: message.created_at?.toISOString() || new Date().toISOString(),

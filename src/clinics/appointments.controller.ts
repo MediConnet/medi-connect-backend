@@ -7,6 +7,28 @@ import { errorResponse, internalErrorResponse, notFoundResponse, successResponse
 import { parseBody, updateAppointmentStatusClinicSchema, updateReceptionStatusSchema, extractIdFromPath } from '../shared/validators';
 import { notifyAppointmentCancelled, notifyAppointmentConfirmed } from '../shared/notifications';
 
+// Helper para obtener datos del doctor desde las relaciones
+async function getDoctorData(providerId: string, prisma: any) {
+  const provider = await prisma.providers.findFirst({
+    where: { id: providerId },
+    include: {
+      provider_specialties: {
+        include: {
+          specialties: {
+            select: { name: true }
+          }
+        },
+        take: 1
+      }
+    }
+  });
+
+  return {
+    name: provider?.commercial_name || null,
+    specialty: provider?.provider_specialties[0]?.specialties.name || null,
+  };
+}
+
 // GET /api/clinics/appointments
 export async function getAppointments(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   console.log('✅ [CLINICS] GET /api/clinics/appointments - Obteniendo citas de la clínica');
@@ -120,50 +142,37 @@ export async function getAppointments(event: APIGatewayProxyEventV2): Promise<AP
       },
     });
 
-    // Obtener información de médicos de la clínica
-    // Necesitamos obtener los user_id de los providers para buscar en clinic_doctors
+    // Obtener información de médicos desde providers
     const providerIds = appointments
       .map(apt => apt.provider_id)
       .filter((id): id is string => id !== null);
     
-    // Obtener los user_id de los providers
-    const providers = providerIds.length > 0
+    // Obtener datos de providers con especialidades
+    const providersData = providerIds.length > 0
       ? await prisma.providers.findMany({
           where: {
             id: { in: providerIds },
           },
           select: {
             id: true,
-            user_id: true,
             commercial_name: true,
+            provider_specialties: {
+              include: {
+                specialties: {
+                  select: { name: true }
+                }
+              },
+              take: 1
+            }
           },
         })
       : [];
 
-    const providerUserIds = providers
-      .map(p => p.user_id)
-      .filter((id): id is string => id !== null);
-    
-    // Obtener información de médicos de la clínica usando user_id
-    const clinicDoctors = providerUserIds.length > 0
-      ? await prisma.clinic_doctors.findMany({
-          where: {
-            clinic_id: clinic.id,
-            user_id: { in: providerUserIds },
-          },
-          select: {
-            id: true,
-            user_id: true,
-            name: true,
-            specialty: true,
-          },
-        })
-      : [];
-
-    // Crear mapas para búsqueda rápida
-    const providerToUserIdMap = new Map(providers.map(p => [p.id, p.user_id]));
-    const doctorMap = new Map(clinicDoctors.map(doc => [doc.user_id, doc]));
-    const providerNameMap = new Map(providers.map(p => [p.id, p.commercial_name]));
+    // Crear mapa para búsqueda rápida
+    const providerDataMap = new Map(providersData.map(p => [p.id, {
+      name: p.commercial_name,
+      specialty: p.provider_specialties[0]?.specialties.name || null
+    }]));
 
     // Normalizar estados de BD a formato del frontend
     const normalizeStatus = (dbStatus: string | null): string => {
@@ -180,10 +189,8 @@ export async function getAppointments(event: APIGatewayProxyEventV2): Promise<AP
       appointments.map((apt) => {
         const scheduledFor = apt.scheduled_for ? new Date(apt.scheduled_for) : null;
         
-        // Obtener información del doctor
-        const providerUserId = apt.provider_id ? providerToUserIdMap.get(apt.provider_id) : null;
-        const doctor = providerUserId ? doctorMap.get(providerUserId) : null;
-        const providerName = apt.provider_id ? providerNameMap.get(apt.provider_id) : null;
+        // Obtener información del doctor desde el mapa
+        const doctorData = apt.provider_id ? providerDataMap.get(apt.provider_id) : null;
         
         // Formatear fecha y hora
         const date = scheduledFor ? scheduledFor.toISOString().split('T')[0] : null; // YYYY-MM-DD
@@ -195,8 +202,8 @@ export async function getAppointments(event: APIGatewayProxyEventV2): Promise<AP
           id: apt.id,
           clinicId: apt.clinic_id || null,
           doctorId: apt.provider_id || null, // ⭐ provider_id como doctorId
-          doctorName: doctor?.name || providerName || 'Médico', // ⭐ REQUERIDO para gráficos
-          doctorSpecialty: doctor?.specialty || null, // ⭐ REQUERIDO para gráficos
+          doctorName: doctorData?.name || 'Médico', // ⭐ REQUERIDO para gráficos
+          doctorSpecialty: doctorData?.specialty || null, // ⭐ REQUERIDO para gráficos
           patientId: apt.patient_id || null,
           patientName: apt.patients?.full_name || 'Paciente',
           patientPhone: apt.patients?.phone || null,
@@ -292,20 +299,28 @@ export async function updateAppointmentStatus(event: APIGatewayProxyEventV2): Pr
               users: true,
             },
           },
+          providers: {
+            select: {
+              commercial_name: true,
+              user_id: true,
+            }
+          }
         },
       });
       
       if (appointmentWithDetails && appointmentWithDetails.clinic_id && appointmentWithDetails.provider_id) {
-        // Obtener el doctor desde clinic_doctors
-        const doctor = await prisma.clinic_doctors.findFirst({
-          where: {
-            clinic_id: appointmentWithDetails.clinic_id,
-            user_id: appointmentWithDetails.provider_id,
-          },
-          include: {
-            users: true,
-          },
-        });
+        // Obtener el doctor desde clinic_doctors usando provider user_id
+        const doctor = appointmentWithDetails.providers?.user_id 
+          ? await prisma.clinic_doctors.findFirst({
+              where: {
+                clinic_id: appointmentWithDetails.clinic_id,
+                user_id: appointmentWithDetails.providers.user_id,
+              },
+              include: {
+                users: true,
+              },
+            })
+          : null;
         
         // Enviar notificaciones de cancelación (no bloquea la respuesta)
         notifyAppointmentCancelled(
@@ -334,17 +349,25 @@ export async function updateAppointmentStatus(event: APIGatewayProxyEventV2): Pr
               users: true,
             },
           },
+          providers: {
+            select: {
+              commercial_name: true,
+              user_id: true,
+            }
+          }
         },
       });
       
       if (appointmentWithDetails && appointmentWithDetails.clinic_id && appointmentWithDetails.provider_id) {
-        // Obtener el doctor desde clinic_doctors
-        const doctor = await prisma.clinic_doctors.findFirst({
-          where: {
-            clinic_id: appointmentWithDetails.clinic_id,
-            user_id: appointmentWithDetails.provider_id,
-          },
-        });
+        // Obtener el doctor desde clinic_doctors usando provider user_id
+        const doctor = appointmentWithDetails.providers?.user_id 
+          ? await prisma.clinic_doctors.findFirst({
+              where: {
+                clinic_id: appointmentWithDetails.clinic_id,
+                user_id: appointmentWithDetails.providers.user_id,
+              },
+            })
+          : null;
         
         notifyAppointmentConfirmed(
           appointmentWithDetails,
@@ -414,8 +437,16 @@ export async function getTodayReception(event: APIGatewayProxyEventV2): Promise<
       include: {
         providers: {
           select: {
+            id: true,
             commercial_name: true,
-            user_id: true,
+            provider_specialties: {
+              include: {
+                specialties: {
+                  select: { name: true }
+                }
+              },
+              take: 1
+            }
           },
         },
         patients: {
@@ -429,38 +460,16 @@ export async function getTodayReception(event: APIGatewayProxyEventV2): Promise<
       },
     });
 
-    // Obtener información de médicos
-    const providerIds = appointments
-      .map(apt => apt.provider_id)
-      .filter((id): id is string => id !== null);
-    
-    const clinicDoctors = providerIds.length > 0
-      ? await prisma.clinic_doctors.findMany({
-          where: {
-            clinic_id: clinic.id,
-            user_id: { in: providerIds },
-          },
-          select: {
-            user_id: true,
-            name: true,
-            specialty: true,
-          },
-        })
-      : [];
-
-    const doctorMap = new Map(clinicDoctors.map(doc => [doc.user_id, doc]));
-
     console.log(`✅ [CLINICS] Citas del día obtenidas exitosamente (${appointments.length} citas)`);
     return successResponse(
       appointments.map((apt) => {
         const scheduledFor = apt.scheduled_for ? new Date(apt.scheduled_for) : null;
-        const doctor = apt.provider_id ? doctorMap.get(apt.provider_id) : null;
         return {
           id: apt.id,
           time: scheduledFor ? `${String(scheduledFor.getHours()).padStart(2, '0')}:${String(scheduledFor.getMinutes()).padStart(2, '0')}` : null,
           patientName: apt.patients?.full_name || 'Paciente',
-          doctorName: doctor?.name || apt.providers?.commercial_name || 'Médico',
-          doctorSpecialty: doctor?.specialty || null,
+          doctorName: apt.providers?.commercial_name || 'Médico',
+          doctorSpecialty: apt.providers?.provider_specialties[0]?.specialties.name || null,
           receptionStatus: apt.reception_status || null,
           receptionNotes: apt.reception_notes || null,
         };

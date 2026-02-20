@@ -3,7 +3,7 @@ import { logger } from '../shared/logger';
 import { getPrismaClient } from '../shared/prisma';
 import { internalErrorResponse, successResponse } from '../shared/response';
 
-export async function getSpecialties(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+export async function getSpecialties(_event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   console.log('✅ [SPECIALTIES] GET /api/specialties - Obteniendo especialidades');
   
   try {
@@ -15,10 +15,10 @@ export async function getSpecialties(event: APIGatewayProxyEventV2): Promise<API
         id: true,
         name: true,
         color_hex: true,
-        
+        description: true,
         _count: {
           select: {
-            providers: true
+            provider_specialties: true
           }
         }
       }
@@ -29,7 +29,8 @@ export async function getSpecialties(event: APIGatewayProxyEventV2): Promise<API
       id: s.id,
       name: s.name,
       color_hex: s.color_hex,
-      doctorsCount: s._count.providers 
+      description: s.description,
+      doctorsCount: s._count.provider_specialties 
     }));
 
     console.log(`✅ [SPECIALTIES] Se encontraron ${formattedSpecialties.length} especialidades`);

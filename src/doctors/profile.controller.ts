@@ -34,7 +34,18 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
     where: { user_id: authContext.user.id },
     include: {
       users: { select: { email: true, profile_picture_url: true } },
-      specialties: true,
+      provider_specialties: {
+        include: {
+          specialties: {
+            select: {
+              id: true,
+              name: true,
+              color_hex: true,
+              description: true
+            }
+          }
+        }
+      },
       service_categories: true,
       provider_branches: {
         where: { is_main: true },
@@ -53,8 +64,17 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
   const mainBranch = profile.provider_branches[0] || null;
   const user = profile.users;
   
-  const specialtyName = profile.specialties.length > 0 
-    ? profile.specialties.map((s: any) => s.name).join(', ') 
+  // Mapear especialidades con sus tarifas
+  const specialtiesWithFees = profile.provider_specialties.map(ps => ({
+    id: ps.specialties.id,
+    name: ps.specialties.name,
+    color_hex: ps.specialties.color_hex,
+    description: ps.specialties.description,
+    fee: parseFloat(ps.fee.toString())
+  }));
+  
+  const specialtyName = specialtiesWithFees.length > 0 
+    ? specialtiesWithFees.map(s => s.name).join(', ') 
     : 'General';
 
   const formattedResponse = {
@@ -64,17 +84,12 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
     profile_picture_url: user?.profile_picture_url || profile.logo_url,
     
     specialty: specialtyName,
-    specialties_list: profile.specialties.map(s => s.name),
-    specialties: profile.specialties.map(s => ({
-      id: s.id,
-      name: s.name,
-      color_hex: s.color_hex,
-      description: s.description
-    })),
+    specialties_list: specialtiesWithFees.map(s => s.name),
+    specialties: specialtiesWithFees, // Ahora incluye fee
     
     category: profile.service_categories?.name || 'Salud',
     years_of_experience: profile.years_of_experience ?? 0,
-    consultation_fee: mainBranch?.consultation_fee ? parseFloat(mainBranch.consultation_fee.toString()) : 0.00,
+    consultation_fee: specialtiesWithFees.length > 0 ? specialtiesWithFees[0].fee : 0.00, // Usar tarifa de primera especialidad
     payment_methods: mainBranch?.payment_methods || [],
     description: profile.description || '',
     address: mainBranch?.address_text || '',
@@ -162,15 +177,6 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
 
     if (!profile) return notFoundResponse('Doctor profile not found for updates');
 
-    let specialtyUpdateOps: any = undefined;
-    if (body.specialties) {
-      const foundSpecialties = await prisma.specialties.findMany({
-        where: { name: { in: body.specialties } },
-        select: { id: true }
-      });
-      specialtyUpdateOps = { set: foundSpecialties.map(s => ({ id: s.id })) };
-    }
-
     // --- TRANSACCIÓN UNIFICADA ---
     await prisma.$transaction(async (tx) => {
       
@@ -183,8 +189,6 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
       
       // Limpieza de undefined
       Object.keys(providerUpdateData).forEach(key => providerUpdateData[key] === undefined && delete providerUpdateData[key]);
-      
-      if (specialtyUpdateOps) providerUpdateData.specialties = specialtyUpdateOps;
 
       if (Object.keys(providerUpdateData).length > 0) {
         await tx.providers.update({
@@ -193,13 +197,52 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
         });
       }
 
+      // A2. Actualizar especialidades con tarifas
+      if (body.specialties && Array.isArray(body.specialties)) {
+        // Eliminar especialidades existentes
+        await tx.provider_specialties.deleteMany({
+          where: { provider_id: profile.id }
+        });
+
+        // Agregar nuevas especialidades con tarifas
+        for (const spec of body.specialties) {
+          // Si viene como string (nombre), buscar la especialidad
+          if (typeof spec === 'string') {
+            const specialty = await tx.specialties.findFirst({
+              where: { name: spec }
+            });
+            if (specialty) {
+              await tx.provider_specialties.create({
+                data: {
+                  provider_id: profile.id,
+                  specialty_id: specialty.id,
+                  fee: body.consultation_fee || 0
+                }
+              });
+            }
+          } 
+          // Si viene como objeto con specialtyId y fee
+          else if (typeof spec === 'object' && spec !== null) {
+            const specObj = spec as any;
+            if (specObj.specialtyId && specObj.fee !== undefined) {
+              await tx.provider_specialties.create({
+                data: {
+                  provider_id: profile.id,
+                  specialty_id: specObj.specialtyId,
+                  fee: specObj.fee
+                }
+              });
+            }
+          }
+        }
+      }
+
       // B. Actualizar Sucursal Principal
       const mainBranch = profile?.provider_branches[0];
       if (mainBranch) {
         const branchData: any = {
             address_text: body.address,
             phone_contact: body.whatsapp || body.phone, 
-            consultation_fee: body.consultation_fee,
             payment_methods: body.payment_methods,
             is_active: body.is_published
         };
@@ -253,7 +296,18 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
       where: { id: profile.id },
       include: {
         users: { select: { email: true, profile_picture_url: true } },
-        specialties: true,
+        provider_specialties: {
+          include: {
+            specialties: {
+              select: {
+                id: true,
+                name: true,
+                color_hex: true,
+                description: true
+              }
+            }
+          }
+        },
         service_categories: true,
         provider_branches: {
           where: { is_main: true },
@@ -266,8 +320,17 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
     const updatedMainBranch = updatedProfile?.provider_branches[0] || null;
     const updatedUser = updatedProfile?.users;
     
-    const specialtyName = updatedProfile?.specialties.length 
-      ? updatedProfile.specialties.map((s: any) => s.name).join(', ') 
+    // Mapear especialidades con sus tarifas
+    const updatedSpecialtiesWithFees = updatedProfile?.provider_specialties.map(ps => ({
+      id: ps.specialties.id,
+      name: ps.specialties.name,
+      color_hex: ps.specialties.color_hex,
+      description: ps.specialties.description,
+      fee: parseFloat(ps.fee.toString())
+    })) || [];
+    
+    const specialtyName = updatedSpecialtiesWithFees.length 
+      ? updatedSpecialtiesWithFees.map(s => s.name).join(', ') 
       : 'General';
 
     const formattedResponse = {
@@ -277,12 +340,13 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
       profile_picture_url: updatedUser?.profile_picture_url || updatedProfile?.logo_url,
       
       specialty: specialtyName,
-      specialties_list: updatedProfile?.specialties.map(s => s.name) || [],
+      specialties_list: updatedSpecialtiesWithFees.map(s => s.name),
+      specialties: updatedSpecialtiesWithFees, // Ahora incluye fee
       
       category: updatedProfile?.service_categories?.name || 'Salud',
       years_of_experience: updatedProfile?.years_of_experience ?? 0,
-      consultation_fee: updatedMainBranch?.consultation_fee 
-          ? parseFloat(updatedMainBranch.consultation_fee.toString()) 
+      consultation_fee: updatedSpecialtiesWithFees.length > 0 
+          ? updatedSpecialtiesWithFees[0].fee 
           : 0.00,
       payment_methods: updatedMainBranch?.payment_methods || [],
       description: updatedProfile?.description || '',

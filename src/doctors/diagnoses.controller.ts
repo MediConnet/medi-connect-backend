@@ -25,7 +25,16 @@ export async function createDiagnosis(event: APIGatewayProxyEventV2): Promise<AP
 
     const provider = await prisma.providers.findFirst({
       where: { user_id: authContext.user.id },
-      include: { specialties: true }
+      include: { 
+        provider_specialties: {
+          include: {
+            specialties: {
+              select: { name: true }
+            }
+          },
+          take: 1
+        }
+      }
     });
     if (!provider) return errorResponse('Proveedor no encontrado', 404);
 
@@ -40,7 +49,9 @@ export async function createDiagnosis(event: APIGatewayProxyEventV2): Promise<AP
         where: { appointment_id: appointmentId }
     });
 
-    const specialtySnapshot = provider.specialties.length > 0 ? provider.specialties[0].name : 'General';
+    const specialtySnapshot = provider.provider_specialties.length > 0 
+      ? provider.provider_specialties[0].specialties.name 
+      : 'General';
     let resultHistory;
 
     if (existingHistory) {

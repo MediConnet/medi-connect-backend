@@ -94,9 +94,13 @@ export async function getFeaturedServices(event: APIGatewayProxyEventV2): Promis
         service_categories: {
           select: { name: true, slug: true },
         },
-        specialties: {
+        provider_specialties: {
           take: 1,
-          select: { name: true },
+          include: {
+            specialties: {
+              select: { name: true }
+            }
+          }
         },
       },
       take: 10,
@@ -107,12 +111,12 @@ export async function getFeaturedServices(event: APIGatewayProxyEventV2): Promis
       .filter(p => p.provider_branches.length > 0)
       .map(provider => {
         const branch = provider.provider_branches[0];
-        const specialty = provider.specialties[0];
+        const specialty = provider.provider_specialties[0];
         
         return {
           id: provider.id,
           name: provider.commercial_name || 'Servicio',
-          specialty: specialty?.name || provider.service_categories?.name || null,
+          specialty: specialty?.specialties.name || provider.service_categories?.name || null,
           rating: Number(branch?.rating_cache || 0),
           imageUrl: branch?.image_url || provider.logo_url || null,
           location: branch?.address_text || 'Ubicación no disponible',
