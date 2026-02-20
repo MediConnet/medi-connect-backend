@@ -71,6 +71,7 @@
     "@types/pg": "8.16.0",
     "aws-sdk": "1.18.0",
     "esbuild": "0.27.2",
+    "ngrok": "5.0.0-beta.2",
     "nodemon": "3.1.11",
     "serverless": "4.31.2",
     "serverless-esbuild": "1.57.0",
