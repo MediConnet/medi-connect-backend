@@ -153,7 +153,6 @@ export async function createProviderReview(
   const path = event.rawPath || event.requestContext.http.path;
 
   try {
-    // Extraer branchId de la URL
     const pathParts = path.split("/");
     const reviewsIndex = pathParts.indexOf("reviews");
     const branchId = reviewsIndex > 0 ? pathParts[reviewsIndex - 1] : null;
@@ -237,15 +236,15 @@ export async function createProviderReview(
       },
     });
 
-    // Actualizar rating_cache en la sucursal
-    // Calcular nuevo promedio
     const allReviews = await prisma.reviews.findMany({
       where: { branch_id: branch.id },
       select: { rating: true },
     });
 
+    let newAverage = body.rating;
+
     if (allReviews.length > 0) {
-      const newAverage =
+      newAverage =
         allReviews.reduce((sum, r) => sum + (r.rating || 0), 0) /
         allReviews.length;
       await prisma.provider_branches.update({
@@ -279,6 +278,8 @@ export async function createProviderReview(
               name: review.provider_branches.name,
             }
           : null,
+        newAverage: Number(newAverage.toFixed(2)),
+        newTotal: allReviews.length > 0 ? allReviews.length : 1,
       },
       201,
       event,

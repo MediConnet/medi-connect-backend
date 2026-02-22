@@ -1,16 +1,25 @@
-import { APIGatewayProxyEventV2, APIGatewayProxyResult } from 'aws-lambda';
-import { AuthContext, requireAuth } from '../shared/auth';
-import { logger } from '../shared/logger';
-import { getPrismaClient } from '../shared/prisma';
-import { errorResponse, internalErrorResponse, notFoundResponse, successResponse } from '../shared/response';
-import { extractIdFromPath } from '../shared/validators';
+import { APIGatewayProxyEventV2, APIGatewayProxyResult } from "aws-lambda";
+import { AuthContext, requireAuth } from "../shared/auth";
+import { logger } from "../shared/logger";
+import { getPrismaClient } from "../shared/prisma";
+import {
+  errorResponse,
+  internalErrorResponse,
+  notFoundResponse,
+  successResponse,
+} from "../shared/response";
+import { extractIdFromPath } from "../shared/validators";
 
 // --- GET MEDICAL HISTORY ---
-export async function getMedicalHistory(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('✅ [PATIENTS] GET /api/patients/medical-history - Obteniendo historial médico');
-  
+export async function getMedicalHistory(
+  event: APIGatewayProxyEventV2,
+): Promise<APIGatewayProxyResult> {
+  console.log(
+    "✅ [PATIENTS] GET /api/patients/medical-history - Obteniendo historial médico",
+  );
+
   const authResult = await requireAuth(event);
-  if ('statusCode' in authResult) {
+  if ("statusCode" in authResult) {
     return authResult;
   }
 
@@ -24,18 +33,45 @@ export async function getMedicalHistory(event: APIGatewayProxyEventV2): Promise<
     });
 
     if (!patient) {
-      console.log('⚠️ [PATIENTS] Paciente no encontrado, retornando array vacío');
+      console.log(
+        "⚠️ [PATIENTS] Paciente no encontrado, retornando array vacío",
+      );
       return successResponse([]);
     }
 
-    // Obtener parámetros de consulta
     const queryParams = event.queryStringParameters || {};
-    const limit = parseInt(queryParams.limit || '50', 10);
-    const offset = parseInt(queryParams.offset || '0', 10);
+    const limit = parseInt(queryParams.limit || "50", 10);
+    const offset = parseInt(queryParams.offset || "0", 10);
+    const search = queryParams.search?.trim();
+
+    const whereClause: any = { patient_id: patient.id };
+
+    if (search) {
+      whereClause.OR = [
+        { diagnosis: { contains: search, mode: "insensitive" } },
+        { doctor_name_snapshot: { contains: search, mode: "insensitive" } },
+        { specialty_snapshot: { contains: search, mode: "insensitive" } },
+        { treatment: { contains: search, mode: "insensitive" } },
+        { indications: { contains: search, mode: "insensitive" } },
+        { observations: { contains: search, mode: "insensitive" } },
+      ];
+
+      const isYear = /^\d{4}$/.test(search);
+      if (isYear) {
+        const searchYear = parseInt(search, 10);
+
+        whereClause.OR.push({
+          date: {
+            gte: new Date(`${searchYear}-01-01T00:00:00.000Z`),
+            lt: new Date(`${searchYear + 1}-01-01T00:00:00.000Z`),
+          },
+        });
+      }
+    }
 
     // Obtener historial médico
     const history = await prisma.medical_history.findMany({
-      where: { patient_id: patient.id },
+      where: whereClause,
       include: {
         providers: {
           select: {
@@ -51,15 +87,17 @@ export async function getMedicalHistory(event: APIGatewayProxyEventV2): Promise<
         },
       },
       orderBy: {
-        date: 'desc',
+        date: "desc",
       },
       take: limit,
       skip: offset,
     });
 
-    console.log(`✅ [PATIENTS] Se encontraron ${history.length} registros de historial`);
+    console.log(
+      `✅ [PATIENTS] Se encontraron ${history.length} registros de historial`,
+    );
     return successResponse(
-      history.map(record => ({
+      history.map((record) => ({
         id: record.id,
         date: record.date,
         diagnosis: record.diagnosis,
@@ -68,28 +106,37 @@ export async function getMedicalHistory(event: APIGatewayProxyEventV2): Promise<
         observations: record.observations,
         doctorName: record.doctor_name_snapshot,
         specialty: record.specialty_snapshot,
-        provider: record.providers ? {
-          id: record.providers.id,
-          name: record.providers.commercial_name,
-          logoUrl: record.providers.logo_url,
-          category: record.providers.service_categories?.name || null,
-        } : null,
+        provider: record.providers
+          ? {
+              id: record.providers.id,
+              name: record.providers.commercial_name,
+              logoUrl: record.providers.logo_url,
+              category: record.providers.service_categories?.name || null,
+            }
+          : null,
         createdAt: record.created_at,
-      }))
+      })),
     );
   } catch (error: any) {
-    console.error('❌ [PATIENTS] Error al obtener historial médico:', error.message);
-    logger.error('Error getting medical history', error);
-    return internalErrorResponse('Failed to get medical history');
+    console.error(
+      "❌ [PATIENTS] Error al obtener historial médico:",
+      error.message,
+    );
+    logger.error("Error getting medical history", error);
+    return internalErrorResponse("Failed to get medical history");
   }
 }
 
 // --- GET MEDICAL HISTORY BY ID ---
-export async function getMedicalHistoryById(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('✅ [PATIENTS] GET /api/patients/medical-history/:id - Obteniendo detalle de registro');
-  
+export async function getMedicalHistoryById(
+  event: APIGatewayProxyEventV2,
+): Promise<APIGatewayProxyResult> {
+  console.log(
+    "✅ [PATIENTS] GET /api/patients/medical-history/:id - Obteniendo detalle de registro",
+  );
+
   const authResult = await requireAuth(event);
-  if ('statusCode' in authResult) {
+  if ("statusCode" in authResult) {
     return authResult;
   }
 
@@ -99,8 +146,8 @@ export async function getMedicalHistoryById(event: APIGatewayProxyEventV2): Prom
   try {
     const recordId = extractIdFromPath(
       event.requestContext.http.path,
-      '/api/patients/medical-history/',
-      ''
+      "/api/patients/medical-history/",
+      "",
     );
 
     // Buscar el paciente
@@ -109,10 +156,9 @@ export async function getMedicalHistoryById(event: APIGatewayProxyEventV2): Prom
     });
 
     if (!patient) {
-      return notFoundResponse('Patient not found');
+      return notFoundResponse("Patient not found");
     }
 
-    // Obtener el registro
     const record = await prisma.medical_history.findUnique({
       where: { id: recordId },
       include: {
@@ -133,15 +179,14 @@ export async function getMedicalHistoryById(event: APIGatewayProxyEventV2): Prom
     });
 
     if (!record) {
-      return notFoundResponse('Medical history record not found');
+      return notFoundResponse("Medical history record not found");
     }
 
-    // Verificar que el registro pertenece al paciente
     if (record.patient_id !== patient.id) {
-      return errorResponse('Access denied', 403);
+      return errorResponse("Access denied", 403);
     }
 
-    console.log('✅ [PATIENTS] Registro obtenido exitosamente');
+    console.log("✅ [PATIENTS] Registro obtenido exitosamente");
     return successResponse({
       id: record.id,
       date: record.date,
@@ -151,22 +196,24 @@ export async function getMedicalHistoryById(event: APIGatewayProxyEventV2): Prom
       observations: record.observations,
       doctorName: record.doctor_name_snapshot,
       specialty: record.specialty_snapshot,
-      provider: record.providers ? {
-        id: record.providers.id,
-        name: record.providers.commercial_name,
-        logoUrl: record.providers.logo_url,
-        description: record.providers.description,
-        category: record.providers.service_categories?.name || null,
-      } : null,
+      provider: record.providers
+        ? {
+            id: record.providers.id,
+            name: record.providers.commercial_name,
+            logoUrl: record.providers.logo_url,
+            description: record.providers.description,
+            category: record.providers.service_categories?.name || null,
+          }
+        : null,
       createdAt: record.created_at,
       updatedAt: record.updated_at,
     });
   } catch (error: any) {
-    console.error('❌ [PATIENTS] Error al obtener registro:', error.message);
-    logger.error('Error getting medical history record', error);
-    if (error.message.includes('Invalid path format')) {
-      return errorResponse('Invalid record ID', 400);
+    console.error("❌ [PATIENTS] Error al obtener registro:", error.message);
+    logger.error("Error getting medical history record", error);
+    if (error.message.includes("Invalid path format")) {
+      return errorResponse("Invalid record ID", 400);
     }
-    return internalErrorResponse('Failed to get medical history record');
+    return internalErrorResponse("Failed to get medical history record");
   }
 }

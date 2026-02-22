@@ -1,16 +1,18 @@
-import { APIGatewayProxyEventV2, APIGatewayProxyResult } from 'aws-lambda';
-import { logger } from '../shared/logger';
-import { errorResponse, internalErrorResponse } from '../shared/response';
-import * as authController from './auth.controller';
+import { APIGatewayProxyEventV2, APIGatewayProxyResult } from "aws-lambda";
+import { logger } from "../shared/logger";
+import { errorResponse, internalErrorResponse } from "../shared/response";
+import * as authController from "./auth.controller";
 
-export async function handler(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+export async function handler(
+  event: APIGatewayProxyEventV2,
+): Promise<APIGatewayProxyResult> {
   const method = event.requestContext.http.method;
   const path = event.requestContext.http.path;
 
-  logger.info('Auth handler invoked', { method, path });
+  logger.info("Auth handler invoked", { method, path });
 
-  if (method === 'OPTIONS') {
-    const { optionsResponse } = await import('../shared/response');
+  if (method === "OPTIONS") {
+    const { optionsResponse } = await import("../shared/response");
     return optionsResponse(event);
   }
 
@@ -18,56 +20,60 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     // --- RUTAS DE AUTENTICACIÓN ---
 
     // 1. Registro (Unificado para Pacientes y Profesionales)
-    if (method === 'POST' && path === '/api/auth/register') {
+    if (method === "POST" && path === "/api/auth/register") {
       return await authController.register(event);
     }
 
     // 1b. Registro profesional (alias / compatibilidad con frontend)
-    if (method === 'POST' && path === '/api/auth/register-professional') {
+    if (method === "POST" && path === "/api/auth/register-professional") {
       return await authController.register(event);
     }
 
     // 2. Login
-    if (method === 'POST' && path === '/api/auth/login') {
+    if (method === "POST" && path === "/api/auth/login") {
       return await authController.login(event);
     }
 
     // 3. Refresh Token
-    if (method === 'POST' && path === '/api/auth/refresh') {
+    if (method === "POST" && path === "/api/auth/refresh") {
       return await authController.refresh(event);
     }
 
     // 4. Usuario Actual (Me)
-    if (method === 'GET' && path === '/api/auth/me') {
+    if (method === "GET" && path === "/api/auth/me") {
       return await authController.me(event);
     }
 
     // 5. Cambio de Contraseña
-    if (method === 'POST' && path === '/api/auth/change-password') {
+    if (method === "POST" && path === "/api/auth/change-password") {
       return await authController.changePassword(event);
     }
 
     // 6. Recuperación de Contraseña
-    if (method === 'POST' && path === '/api/auth/forgot-password') {
+    if (method === "POST" && path === "/api/auth/forgot-password") {
       return await authController.forgotPassword(event);
     }
 
     // 7. Reseteo de Contraseña
-    if (method === 'POST' && path === '/api/auth/reset-password') {
+    if (method === "POST" && path === "/api/auth/reset-password") {
       return await authController.resetPassword(event);
     }
 
     // 8. Logout
-    if (method === 'POST' && path === '/api/auth/logout') {
+    if (method === "POST" && path === "/api/auth/logout") {
       return await authController.logout(event);
     }
 
-    console.log(`❌ [AUTH] ${method} ${path} - Ruta no encontrada`);
-    return errorResponse('Not found', 404);
+    // 9. Desactivar Cuenta (Soft Delete)
+    if (method === "DELETE" && path === "/api/auth/deactivate") {
+      return await authController.deactivateAccount(event);
+    }
 
+    console.log(`❌ [AUTH] ${method} ${path} - Ruta no encontrada`);
+    return errorResponse("Not found", 404);
   } catch (error: any) {
     console.error(`❌ [AUTH] Critical Error:`, error.message);
-    logger.error('Error in auth handler', error);
-    return internalErrorResponse('Internal server error');
+    logger.error("Error in auth handler", error);
+    return internalErrorResponse("Internal server error");
   }
 }

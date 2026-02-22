@@ -322,6 +322,7 @@ export async function getSupplyStores(
 
       return {
         id: provider.id,
+        branchId: mainBranch?.id || "",
         name: provider.commercial_name || "Tienda de Insumos",
         description: provider.description,
         address: mainBranch?.address_text || "Ubicación no disponible",
@@ -386,6 +387,7 @@ export async function getSupplyStoreById(
 
     return successResponse({
       id: provider.id,
+      branchId: mainBranch?.id || "",
       name: provider.commercial_name || "Tienda de Insumos",
       description: provider.description,
       address: mainBranch?.address_text || "",

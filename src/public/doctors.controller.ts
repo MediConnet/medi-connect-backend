@@ -30,9 +30,10 @@ function mapDoctorData(doctor: any) {
     doctor.provider_branches.find((b: any) => b.is_main) ||
     doctor.provider_branches[0];
 
-  const clinicName = doctor.users?.clinic_doctors?.[0]?.clinics?.name || null;
+  const clinicData = doctor.users?.clinic_doctors?.[0]?.clinics;
+  const clinicName = clinicData?.name || null;
+  const clinicSchedules = clinicData?.clinic_schedules || [];
 
-  // Extraer nombres de especialidades
   const especialidadesList =
     doctor.provider_specialties
       ?.map((ps: any) => ps.specialties?.name)
@@ -57,10 +58,14 @@ function mapDoctorData(doctor: any) {
     ? Number(primarySpecialtyRecord.fee)
     : 0;
 
-  const schedules = mainBranch?.provider_schedules || [];
+  const schedules =
+    clinicSchedules.length > 0
+      ? clinicSchedules
+      : mainBranch?.provider_schedules || [];
 
   return {
     id: doctor.id,
+    branchId: mainBranch?.id || "",
     nombre: doctor.commercial_name || "",
     apellido: "",
 
@@ -160,7 +165,15 @@ export async function getAllDoctors(
               where: { is_active: true },
               take: 1,
               select: {
-                clinics: { select: { name: true } },
+                clinics: {
+                  select: {
+                    name: true,
+                    clinic_schedules: {
+                      where: { enabled: true },
+                      orderBy: { day_of_week: "asc" },
+                    },
+                  },
+                },
               },
             },
           },
@@ -295,7 +308,15 @@ export async function getDoctorById(
               where: { is_active: true },
               take: 1,
               select: {
-                clinics: { select: { name: true } },
+                clinics: {
+                  select: {
+                    name: true,
+                    clinic_schedules: {
+                      where: { enabled: true },
+                      orderBy: { day_of_week: "asc" },
+                    },
+                  },
+                },
               },
             },
           },

@@ -49,6 +49,7 @@ function mapAmbulanceData(ambulance: any) {
 
   return {
     id: ambulance.id,
+    branchId: mainBranch?.id || "",
     nombre: mainBranch?.name || ambulance.commercial_name || "",
     descripcion: ambulance.description || "",
     direccion: mainBranch?.address_text || "",
@@ -67,7 +68,9 @@ function mapAmbulanceData(ambulance: any) {
       ambulance.users?.profile_picture_url ||
       "",
 
-    calificacion: 0,
+    calificacion: mainBranch?.rating_cache
+      ? Number(mainBranch.rating_cache)
+      : 0,
 
     disponible24h: disponible24h,
 
@@ -145,7 +148,6 @@ export async function getAllAmbulances(
 
     let filteredAmbulances = allAmbulances;
 
-    // Lógica de filtrado en memoria
     if (searchQuery.trim().length > 0 || cityParam.trim().length > 0) {
       const term = normalizeText(searchQuery);
       const cityTerm = normalizeText(cityParam);
