@@ -6,10 +6,7 @@ import {
   optionsResponse,
 } from "../shared/response";
 import { getAllAmbulances, getAmbulanceById } from "./ambulances.controller";
-import {
-  createDoctorReview,
-  getDoctorReviews,
-} from "./doctors-reviews.controller";
+
 import { getAllDoctors, getDoctorById } from "./doctors.controller";
 import {
   getAllPharmacies,
@@ -17,6 +14,10 @@ import {
   getPharmacyBranches,
   getPharmacyBrands,
 } from "./pharmacies.controller";
+import {
+  createProviderReview,
+  getProviderReviews,
+} from "./provider-reviews.controller";
 import { getCities } from "./public.controller";
 import { getPublicSpecialties } from "./specialties.controller";
 
@@ -46,6 +47,26 @@ export async function handler(
       return await getPublicSpecialties(event);
     }
 
+    // --- RUTAS GENÉRICAS DE RESEÑAS (Proveedores) ---
+
+    /// GET /api/public/branches/{id}/reviews - Obtener reseñas de CUALQUIER sucursal
+    if (
+      path.startsWith("/api/public/branches/") &&
+      path.endsWith("/reviews") &&
+      method === "GET"
+    ) {
+      return await getProviderReviews(event);
+    }
+
+    // POST /api/public/branches/{id}/reviews - Crear reseña para CUALQUIER sucursal
+    if (
+      path.startsWith("/api/public/branches/") &&
+      path.endsWith("/reviews") &&
+      method === "POST"
+    ) {
+      return await createProviderReview(event);
+    }
+
     // --- RUTAS PÚBLICAS DE MÉDICOS ---
 
     // GET /api/public/doctors
@@ -53,29 +74,12 @@ export async function handler(
       return await getAllDoctors(event);
     }
 
-    // GET /api/public/doctors/{id}/reviews - Obtener reseñas de un doctor
-    if (
-      path.startsWith("/api/public/doctors/") &&
-      path.endsWith("/reviews") &&
-      method === "GET"
-    ) {
-      return await getDoctorReviews(event);
-    }
-
-    // POST /api/public/doctors/{id}/reviews - Crear reseña de un doctor
-    if (
-      path.startsWith("/api/public/doctors/") &&
-      path.endsWith("/reviews") &&
-      method === "POST"
-    ) {
-      return await createDoctorReview(event);
-    }
-
     // GET /api/public/doctors/{id} - Obtener médico por ID
     if (path.startsWith("/api/public/doctors/") && method === "GET") {
       const pathParts = path.split("/");
       const lastPart = pathParts[pathParts.length - 1];
 
+      // Verificamos que no sea la ruta de reviews ni la raíz
       if (lastPart !== "reviews" && lastPart !== "doctors") {
         return await getDoctorById(event);
       }

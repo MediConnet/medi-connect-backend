@@ -49,7 +49,6 @@ export async function createAppointment(
 
     const body = parseBody(event.body, createAppointmentSchema);
 
-    // Validar que envíen la especialidad
     if (!body.specialtyId) {
       return errorResponse("El campo specialtyId es requerido", 400);
     }
@@ -188,6 +187,7 @@ export async function createAppointment(
         isPaid: appointment.is_paid || false,
         createdAt: creationDate,
         paymentRequired: isOnlinePayment,
+        paymentMethod: appointment.payment_method,
         expiresAt: expiresAt,
         cost: appointmentCost,
         specialty: specialtyInfo
@@ -321,7 +321,11 @@ export async function getAppointments(
             service_categories: { select: { name: true, slug: true } },
           },
         },
-        provider_branches: true,
+        provider_branches: {
+          include: {
+            cities: { select: { name: true } },
+          },
+        },
         specialties: true,
       },
       orderBy: { scheduled_for: "desc" },
@@ -343,6 +347,7 @@ export async function getAppointments(
           isPaid: apt.is_paid || false,
           cost: apt.cost,
           createdAt: creationDate,
+          paymentMethod: aptWithRelations.payment_method,
           specialty: aptWithRelations.specialties
             ? {
                 id: aptWithRelations.specialties.id,
@@ -363,6 +368,9 @@ export async function getAppointments(
                 id: aptWithRelations.provider_branches.id,
                 name: aptWithRelations.provider_branches.name,
                 address: aptWithRelations.provider_branches.address_text,
+                city: aptWithRelations.provider_branches.cities?.name,
+                phone: aptWithRelations.provider_branches.phone_contact,
+                email: aptWithRelations.provider_branches.email_contact,
               }
             : null,
         };
@@ -418,7 +426,11 @@ export async function getAppointmentById(
             },
           },
         },
-        provider_branches: true,
+        provider_branches: {
+          include: {
+            cities: { select: { name: true } },
+          },
+        },
         specialties: true,
       },
     });
@@ -445,6 +457,7 @@ export async function getAppointmentById(
       reason: appointment.reason,
       isPaid: appointment.is_paid || false,
       cost: appointment.cost,
+      paymentMethod: appointment.payment_method,
       createdAt: creationDate,
       specialty: specialtyInfo
         ? {
@@ -466,6 +479,7 @@ export async function getAppointmentById(
             id: branch.id,
             name: branch.name,
             address: branch.address_text,
+            city: branch.cities?.name,
             phone: branch.phone_contact,
             email: branch.email_contact || null,
           }

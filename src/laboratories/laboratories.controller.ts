@@ -109,6 +109,7 @@ export async function getAllLaboratories(
 
         return {
           id: provider.id,
+          branchId: mainBranch.id || "",
           nombre: mainBranch.name || provider.commercial_name || "Laboratorio",
           descripcion: provider.description,
           direccion: mainBranch.address_text || "",
@@ -195,6 +196,7 @@ export async function getLaboratoryById(
 
     return successResponse({
       id: provider.id,
+      branchId: mainBranch.id || "",
       nombre: mainBranch.name || provider.commercial_name || "Laboratorio",
       descripcion: provider.description,
       direccion: mainBranch.address_text || "",

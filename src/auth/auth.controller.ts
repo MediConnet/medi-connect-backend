@@ -1,8 +1,6 @@
 import {
   ChangePasswordCommand,
   CognitoIdentityProviderClient,
-  ConfirmForgotPasswordCommand,
-  ForgotPasswordCommand,
   InitiateAuthCommand,
   SignUpCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
@@ -13,6 +11,10 @@ import { randomUUID } from "crypto";
 import { enum_roles } from "../generated/prisma/client";
 import { requireAuth } from "../shared/auth";
 import { logger } from "../shared/logger";
+import {
+  isMultipartContentType,
+  parseMultipartBody,
+} from "../shared/multipart";
 import { getPrismaClient } from "../shared/prisma";
 import {
   errorResponse,
@@ -22,7 +24,6 @@ import {
   unauthorizedResponse,
 } from "../shared/response";
 import { validatePayloadSize } from "../shared/security";
-import { isMultipartContentType, parseMultipartBody } from "../shared/multipart";
 import { storeFilesLocally } from "../shared/uploads";
 import {
   changePasswordSchema,
@@ -139,7 +140,6 @@ async function createProviderProfile(prisma: any, userId: string, body: any) {
   });
   const categoryId = category ? category.id : null;
 
-  // Parsear experiencia para la tabla providers
   let yearsExp = 0;
   if (body.yearsOfExperience) {
     const parsedExp = parseInt(body.yearsOfExperience.toString(), 10);
@@ -180,7 +180,6 @@ async function createProviderProfile(prisma: any, userId: string, body: any) {
         ? { service_categories: { connect: { id: categoryId } } }
         : {}),
 
-      // ⭐ Conectar con cadena de farmacia si se proporciona chainId válido
       ...(isValidChainId
         ? { pharmacy_chains: { connect: { id: body.chainId } } }
         : {}),
@@ -189,14 +188,16 @@ async function createProviderProfile(prisma: any, userId: string, body: any) {
 
       years_of_experience: yearsExp,
 
-      // ⚠️ specialties ya no existe como relación directa
-      // Ahora se usa provider_specialties (tabla intermedia)
       documents: body.documents ?? [],
     },
   });
 
-  // ⭐ Crear especialidades si se proporcionaron (usando provider_specialties)
-  if (body.specialties && Array.isArray(body.specialties) && body.specialties.length > 0) {
+  //  Crear especialidades si se proporcionaron (usando provider_specialties)
+  if (
+    body.specialties &&
+    Array.isArray(body.specialties) &&
+    body.specialties.length > 0
+  ) {
     const specialtyCreations = body.specialties.map((specialtyId: string) => {
       return prisma.provider_specialties.create({
         data: {
@@ -206,12 +207,11 @@ async function createProviderProfile(prisma: any, userId: string, body: any) {
         },
       });
     });
-    
+
     await Promise.all(specialtyCreations);
   }
 
   // Datos Adicionales para la Sucursal
-
   const fullAddress = body.address || "Sin dirección registrada";
 
   let fee = null;
@@ -220,7 +220,6 @@ async function createProviderProfile(prisma: any, userId: string, body: any) {
     if (!isNaN(parsed)) fee = parsed;
   }
 
-  // 🔍 DEBUG: Log de datos de sucursal antes de crear
   console.log(`🔍 [REGISTER] Datos de sucursal a crear:`, {
     phone: body.phone,
     whatsapp: body.whatsapp,
@@ -244,7 +243,6 @@ async function createProviderProfile(prisma: any, userId: string, body: any) {
         name: businessName,
         address_text: fullAddress,
         description: body.description || null,
-        // ❌ consultation_fee NO existe en provider_branches
 
         phone_contact: body.phone || body.whatsapp || null,
         email_contact: body.email,
@@ -269,7 +267,7 @@ async function createProviderProfile(prisma: any, userId: string, body: any) {
       address: body.address,
       cityId: body.cityId,
     });
-    throw branchError; // Re-lanzar para que el registro falle
+    throw branchError;
   }
 
   // Lógica Clínicas
@@ -304,42 +302,40 @@ async function processClinicInvitation(
   if (!invitationToken) return;
 
   try {
-    console.log(`🔍 [REGISTER] Procesando invitación de clínica: ${invitationToken}`);
+    console.log(
+      `🔍 [REGISTER] Procesando invitación de clínica: ${invitationToken}`,
+    );
 
-    // Buscar invitación válida
     const invitation = await prisma.doctor_invitations.findFirst({
       where: {
         invitation_token: invitationToken,
-        status: 'pending',
+        status: "pending",
         expires_at: { gte: new Date() },
-        email: userEmail, // Verificar que el email coincida
+        email: userEmail,
       },
       include: {
         clinics: true,
       },
     });
 
-    if (!invitation) {
-      console.log(`⚠️ [REGISTER] Invitación no encontrada o inválida: ${invitationToken}`);
+    if (!invitation || !invitation.clinic_id) {
+      console.log(
+        `⚠️ [REGISTER] Invitación no encontrada o inválida: ${invitationToken}`,
+      );
       return;
     }
 
-    if (!invitation.clinic_id) {
-      console.log(`⚠️ [REGISTER] Invitación sin clínica asociada`);
-      return;
-    }
-
-    // Buscar provider del usuario
     const provider = await prisma.providers.findFirst({
       where: { user_id: userId },
     });
 
     if (!provider) {
-      console.log(`⚠️ [REGISTER] Provider no encontrado para usuario ${userId}`);
+      console.log(
+        `⚠️ [REGISTER] Provider no encontrado para usuario ${userId}`,
+      );
       return;
     }
 
-    // Verificar que no esté ya asociado a esta clínica
     const existingAssociation = await prisma.clinic_doctors.findFirst({
       where: {
         user_id: userId,
@@ -349,15 +345,13 @@ async function processClinicInvitation(
 
     if (existingAssociation) {
       console.log(`⚠️ [REGISTER] Usuario ya está asociado a esta clínica`);
-      // Marcar invitación como aceptada de todas formas
       await prisma.doctor_invitations.update({
         where: { id: invitation.id },
-        data: { status: 'accepted' },
+        data: { status: "accepted" },
       });
       return;
     }
 
-    // Asociar médico a la clínica
     await prisma.clinic_doctors.create({
       data: {
         id: randomUUID(),
@@ -365,21 +359,21 @@ async function processClinicInvitation(
         user_id: userId,
         email: userEmail,
         name: userName || provider.commercial_name || userEmail,
-        is_invited: false, // Ya aceptó la invitación
+        is_invited: false,
         is_active: true,
       },
     });
 
-    // Marcar invitación como aceptada
     await prisma.doctor_invitations.update({
       where: { id: invitation.id },
-      data: { status: 'accepted' },
+      data: { status: "accepted" },
     });
 
-    console.log(`✅ [REGISTER] Médico asociado a clínica ${invitation.clinic_id} mediante invitación`);
+    console.log(
+      `✅ [REGISTER] Médico asociado a clínica ${invitation.clinic_id} mediante invitación`,
+    );
   } catch (error: any) {
     console.error(`❌ [REGISTER] Error al procesar invitación:`, error.message);
-    // No lanzar error para no bloquear el registro
   }
 }
 
@@ -397,7 +391,6 @@ export async function register(
       event.headers["CONTENT-TYPE"] ||
       "";
 
-    // ⭐ Multipart (documentos) necesita un límite mayor que JSON
     const isMultipart = isMultipartContentType(contentType);
     validatePayloadSize(event, isMultipart ? 25 * 1024 * 1024 : 200 * 1024);
 
@@ -460,8 +453,9 @@ export async function register(
     }
 
     const prisma = getPrismaClient();
-
-    const requestedRole = body.role ? mapRoleToEnum(body.role) : enum_roles.patient;
+    const requestedRole = body.role
+      ? mapRoleToEnum(body.role)
+      : enum_roles.patient;
 
     const isLocalDev =
       process.env.STAGE === "dev" ||
@@ -469,23 +463,20 @@ export async function register(
       !CLIENT_ID ||
       !USER_POOL_ID;
 
-    // =====================================================
-    // ✅ Manejo idempotente para SOLICITUDES PROFESIONALES
-    // =====================================================
-    // Si el usuario ya existe y está intentando registrarse como profesional/proveedor,
-    // validamos credenciales y (si falta) creamos el perfil de proveedor.
     const existingUser = await prisma.users.findFirst({
       where: { email: body.email },
     });
 
     if (existingUser) {
       if (requestedRole === enum_roles.provider) {
-        // Validar contraseña (local: bcrypt; prod: cognito auth)
         if (isLocalDev) {
           if (!existingUser.password_hash) {
             return unauthorizedResponse("Credenciales inválidas");
           }
-          const ok = await bcrypt.compare(body.password, existingUser.password_hash);
+          const ok = await bcrypt.compare(
+            body.password,
+            existingUser.password_hash,
+          );
           if (!ok) return unauthorizedResponse("Credenciales inválidas");
         } else {
           try {
@@ -510,7 +501,6 @@ export async function register(
           }
         }
 
-        // Asegurar role provider (sin romper cuentas ya existentes)
         if (existingUser.role !== enum_roles.provider) {
           await prisma.users.update({
             where: { id: existingUser.id },
@@ -518,17 +508,20 @@ export async function register(
           });
         }
 
-        // Crear perfil proveedor si no existe
         const existingProvider = await prisma.providers.findFirst({
           where: { user_id: existingUser.id },
           select: { id: true },
         });
 
         if (!existingProvider) {
-          const providerId = await createProviderProfile(prisma, existingUser.id, {
-            ...body,
-            documents: uploadedDocuments,
-          });
+          const providerId = await createProviderProfile(
+            prisma,
+            existingUser.id,
+            {
+              ...body,
+              documents: uploadedDocuments,
+            },
+          );
           return successResponse(
             {
               userId: existingUser.id,
@@ -540,9 +533,6 @@ export async function register(
           );
         }
 
-        // Si el proveedor ya existe, tratamos este POST como reenvío de solicitud:
-        // - actualizamos documentos si llegaron
-        // - y marcamos el estado como PENDING para que aparezca en Admin /requests
         if (uploadedDocuments.length > 0) {
           await prisma.providers.update({
             where: { id: existingProvider.id },
@@ -551,12 +541,8 @@ export async function register(
               verification_status: "PENDING",
             },
           });
-        } else {
-          // Si no llegaron documentos, no forzamos el cambio de estado.
-          // (Evita mover a PENDING un proveedor aprobado por un simple reintento sin adjuntos)
         }
 
-        // Si es clínica y no existe registro de clínica, crearlo (evitar P2002 por user_id único)
         if (body.type === "clinic") {
           const existingClinic = await prisma.clinics.findFirst({
             where: { user_id: existingUser.id },
@@ -596,13 +582,9 @@ export async function register(
         );
       }
 
-      // Para pacientes (u otros roles), mantenemos el comportamiento actual
       return errorResponse("El usuario ya existe", 409);
     }
 
-    // ==========================================
-    // 🛠️ MODO DESARROLLO / FALLBACK LOCAL
-    // ==========================================
     if (isLocalDev) {
       console.log("🔧 [REGISTER] Modo desarrollo local");
 
@@ -637,15 +619,22 @@ export async function register(
           documents: uploadedDocuments,
         });
 
-        // Procesar invitación de clínica si existe
-        const invitationToken = body.invitationToken || 
-                               (event.queryStringParameters?.invitationToken) ||
-                               null;
+        const invitationToken =
+          body.invitationToken ||
+          event.queryStringParameters?.invitationToken ||
+          null;
         if (invitationToken) {
-          const userName = body.name || 
-                          [body.firstName, body.lastName].filter(Boolean).join(" ") ||
-                          null;
-          await processClinicInvitation(prisma, user.id, user.email, invitationToken, userName);
+          const userName =
+            body.name ||
+            [body.firstName, body.lastName].filter(Boolean).join(" ") ||
+            null;
+          await processClinicInvitation(
+            prisma,
+            user.id,
+            user.email,
+            invitationToken,
+            userName,
+          );
         }
       }
 
@@ -659,9 +648,6 @@ export async function register(
       );
     }
 
-    // ==========================================
-    // ☁️ MODO PRODUCCIÓN (COGNITO)
-    // ==========================================
     const signUpCommand = new SignUpCommand({
       ClientId: CLIENT_ID,
       Username: body.email,
@@ -702,15 +688,22 @@ export async function register(
         documents: uploadedDocuments,
       });
 
-      // Procesar invitación de clínica si existe
-      const invitationToken = body.invitationToken || 
-                             (event.queryStringParameters?.invitationToken) ||
-                             null;
+      const invitationToken =
+        body.invitationToken ||
+        event.queryStringParameters?.invitationToken ||
+        null;
       if (invitationToken) {
-        const userName = body.name || 
-                        [body.firstName, body.lastName].filter(Boolean).join(" ") ||
-                        null;
-        await processClinicInvitation(prisma, user.id, user.email, invitationToken, userName);
+        const userName =
+          body.name ||
+          [body.firstName, body.lastName].filter(Boolean).join(" ") ||
+          null;
+        await processClinicInvitation(
+          prisma,
+          user.id,
+          user.email,
+          invitationToken,
+          userName,
+        );
       }
     }
 
@@ -800,7 +793,6 @@ export async function login(
           };
           serviceType = "clinic";
         } else {
-          // El frontend NO envía 'type', así que inferimos el tipo del provider más reciente aprobado
           const typeToSlug: Record<string, string> = {
             doctor: "doctor",
             pharmacy: "pharmacy",
@@ -811,68 +803,41 @@ export async function login(
             clinic: "clinic",
           };
 
-          // Usamos `any` aquí para simplificar el tipado de las relaciones incluidas
-          // (service_categories, pharmacy_chains) y evitar problemas con los tipos generados de Prisma.
           let provider: any = null;
 
-          // Si el frontend envía 'type' (opcional), buscar ese tipo específico
           if (body.type) {
             const typeKey = body.type.toLowerCase();
             const categorySlug = typeToSlug[typeKey] ?? typeKey;
 
-            console.log(`🔍 [LOGIN] Frontend envió type=${categorySlug}, buscando provider de ese tipo para user_id: ${user.id}`);
-
             provider = await prisma.providers.findFirst({
               where: {
                 user_id: user.id,
-                service_categories: {
-                  slug: categorySlug,
-                },
+                service_categories: { slug: categorySlug },
                 verification_status: "APPROVED",
               },
               include: {
                 service_categories: { select: { slug: true, name: true } },
                 pharmacy_chains: true,
               },
-              orderBy: {
-                id: "desc", // Más reciente primero
-              },
+              orderBy: { id: "desc" },
             });
-
-            if (provider) {
-              console.log(`✅ [LOGIN] Provider encontrado (con type): ${provider.id} - ${provider.commercial_name} (${categorySlug})`);
-            }
           }
 
-          // SIEMPRE buscar el provider más reciente aprobado (inferir tipo automáticamente)
-          // Esto asegura que si no viene 'type' o no se encontró, devolvemos el más reciente
           if (!provider) {
-            console.log(`🔍 [LOGIN] Buscando provider más reciente aprobado para user_id: ${user.id} (sin filtro de tipo)`);
-            
             provider = await prisma.providers.findFirst({
               where: {
                 user_id: user.id,
-                verification_status: "APPROVED", // Solo providers aprobados
+                verification_status: "APPROVED",
               },
               include: {
                 service_categories: { select: { slug: true, name: true } },
                 pharmacy_chains: true,
               },
-              orderBy: {
-                id: "desc", // Más reciente primero (el último creado/aprobado)
-              },
+              orderBy: { id: "desc" },
             });
-
-            if (provider) {
-              const detectedType = provider.service_categories?.slug || 'unknown';
-              console.log(`✅ [LOGIN] Provider encontrado (más reciente): ${provider.id} - ${provider.commercial_name} (tipo: ${detectedType})`);
-            } else {
-              console.log(`⚠️ [LOGIN] No se encontró ningún provider aprobado para user_id: ${user.id}`);
-            }
           }
 
           if (provider) {
-            // Verificar status (aunque ya filtramos por APPROVED, por seguridad)
             if (provider.verification_status !== "APPROVED") {
               return unauthorizedResponse(
                 "Tu cuenta está en proceso de verificación. Debes esperar a ser aprobado para ingresar.",
@@ -895,11 +860,8 @@ export async function login(
               chainName: isChainMember && chain ? chain.name : null,
               chainLogo: isChainMember && chain ? chain.logo_url : null,
             };
-            
-            // ⭐ CRÍTICO: Siempre establecer serviceType desde el provider encontrado
+
             serviceType = provider.service_categories?.slug || null;
-            
-            console.log(`📋 [LOGIN] Provider seleccionado: ID=${provider.id}, Tipo=${serviceType}, Nombre=${provider.commercial_name}`);
           }
         }
       }
@@ -975,14 +937,10 @@ export async function login(
         responseData.user.provider = providerInfo;
       }
 
-      // ⭐ CRÍTICO: Siempre establecer 'tipo' si hay provider (frontend lo necesita para guards)
       if (normalizedServiceType) {
         responseData.user.serviceType = normalizedServiceType;
-        responseData.user.tipo = normalizedServiceType; // Frontend usa esto para guards
+        responseData.user.tipo = normalizedServiceType;
       } else if (providerInfo) {
-        // Si hay providerInfo pero no serviceType, intentar inferirlo
-        console.warn(`⚠️ [LOGIN] Provider encontrado pero sin serviceType. providerInfo:`, providerInfo);
-        // Esto no debería pasar, pero por seguridad:
         responseData.user.tipo = null;
       }
 
@@ -1233,14 +1191,75 @@ export async function changePassword(
 
   try {
     const body = parseBody(event.body, changePasswordSchema);
+    const isLocalDev =
+      process.env.STAGE === "dev" ||
+      process.env.NODE_ENV === "development" ||
+      !CLIENT_ID ||
+      !USER_POOL_ID;
+
+    // Lógica para base de datos local
+    if (isLocalDev) {
+      const prisma = getPrismaClient();
+      const user = await prisma.users.findUnique({
+        where: { id: authResult.user.id },
+      });
+
+      if (!user || !user.password_hash) {
+        return errorResponse(
+          "Usuario no encontrado o no tiene contraseña registrada",
+          400,
+        );
+      }
+
+      const passwordMatch = await bcrypt.compare(
+        body.currentPassword,
+        user.password_hash,
+      );
+      if (!passwordMatch) {
+        return errorResponse("La contraseña actual es incorrecta", 400);
+      }
+
+      const newPasswordHash = await bcrypt.hash(body.newPassword, 10);
+      await prisma.users.update({
+        where: { id: user.id },
+        data: { password_hash: newPasswordHash },
+      });
+
+      console.log(
+        `✅ [CHANGE-PASSWORD] Contraseña cambiada localmente para usuario: ${user.id}`,
+      );
+      return successResponse({ message: "Contraseña cambiada exitosamente" });
+    }
+
+    // Lógica para AWS Cognito en producción
     const cmd = new ChangePasswordCommand({
       AccessToken: event.headers.authorization?.replace("Bearer ", "") || "",
       PreviousPassword: body.currentPassword,
       ProposedPassword: body.newPassword,
     });
     await cognitoClient.send(cmd);
+
+    console.log(
+      `✅ [CHANGE-PASSWORD] Contraseña cambiada en Cognito para usuario: ${authResult.user.id}`,
+    );
     return successResponse({ message: "Contraseña cambiada exitosamente" });
   } catch (error: any) {
+    console.error(
+      "❌ [CHANGE-PASSWORD] Error al cambiar contraseña:",
+      error.message,
+    );
+
+    if (error.name === "NotAuthorizedException") {
+      return errorResponse("La contraseña actual es incorrecta", 400);
+    }
+
+    if (error.name === "InvalidPasswordException") {
+      return errorResponse(
+        "La nueva contraseña no cumple con los requisitos de seguridad",
+        400,
+      );
+    }
+
     return internalErrorResponse("Error al cambiar contraseña");
   }
 }
@@ -1251,33 +1270,30 @@ export async function forgotPassword(
   try {
     console.log("🔑 [FORGOT-PASSWORD] Procesando solicitud de recuperación");
     const body = parseBody(event.body, forgotPasswordSchema);
-    
-    // Validar email
+
     if (!body.email || !body.email.includes("@")) {
       return errorResponse("Email inválido", 400);
     }
-    
+
     const prisma = getPrismaClient();
-    
-    // Buscar usuario en la base de datos
+
     const user = await prisma.users.findFirst({
       where: { email: body.email.toLowerCase() },
     });
-    
-    // IMPORTANTE: Siempre responder lo mismo (seguridad)
-    // No revelar si el email existe o no
+
     const standardResponse = {
       success: true,
-      message: "Si el email está registrado, recibirás un enlace de recuperación en los próximos minutos.",
+      message:
+        "Si el email está registrado, recibirás un enlace de recuperación en los próximos minutos.",
     };
-    
-    // Si el usuario no existe, responder igual pero no hacer nada más
+
     if (!user) {
-      console.log(`⚠️ [FORGOT-PASSWORD] Intento con email no registrado: ${body.email}`);
+      console.log(
+        `⚠️ [FORGOT-PASSWORD] Intento con email no registrado: ${body.email}`,
+      );
       return successResponse(standardResponse);
     }
-    
-    // Verificar límite de intentos (máximo 3 por hora)
+
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
     const recentAttempts = await prisma.password_resets.count({
       where: {
@@ -1285,34 +1301,35 @@ export async function forgotPassword(
         created_at: { gte: oneHourAgo },
       },
     });
-    
+
     if (recentAttempts >= 3) {
-      console.log(`⚠️ [FORGOT-PASSWORD] Límite de intentos excedido para: ${body.email}`);
-      return errorResponse("Demasiados intentos. Por favor intenta en 1 hora.", 429);
+      console.log(
+        `⚠️ [FORGOT-PASSWORD] Límite de intentos excedido para: ${body.email}`,
+      );
+      return errorResponse(
+        "Demasiados intentos. Por favor intenta en 1 hora.",
+        429,
+      );
     }
-    
-    // Generar token único y seguro
+
     const resetToken = crypto.randomBytes(32).toString("hex");
-    
-    // Hashear el token antes de guardarlo (seguridad)
+
     const hashedToken = crypto
       .createHash("sha256")
       .update(resetToken)
       .digest("hex");
-    
-    // Guardar en base de datos
+
     await prisma.password_resets.create({
       data: {
         id: randomUUID(),
         user_id: user.id,
         email: user.email.toLowerCase(),
         token: hashedToken,
-        expires_at: new Date(Date.now() + 60 * 60 * 1000), // 1 hora
+        expires_at: new Date(Date.now() + 60 * 60 * 1000),
         used: false,
       },
     });
-    
-    // Obtener nombre del usuario
+
     let userName = "Usuario";
     if (user.role === enum_roles.patient) {
       const patient = await prisma.patients.findFirst({
@@ -1327,29 +1344,32 @@ export async function forgotPassword(
       });
       if (provider?.commercial_name) userName = provider.commercial_name;
     }
-    
-    // Enviar email (con token SIN hashear)
+
     const { sendEmail } = await import("../shared/email-adapter");
     const { generatePasswordResetEmail } = await import("../shared/email");
-    
+
     const emailHtml = generatePasswordResetEmail({
       userName,
-      resetToken, // Token sin hashear para el enlace
+      resetToken,
     });
-    
+
     await sendEmail({
       to: user.email,
       subject: "Recuperación de Contraseña - DOCALINK",
       html: emailHtml,
     });
-    
-    console.log(`✅ [FORGOT-PASSWORD] Email de recuperación enviado a: ${user.email}`);
-    
+
+    console.log(
+      `✅ [FORGOT-PASSWORD] Email de recuperación enviado a: ${user.email}`,
+    );
+
     return successResponse(standardResponse);
   } catch (error: any) {
     console.error("❌ [FORGOT-PASSWORD] Error:", error.message);
     logger.error("Error in forgotPassword", error);
-    return internalErrorResponse("Error al procesar solicitud. Por favor intenta nuevamente.");
+    return internalErrorResponse(
+      "Error al procesar solicitud. Por favor intenta nuevamente.",
+    );
   }
 }
 
@@ -1359,61 +1379,59 @@ export async function resetPassword(
   try {
     console.log("🔐 [RESET-PASSWORD] Procesando reseteo de contraseña");
     const body = parseBody(event.body, resetPasswordSchema);
-    
-    // Validar datos
+
     if (!body.token || !body.newPassword) {
       return errorResponse("Token y nueva contraseña son requeridos", 400);
     }
-    
+
     if (body.newPassword.length < 6) {
-      return errorResponse("La contraseña debe tener al menos 6 caracteres", 400);
+      return errorResponse(
+        "La contraseña debe tener al menos 6 caracteres",
+        400,
+      );
     }
-    
+
     const prisma = getPrismaClient();
-    
-    // Hashear el token recibido para comparar
+
     const hashedToken = crypto
       .createHash("sha256")
       .update(body.token)
       .digest("hex");
-    
-    // Buscar token en base de datos
+
     const resetRequest = await prisma.password_resets.findFirst({
       where: {
         token: hashedToken,
         used: false,
-        expires_at: { gt: new Date() }, // No expirado
+        expires_at: { gt: new Date() },
       },
     });
-    
+
     if (!resetRequest) {
       console.log("⚠️ [RESET-PASSWORD] Token inválido o expirado");
       return errorResponse(
         "Token inválido o expirado. Por favor solicita un nuevo enlace de recuperación.",
-        400
+        400,
       );
     }
-    
-    // Buscar usuario
+
     const user = await prisma.users.findUnique({
       where: { id: resetRequest.user_id },
     });
-    
+
     if (!user) {
-      console.log("⚠️ [RESET-PASSWORD] Usuario no encontrado para token válido");
+      console.log(
+        "⚠️ [RESET-PASSWORD] Usuario no encontrado para token válido",
+      );
       return notFoundResponse("Usuario no encontrado");
     }
-    
-    // Hashear nueva contraseña
+
     const hashedPassword = await bcrypt.hash(body.newPassword, 10);
-    
-    // Actualizar contraseña del usuario
+
     await prisma.users.update({
       where: { id: user.id },
       data: { password_hash: hashedPassword },
     });
-    
-    // Marcar token como usado
+
     await prisma.password_resets.update({
       where: { id: resetRequest.id },
       data: {
@@ -1421,22 +1439,72 @@ export async function resetPassword(
         used_at: new Date(),
       },
     });
-    
-    // (Opcional) Invalidar todas las sesiones activas del usuario
+
     await prisma.sessions.updateMany({
       where: { user_id: user.id },
       data: { revoked_at: new Date() },
     });
-    
-    console.log(`✅ [RESET-PASSWORD] Contraseña actualizada exitosamente para: ${user.email}`);
-    
+
+    console.log(
+      `✅ [RESET-PASSWORD] Contraseña actualizada exitosamente para: ${user.email}`,
+    );
+
     return successResponse({
       success: true,
-      message: "Contraseña actualizada correctamente. Ya puedes iniciar sesión con tu nueva contraseña.",
+      message:
+        "Contraseña actualizada correctamente. Ya puedes iniciar sesión con tu nueva contraseña.",
     });
   } catch (error: any) {
     console.error("❌ [RESET-PASSWORD] Error:", error.message);
     logger.error("Error in resetPassword", error);
-    return internalErrorResponse("Error al restablecer contraseña. Por favor intenta nuevamente.");
+    return internalErrorResponse(
+      "Error al restablecer contraseña. Por favor intenta nuevamente.",
+    );
+  }
+}
+
+// Función para Soft Delete (Desactivar Cuenta)
+export async function deactivateAccount(
+  event: APIGatewayProxyEventV2,
+): Promise<APIGatewayProxyResult> {
+  try {
+    console.log("🗑️ [DEACTIVATE-ACCOUNT] Procesando desactivación de cuenta");
+
+    const authResult = await requireAuth(event);
+    if ("statusCode" in authResult) return authResult;
+
+    const prisma = getPrismaClient();
+    const userId = authResult.user.id;
+
+    await prisma.users.update({
+      where: { id: userId },
+      data: { is_active: false },
+    });
+
+    await prisma.sessions.updateMany({
+      where: {
+        user_id: userId,
+        revoked_at: null,
+      },
+      data: { revoked_at: new Date() },
+    });
+
+    console.log(
+      `✅ [DEACTIVATE-ACCOUNT] Cuenta desactivada exitosamente para usuario: ${userId}`,
+    );
+
+    return successResponse({
+      success: true,
+      message: "Tu cuenta ha sido eliminada exitosamente.",
+    });
+  } catch (error: any) {
+    console.error(
+      "❌ [DEACTIVATE-ACCOUNT] Error al desactivar cuenta:",
+      error.message,
+    );
+    logger.error("Error in deactivateAccount", error);
+    return internalErrorResponse(
+      "Hubo un problema al intentar eliminar tu cuenta.",
+    );
   }
 }

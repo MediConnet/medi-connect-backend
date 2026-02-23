@@ -30,18 +30,42 @@ function mapDoctorData(doctor: any) {
     doctor.provider_branches.find((b: any) => b.is_main) ||
     doctor.provider_branches[0];
 
-  const clinicName = doctor.users?.clinic_doctors?.[0]?.clinics?.name || null;
+  const clinicData = doctor.users?.clinic_doctors?.[0]?.clinics;
+  const clinicName = clinicData?.name || null;
+  const clinicSchedules = clinicData?.clinic_schedules || [];
 
-  const primarySpecialtyRecord = doctor.provider_specialties?.[0] || null;
   const especialidadesList =
     doctor.provider_specialties
       ?.map((ps: any) => ps.specialties?.name)
       .filter(Boolean) || [];
 
-  const schedules = mainBranch?.provider_schedules || [];
+  const tarifasPorEspecialidad: Record<string, number> = {};
+
+  if (
+    doctor.provider_specialties &&
+    Array.isArray(doctor.provider_specialties)
+  ) {
+    doctor.provider_specialties.forEach((ps: any) => {
+      const specName = ps.specialties?.name;
+      if (specName) {
+        tarifasPorEspecialidad[specName] = ps.fee ? Number(ps.fee) : 0;
+      }
+    });
+  }
+
+  const primarySpecialtyRecord = doctor.provider_specialties?.[0] || null;
+  const tarifaBase = primarySpecialtyRecord?.fee
+    ? Number(primarySpecialtyRecord.fee)
+    : 0;
+
+  const schedules =
+    clinicSchedules.length > 0
+      ? clinicSchedules
+      : mainBranch?.provider_schedules || [];
 
   return {
     id: doctor.id,
+    branchId: mainBranch?.id || "",
     nombre: doctor.commercial_name || "",
     apellido: "",
 
@@ -68,11 +92,12 @@ function mapDoctorData(doctor: any) {
       : 0,
     latitud: mainBranch?.latitude ? Number(mainBranch.latitude) : null,
     longitud: mainBranch?.longitude ? Number(mainBranch.longitude) : null,
+
     tarifas: {
-      consulta: primarySpecialtyRecord?.fee
-        ? Number(primarySpecialtyRecord.fee)
-        : 0,
+      consulta: tarifaBase,
+      ...tarifasPorEspecialidad,
     },
+
     formasPago: mainBranch?.payment_methods || [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -140,7 +165,15 @@ export async function getAllDoctors(
               where: { is_active: true },
               take: 1,
               select: {
-                clinics: { select: { name: true } },
+                clinics: {
+                  select: {
+                    name: true,
+                    clinic_schedules: {
+                      where: { enabled: true },
+                      orderBy: { day_of_week: "asc" },
+                    },
+                  },
+                },
               },
             },
           },
@@ -275,7 +308,15 @@ export async function getDoctorById(
               where: { is_active: true },
               take: 1,
               select: {
-                clinics: { select: { name: true } },
+                clinics: {
+                  select: {
+                    name: true,
+                    clinic_schedules: {
+                      where: { enabled: true },
+                      orderBy: { day_of_week: "asc" },
+                    },
+                  },
+                },
               },
             },
           },

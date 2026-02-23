@@ -59,14 +59,7 @@ export async function handler(
     }
 
     // --- Rutas de Citas ---
-
-    // 1. Rutas generales (Listar y Crear)
-    if (path === "/api/patients/appointments") {
-      if (method === "GET") return await getAppointments(event);
-      if (method === "POST") return await createAppointment(event);
-    }
-
-    // 2. Ruta específica: Bloqueo para Pago (Handshake)
+    // 1. Rutas específicas (Bloqueo para Pago)
     if (
       path.startsWith("/api/patients/appointments/") &&
       path.endsWith("/lock") &&
@@ -75,51 +68,45 @@ export async function handler(
       return await startPaymentProcess(event);
     }
 
-    // 3. Rutas por ID (Detalle y Cancelar)
+    // 2. Rutas por ID (Detalle y Cancelar)
     if (path.startsWith("/api/patients/appointments/")) {
-      if (method === "GET") {
-        return await getAppointmentById(event);
-      }
-      if (method === "DELETE") {
-        return await cancelAppointment(event);
-      }
+      if (method === "GET") return await getAppointmentById(event);
+      if (method === "DELETE") return await cancelAppointment(event);
+    }
+
+    // 3. Rutas generales (Listar y Crear)
+    if (path === "/api/patients/appointments") {
+      if (method === "GET") return await getAppointments(event);
+      if (method === "POST") return await createAppointment(event);
     }
 
     // --- Rutas de Historial Médico ---
+    if (path.startsWith("/api/patients/medical-history/") && method === "GET") {
+      return await getMedicalHistoryById(event);
+    }
     if (path === "/api/patients/medical-history") {
       if (method === "GET") return await getMedicalHistory(event);
     }
 
-    // GET /api/patients/medical-history/:id
-    if (path.startsWith("/api/patients/medical-history/") && method === "GET") {
-      return await getMedicalHistoryById(event);
-    }
-
     // --- Rutas de Favoritos ---
-    if (path === "/api/patients/favorites") {
-      if (method === "GET") return await getFavorites(event);
-      if (method === "POST") return await addFavorite(event);
-    }
-
     // DELETE /api/patients/favorites/:id
     if (path.startsWith("/api/patients/favorites/") && method === "DELETE") {
       return await removeFavorite(event);
     }
 
-    // --- Rutas de Notificaciones ---
-    if (path === "/api/patients/notifications") {
-      if (method === "GET") return await getNotifications(event);
+    // GET / POST /api/patients/favorites
+    if (path === "/api/patients/favorites") {
+      if (method === "GET") return await getFavorites(event);
+      if (method === "POST") return await addFavorite(event);
     }
 
+    // --- Rutas de Notificaciones ---
     if (path === "/api/patients/notifications/unread") {
       if (method === "GET") return await getUnreadCount(event);
     }
-
     if (path === "/api/patients/notifications/read-all") {
       if (method === "PUT") return await markAllNotificationsAsRead(event);
     }
-
-    // PUT /api/patients/notifications/:id/read
     if (
       path.startsWith("/api/patients/notifications/") &&
       path.endsWith("/read") &&
@@ -127,14 +114,11 @@ export async function handler(
     ) {
       return await markNotificationAsRead(event);
     }
-
-    // --- Rutas de Recordatorios ---
-    if (path === "/api/patients/reminders") {
-      if (method === "GET") return await getReminders(event);
-      if (method === "POST") return await createReminder(event);
+    if (path === "/api/patients/notifications") {
+      if (method === "GET") return await getNotifications(event);
     }
 
-    // PATCH /api/patients/reminders/{id}/toggle
+    // --- Rutas de Recordatorios ---
     if (
       path.startsWith("/api/patients/reminders/") &&
       path.endsWith("/toggle") &&
@@ -142,8 +126,6 @@ export async function handler(
     ) {
       return await toggleReminder(event);
     }
-
-    // PATCH /api/patients/reminders/{id} (actualizar)
     if (
       path.startsWith("/api/patients/reminders/") &&
       !path.endsWith("/toggle") &&
@@ -151,10 +133,12 @@ export async function handler(
     ) {
       return await updateReminder(event);
     }
-
-    // DELETE /api/patients/reminders/{id}
     if (path.startsWith("/api/patients/reminders/") && method === "DELETE") {
       return await deleteReminder(event);
+    }
+    if (path === "/api/patients/reminders") {
+      if (method === "GET") return await getReminders(event);
+      if (method === "POST") return await createReminder(event);
     }
 
     // --- Rutas de Dispositivo (Token Push) ---
@@ -163,6 +147,7 @@ export async function handler(
     }
 
     // Si no coincide ninguna ruta
+    console.log(`❌ [PATIENTS HANDLER] Ruta no encontrada: ${method} ${path}`);
     return errorResponse("Not found", 404, undefined, event);
   } catch (error: any) {
     console.error(`❌ [PATIENTS] ${method} ${path} - Error:`, error.message);

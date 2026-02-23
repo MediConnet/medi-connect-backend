@@ -9,7 +9,10 @@ export function formatSmartSchedule(schedules: any[]): string {
     return "Horario no disponible";
   }
 
-  const activeSchedules = schedules.filter((s) => s.is_active);
+  const activeSchedules = schedules.filter(
+    (s) => s.is_active === true || s.enabled === true,
+  );
+
   if (activeSchedules.length === 0) return "Temporalmente no disponible";
 
   const formatTime = (dateStr: Date | string) => {
