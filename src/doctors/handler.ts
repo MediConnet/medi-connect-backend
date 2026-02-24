@@ -31,7 +31,9 @@ import {
 } from "./clinic.controller";
 import { 
   getConsultationPrices, 
-  updateConsultationPrices 
+  createConsultationPrice,
+  updateConsultationPrice,
+  deleteConsultationPrice,
 } from "./consultation-prices.controller";
 import { getDashboard } from "./dashboard.controller";
 import { createDiagnosis, getDiagnosis } from "./diagnoses.controller";
@@ -72,7 +74,16 @@ export async function handler(
     // --- Consultation Prices (Tarifas de Consulta) ---
     if (path === "/api/doctors/consultation-prices") {
       if (method === "GET") return await getConsultationPrices(event);
-      if (method === "PUT") return await updateConsultationPrices(event);
+      if (method === "POST") return await createConsultationPrice(event);
+    }
+
+    // Update or delete specific consultation price
+    if (path.startsWith("/api/doctors/consultation-prices/")) {
+      const priceId = path.split('/').pop();
+      if (priceId && priceId !== 'consultation-prices') {
+        if (method === "PUT") return await updateConsultationPrice(event);
+        if (method === "DELETE") return await deleteConsultationPrice(event);
+      }
     }
 
     // --- Appointments ---

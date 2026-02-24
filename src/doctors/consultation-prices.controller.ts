@@ -1,25 +1,16 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResult } from 'aws-lambda';
 import { getPrismaClient } from '../shared/prisma';
-import { successResponse, errorResponse, internalErrorResponse } from '../shared/response';
+import { successResponse, errorResponse, internalErrorResponse, notFoundResponse } from '../shared/response';
 import { logger } from '../shared/logger';
 import { requireRole } from '../shared/auth';
 import { enum_roles } from '../generated/prisma/client';
 
 /**
  * GET /api/doctors/consultation-prices
- * Obtener especialidades del médico con sus precios
- * 
- * Retorna:
- * {
- *   "success": true,
- *   "data": {
- *     "Cardiología": 50.00,
- *     "Medicina General": 30.00
- *   }
- * }
+ * Obtener tipos de consulta del médico con sus precios
  */
 export async function getConsultationPrices(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('✅ [DOCTORS] GET /api/doctors/consultation-prices - Obteniendo precios de consulta');
+  console.log('✅ [DOCTORS] GET /api/doctors/consultation-prices - Obteniendo tipos de consulta');
   
   const authResult = await requireRole(event, [enum_roles.provider]);
   if ('statusCode' in authResult) {
@@ -42,9 +33,12 @@ export async function getConsultationPrices(event: APIGatewayProxyEventV2): Prom
       return errorResponse('Provider no encontrado', 404);
     }
 
-    // Obtener especialidades con sus precios
-    const specialties = await prisma.provider_specialties.findMany({
-      where: { provider_id: provider.id },
+    // Obtener tipos de consulta con sus precios
+    const consultationPrices = await prisma.consultation_prices.findMany({
+      where: { 
+        provider_id: provider.id,
+        // No filtrar por is_active ya que ahora hacemos eliminación física
+      },
       include: {
         specialties: {
           select: {
@@ -53,38 +47,49 @@ export async function getConsultationPrices(event: APIGatewayProxyEventV2): Prom
           },
         },
       },
+      orderBy: {
+        created_at: 'desc',
+      },
     });
 
-    // Formatear respuesta como objeto { "Especialidad": precio }
-    const prices: Record<string, number> = {};
-    specialties.forEach((ps) => {
-      prices[ps.specialties.name] = parseFloat(ps.fee.toString());
-    });
+    // Formatear respuesta
+    const formattedPrices = consultationPrices.map((cp) => ({
+      id: cp.id,
+      consultationType: cp.consultation_type,
+      price: parseFloat(cp.price.toString()),
+      specialtyId: cp.specialty_id,
+      specialtyName: cp.specialties?.name || null,
+      description: cp.description,
+      durationMinutes: cp.duration_minutes,
+      createdAt: cp.created_at.toISOString(),
+      updatedAt: cp.updated_at.toISOString(),
+    }));
 
-    console.log(`✅ [DOCTORS] Retornando ${Object.keys(prices).length} especialidades con precios:`, prices);
+    console.log(`✅ [DOCTORS] Retornando ${formattedPrices.length} tipos de consulta`);
     
-    return successResponse(prices);
+    return successResponse(formattedPrices);
   } catch (error: any) {
-    console.error('❌ [DOCTORS] Error al obtener precios de consulta:', error.message);
+    console.error('❌ [DOCTORS] Error al obtener tipos de consulta:', error.message);
     logger.error('Error getting consultation prices', error);
     return internalErrorResponse('Failed to get consultation prices');
   }
 }
 
 /**
- * PUT /api/doctors/consultation-prices
- * Actualizar precios de consulta por especialidad
+ * POST /api/doctors/consultation-prices
+ * Crear un nuevo tipo de consulta con su precio
  * 
  * Body:
  * {
- *   "prices": {
- *     "Cardiología": 50.00,
- *     "Medicina General": 30.00
- *   }
+ *   "consultationType": "Limpieza dental",
+ *   "price": 30.00,
+ *   "specialtyId": "uuid" (opcional),
+ *   "description": "..." (opcional),
+ *   "durationMinutes": 30 (opcional)
  * }
  */
-export async function updateConsultationPrices(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('✅ [DOCTORS] PUT /api/doctors/consultation-prices - Actualizando precios de consulta');
+export async function createConsultationPrice(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  console.log('✅ [DOCTORS] POST /api/doctors/consultation-prices - Creando tipo de consulta');
   
   const authResult = await requireRole(event, [enum_roles.provider]);
   if ('statusCode' in authResult) {
@@ -98,8 +103,12 @@ export async function updateConsultationPrices(event: APIGatewayProxyEventV2): P
     const body = JSON.parse(event.body || '{}');
 
     // Validar body
-    if (!body.prices || typeof body.prices !== 'object') {
-      return errorResponse('El campo "prices" es requerido y debe ser un objeto', 400);
+    if (!body.consultationType || typeof body.consultationType !== 'string') {
+      return errorResponse('El campo "consultationType" es requerido', 400);
+    }
+
+    if (!body.price || typeof body.price !== 'number' || body.price < 0) {
+      return errorResponse('El campo "price" es requerido y debe ser un número mayor o igual a 0', 400);
     }
 
     // Obtener el provider del usuario
@@ -113,9 +122,29 @@ export async function updateConsultationPrices(event: APIGatewayProxyEventV2): P
       return errorResponse('Provider no encontrado', 404);
     }
 
-    // Obtener todas las especialidades del médico
-    const doctorSpecialties = await prisma.provider_specialties.findMany({
-      where: { provider_id: provider.id },
+    // Validar que la especialidad existe si se proporciona
+    if (body.specialtyId) {
+      const specialty = await prisma.specialties.findUnique({
+        where: { id: body.specialtyId },
+      });
+
+      if (!specialty) {
+        return errorResponse('Especialidad no encontrada', 404);
+      }
+    }
+
+    // Crear tipo de consulta
+    const consultationPrice = await prisma.consultation_prices.create({
+      data: {
+        provider_id: provider.id,
+        consultation_type: body.consultationType,
+        price: body.price,
+        specialty_id: body.specialtyId || null,
+        description: body.description || null,
+        duration_minutes: body.durationMinutes || null,
+        is_active: true,
+        updated_at: new Date(),
+      },
       include: {
         specialties: {
           select: {
@@ -126,57 +155,203 @@ export async function updateConsultationPrices(event: APIGatewayProxyEventV2): P
       },
     });
 
-    // Crear un mapa de nombre -> specialty_id
-    const specialtyMap = new Map<string, string>();
-    doctorSpecialties.forEach((ps) => {
-      specialtyMap.set(ps.specialties.name, ps.specialty_id);
-    });
-
-    // Validar precios y que las especialidades existan
-    const updates: Array<{ specialtyId: string; price: number }> = [];
+    console.log(`✅ [DOCTORS] Tipo de consulta creado: ${consultationPrice.id}`);
     
-    for (const [specialtyName, price] of Object.entries(body.prices)) {
-      // Validar precio
-      if (typeof price !== 'number' || price < 0) {
-        return errorResponse(`El precio de "${specialtyName}" debe ser un número mayor o igual a 0`, 400);
-      }
+    return successResponse({
+      id: consultationPrice.id,
+      consultationType: consultationPrice.consultation_type,
+      price: parseFloat(consultationPrice.price.toString()),
+      specialtyId: consultationPrice.specialty_id,
+      specialtyName: consultationPrice.specialties?.name || null,
+      description: consultationPrice.description,
+      durationMinutes: consultationPrice.duration_minutes,
+    });
+  } catch (error: any) {
+    console.error('❌ [DOCTORS] Error al crear tipo de consulta:', error.message);
+    logger.error('Error creating consultation price', error);
+    return internalErrorResponse('Failed to create consultation price');
+  }
+}
 
-      // Validar que la especialidad pertenezca al médico
-      const specialtyId = specialtyMap.get(specialtyName);
-      if (!specialtyId) {
-        return errorResponse(`La especialidad "${specialtyName}" no pertenece al médico`, 400);
-      }
+/**
+ * PUT /api/doctors/consultation-prices/:id
+ * Actualizar un tipo de consulta existente
+ */
+export async function updateConsultationPrice(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  console.log('✅ [DOCTORS] PUT /api/doctors/consultation-prices/:id - Actualizando tipo de consulta');
+  
+  const authResult = await requireRole(event, [enum_roles.provider]);
+  if ('statusCode' in authResult) {
+    return authResult;
+  }
 
-      updates.push({ specialtyId, price });
+  const prisma = getPrismaClient();
+
+  try {
+    const userId = authResult.user.id;
+    const pathParts = event.requestContext.http.path.split('/');
+    const consultationPriceId = pathParts[pathParts.length - 1];
+
+    if (!consultationPriceId) {
+      return errorResponse('ID de tipo de consulta no proporcionado', 400);
     }
 
-    // Actualizar precios (UPSERT)
-    const updatePromises = updates.map(({ specialtyId, price }) => {
-      return prisma.provider_specialties.update({
-        where: {
-          provider_id_specialty_id: {
-            provider_id: provider.id,
-            specialty_id: specialtyId,
-          },
-        },
-        data: {
-          fee: price,
-          updated_at: new Date(),
-        },
-      });
+    const body = JSON.parse(event.body || '{}');
+
+    // Obtener el provider del usuario
+    const provider = await prisma.providers.findFirst({
+      where: { user_id: userId },
+      select: { id: true },
     });
 
-    await Promise.all(updatePromises);
+    if (!provider) {
+      console.error(`❌ [DOCTORS] Provider no encontrado para usuario ${userId}`);
+      return errorResponse('Provider no encontrado', 404);
+    }
 
-    console.log(`✅ [DOCTORS] ${updates.length} precios actualizados correctamente`);
+    // Verificar que el tipo de consulta pertenezca al médico
+    const existingPrice = await prisma.consultation_prices.findFirst({
+      where: {
+        id: consultationPriceId,
+        provider_id: provider.id,
+      },
+    });
+
+    if (!existingPrice) {
+      console.log(`⚠️ [DOCTORS] Tipo de consulta ${consultationPriceId} no encontrado o no pertenece al médico`);
+      return notFoundResponse('Tipo de consulta no encontrado');
+    }
+
+    // Validar precio si se proporciona
+    if (body.price !== undefined && (typeof body.price !== 'number' || body.price < 0)) {
+      return errorResponse('El precio debe ser un número mayor o igual a 0', 400);
+    }
+
+    // Construir datos a actualizar
+    const updateData: any = {
+      updated_at: new Date(),
+    };
+
+    if (body.consultationType) updateData.consultation_type = body.consultationType;
+    if (body.price !== undefined) updateData.price = body.price;
+    if (body.specialtyId !== undefined) updateData.specialty_id = body.specialtyId;
+    if (body.description !== undefined) updateData.description = body.description;
+    if (body.durationMinutes !== undefined) updateData.duration_minutes = body.durationMinutes;
+
+    // Actualizar
+    const updatedPrice = await prisma.consultation_prices.update({
+      where: { id: consultationPriceId },
+      data: updateData,
+      include: {
+        specialties: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    });
+
+    console.log(`✅ [DOCTORS] Tipo de consulta ${consultationPriceId} actualizado`);
+    
+    return successResponse({
+      id: updatedPrice.id,
+      consultationType: updatedPrice.consultation_type,
+      price: parseFloat(updatedPrice.price.toString()),
+      specialtyId: updatedPrice.specialty_id,
+      specialtyName: updatedPrice.specialties?.name || null,
+      description: updatedPrice.description,
+      durationMinutes: updatedPrice.duration_minutes,
+    });
+  } catch (error: any) {
+    console.error('❌ [DOCTORS] Error al actualizar tipo de consulta:', error.message);
+    logger.error('Error updating consultation price', error);
+    return internalErrorResponse('Failed to update consultation price');
+  }
+}
+
+/**
+ * DELETE /api/doctors/consultation-prices/:id
+ * Eliminar un tipo de consulta PERMANENTEMENTE de la base de datos
+ */
+export async function deleteConsultationPrice(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  console.log('🗑️ [DOCTORS] DELETE /api/doctors/consultation-prices/:id - Eliminando tipo de consulta');
+  
+  const authResult = await requireRole(event, [enum_roles.provider]);
+  if ('statusCode' in authResult) {
+    return authResult;
+  }
+
+  const prisma = getPrismaClient();
+
+  try {
+    const userId = authResult.user.id;
+    const pathParts = event.requestContext.http.path.split('/');
+    const consultationPriceId = pathParts[pathParts.length - 1];
+
+    console.log(`🔍 [DOCTORS] ID recibido: ${consultationPriceId}`);
+    console.log(`🔍 [DOCTORS] User ID: ${userId}`);
+
+    if (!consultationPriceId) {
+      console.error('❌ [DOCTORS] ID de tipo de consulta no proporcionado');
+      return errorResponse('ID de tipo de consulta no proporcionado', 400);
+    }
+
+    // Obtener el provider del usuario
+    const provider = await prisma.providers.findFirst({
+      where: { user_id: userId },
+      select: { id: true },
+    });
+
+    if (!provider) {
+      console.error(`❌ [DOCTORS] Provider no encontrado para usuario ${userId}`);
+      return errorResponse('Provider no encontrado', 404);
+    }
+
+    console.log(`🔍 [DOCTORS] Provider ID: ${provider.id}`);
+
+    // Verificar que el tipo de consulta pertenezca al médico
+    const existingPrice = await prisma.consultation_prices.findFirst({
+      where: {
+        id: consultationPriceId,
+        provider_id: provider.id,
+      },
+    });
+
+    if (!existingPrice) {
+      console.log(`⚠️ [DOCTORS] Tipo de consulta ${consultationPriceId} no encontrado o no pertenece al médico`);
+      return notFoundResponse('Tipo de consulta no encontrado');
+    }
+
+    console.log(`✅ [DOCTORS] Tipo de consulta encontrado: ${existingPrice.consultation_type}`);
+
+    // HARD DELETE: Eliminar permanentemente de la base de datos
+    await prisma.consultation_prices.delete({
+      where: { id: consultationPriceId },
+    });
+
+    console.log(`✅ [DOCTORS] Tipo de consulta ${consultationPriceId} eliminado PERMANENTEMENTE de la base de datos`);
+    
+    // Verificar que se eliminó
+    const stillExists = await prisma.consultation_prices.findUnique({
+      where: { id: consultationPriceId },
+    });
+
+    if (stillExists) {
+      console.error(`❌ [DOCTORS] ERROR: El tipo de consulta AÚN EXISTE en la base de datos`);
+      return internalErrorResponse('Error: El tipo de consulta no pudo ser eliminado');
+    }
+
+    console.log(`✅ [DOCTORS] Verificado: El tipo de consulta ya no existe en la base de datos`);
     
     return successResponse({
       success: true,
-      message: 'Precios actualizados correctamente',
+      message: 'Tipo de consulta eliminado correctamente',
     });
   } catch (error: any) {
-    console.error('❌ [DOCTORS] Error al actualizar precios de consulta:', error.message);
-    logger.error('Error updating consultation prices', error);
-    return internalErrorResponse('Failed to update consultation prices');
+    console.error('❌ [DOCTORS] Error al eliminar tipo de consulta:', error.message);
+    console.error('❌ [DOCTORS] Stack:', error.stack);
+    logger.error('Error deleting consultation price', error);
+    return internalErrorResponse('Failed to delete consultation price');
   }
 }
