@@ -7,7 +7,8 @@ import {
 } from "../shared/response";
 import { getAllAmbulances, getAmbulanceById } from "./ambulances.controller";
 
-import { getAllDoctors, getDoctorById } from "./doctors.controller";
+import { getAllDoctors, getDoctorById, getDoctorConsultationPrices } from "./doctors.controller";
+import { debugConsultationPrices } from "./debug.controller";
 import {
   getAllPharmacies,
   getPharmacyBranchById,
@@ -36,6 +37,14 @@ export async function handler(
 
   try {
     // --- RUTAS GENERALES / UTILITARIAS ---
+
+    // DEBUG ENDPOINT - TEMPORAL
+    if (
+      path.startsWith("/api/public/debug/consultation-prices/") &&
+      method === "GET"
+    ) {
+      return await debugConsultationPrices(event);
+    }
 
     // Listar ciudades
     if (path === "/api/public/cities" && method === "GET") {
@@ -74,13 +83,22 @@ export async function handler(
       return await getAllDoctors(event);
     }
 
+    // GET /api/public/doctors/{id}/consultation-prices - Obtener tipos de consulta del médico
+    if (
+      path.startsWith("/api/public/doctors/") &&
+      path.endsWith("/consultation-prices") &&
+      method === "GET"
+    ) {
+      return await getDoctorConsultationPrices(event);
+    }
+
     // GET /api/public/doctors/{id} - Obtener médico por ID
     if (path.startsWith("/api/public/doctors/") && method === "GET") {
       const pathParts = path.split("/");
       const lastPart = pathParts[pathParts.length - 1];
 
-      // Verificamos que no sea la ruta de reviews ni la raíz
-      if (lastPart !== "reviews" && lastPart !== "doctors") {
+      // Verificamos que no sea la ruta de reviews, consultation-prices ni la raíz
+      if (lastPart !== "reviews" && lastPart !== "doctors" && lastPart !== "consultation-prices") {
         return await getDoctorById(event);
       }
     }

@@ -362,3 +362,119 @@ export async function getDoctorById(
     return internalErrorResponse("Error al obtener doctor", event);
   }
 }
+
+/**
+ * Obtener tipos de consulta de un médico (endpoint público)
+ * GET /api/public/doctors/{doctorId}/consultation-prices
+ * 
+ * Este endpoint es público y puede ser accedido por pacientes
+ * para ver los tipos de consulta disponibles de un médico.
+ */
+export async function getDoctorConsultationPrices(
+  event: APIGatewayProxyEventV2,
+): Promise<APIGatewayProxyResult> {
+  console.log(
+    "✅ [PUBLIC DOCTORS] GET /api/public/doctors/{doctorId}/consultation-prices - Obteniendo tipos de consulta",
+  );
+
+  try {
+    const pathParts = event.requestContext.http.path.split("/");
+    // Path: /api/public/doctors/{doctorId}/consultation-prices
+    const doctorIdIndex = pathParts.indexOf("doctors") + 1;
+    const doctorId = pathParts[doctorIdIndex];
+
+    console.log(`🔍 [PUBLIC DOCTORS] Doctor ID recibido: ${doctorId}`);
+
+    if (!doctorId || doctorId === "consultation-prices") {
+      console.error("❌ [PUBLIC DOCTORS] ID de doctor no proporcionado o inválido");
+      return errorResponse("ID de doctor requerido", 400, undefined, event);
+    }
+
+    const prisma = getPrismaClient();
+
+    // Verificar que el doctor existe y está activo
+    const doctor = await prisma.providers.findFirst({
+      where: {
+        id: doctorId,
+        verification_status: "APPROVED",
+        category_id: 1,
+        users: { is_active: true },
+      },
+      select: { id: true, commercial_name: true },
+    });
+
+    if (!doctor) {
+      console.log(`⚠️ [PUBLIC DOCTORS] Doctor ${doctorId} no encontrado o no activo`);
+      return errorResponse("Doctor no encontrado", 404, undefined, event);
+    }
+
+    console.log(`✅ [PUBLIC DOCTORS] Doctor encontrado: ${doctor.commercial_name}`);
+
+    // Obtener tipos de consulta activos del médico
+    const consultationPrices = await prisma.consultation_prices.findMany({
+      where: {
+        provider_id: doctorId,
+        is_active: true,
+      },
+      include: {
+        specialties: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+      orderBy: [
+        { specialty_id: "asc" },
+        { price: "asc" },
+      ],
+    });
+
+    console.log(`📊 [PUBLIC DOCTORS] Encontrados ${consultationPrices.length} tipos de consulta`);
+
+    // Si no hay datos, verificar si existen pero están inactivos
+    if (consultationPrices.length === 0) {
+      const inactiveCount = await prisma.consultation_prices.count({
+        where: {
+          provider_id: doctorId,
+          is_active: false,
+        },
+      });
+      
+      const totalCount = await prisma.consultation_prices.count({
+        where: {
+          provider_id: doctorId,
+        },
+      });
+      
+      console.log(`ℹ️ [PUBLIC DOCTORS] Tipos inactivos: ${inactiveCount}, Total en BD: ${totalCount}`);
+    }
+
+    // Formatear respuesta según especificación del frontend
+    const formattedPrices = consultationPrices.map((cp) => ({
+      id: cp.id,
+      specialtyId: cp.specialty_id,
+      specialtyName: cp.specialties?.name || null,
+      consultationType: cp.consultation_type,
+      price: parseFloat(cp.price.toString()),
+      isActive: cp.is_active,
+    }));
+
+    console.log(`✅ [PUBLIC DOCTORS] Retornando ${formattedPrices.length} tipos de consulta`);
+    
+    // Log de los datos para debugging
+    if (formattedPrices.length > 0) {
+      console.log(`📋 [PUBLIC DOCTORS] Datos:`, JSON.stringify(formattedPrices, null, 2));
+    }
+
+    return successResponse(formattedPrices, 200, event);
+  } catch (error: any) {
+    console.error(
+      "❌ [PUBLIC DOCTORS] Error al obtener tipos de consulta:",
+      error.message,
+    );
+    console.error("❌ [PUBLIC DOCTORS] Stack:", error.stack);
+    logger.error("Error fetching doctor consultation prices", error);
+    return internalErrorResponse("Error al obtener tipos de consulta", event);
+  }
+}
