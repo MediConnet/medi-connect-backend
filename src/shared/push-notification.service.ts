@@ -1,4 +1,4 @@
-import { Expo, ExpoPushMessage } from "expo-server-sdk";
+import { Expo, ExpoPushMessage, ExpoPushTicket } from "expo-server-sdk";
 import { removeInvalidPushToken } from "./helpers/token-cleanup.helper";
 import { logger } from "./logger";
 
@@ -38,7 +38,7 @@ export const pushNotificationService = {
       try {
         const ticketChunk = await expo.sendPushNotificationsAsync(chunk);
 
-        ticketChunk.forEach(async (ticket, index) => {
+        ticketChunk.forEach(async (ticket: ExpoPushTicket, index: number) => {
           const tokenThatFailed = chunk[index].to as string;
 
           if (ticket.status === "error") {
