@@ -138,7 +138,9 @@ async function handleLambdaResponse(
     console.log(`🔍 [REQUEST] Event creado. Headers en event:`, {
       authorization: event.headers.authorization ? 'Presente' : 'Ausente',
       Authorization: event.headers.Authorization ? 'Presente' : 'Ausente',
+      origin: event.headers.origin || event.headers.Origin || 'Ausente',
     });
+    console.log(`🔍 [REQUEST] Todos los headers del event:`, Object.keys(event.headers));
     
     const result = await handler(event);
     const duration = Date.now() - startTime;

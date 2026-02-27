@@ -21,17 +21,23 @@ export type ApiResponse<T = any> = SuccessResponse<T> | ErrorResponse;
  */
 function getAllowedOrigin(event?: APIGatewayProxyEventV2): string {
   // Si hay un evento, intentar obtener el origen del header
-  if (event?.headers?.origin || event?.headers?.Origin) {
-    const origin = event.headers.origin || event.headers.Origin || '';
+  if (event?.headers) {
+    const origin = event.headers.origin || event.headers.Origin || event.headers['origin'] || event.headers['Origin'] || '';
     const allowedOrigins = (process.env.CORS_ORIGINS || process.env.CORS_ORIGIN || '*').split(',').map(o => o.trim());
     
+    console.log('🔍 [getAllowedOrigin] Origin del event:', origin);
+    console.log('🔍 [getAllowedOrigin] Headers disponibles:', Object.keys(event.headers));
+    
     // Si '*' está permitido o el origen está en la lista, permitirlo
-    if (allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+    if (origin && (allowedOrigins.includes('*') || allowedOrigins.includes(origin))) {
+      console.log('✅ [getAllowedOrigin] Retornando origin del event:', origin);
       return origin;
     }
   }
   // Fallback a variable de entorno o '*'
-  return process.env.CORS_ORIGIN || process.env.CORS_ORIGINS?.split(',')[0]?.trim() || '*';
+  const fallback = process.env.CORS_ORIGIN || process.env.CORS_ORIGINS?.split(',')[0]?.trim() || '*';
+  console.log('⚠️ [getAllowedOrigin] Usando fallback:', fallback);
+  return fallback;
 }
 
 export function successResponse<T>(data: T, statusCode: number = 200, event?: APIGatewayProxyEventV2): APIGatewayProxyResult {
