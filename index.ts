@@ -197,21 +197,25 @@ async function handleLambdaResponse(
     // IMPORTANT: En Render (Express wrapper), algunas respuestas Lambda se construyen con successResponse(...)
     // sin pasar el `event`, lo que hace que Access-Control-Allow-Origin caiga al fallback (p.ej. localhost).
     // Aquí forzamos el origin correcto basado en el request real (si está permitido).
-    const reqOriginHeader = (req.headers.origin ?? (req.headers as any).Origin) as
-      | string
-      | string[]
-      | undefined;
+    const reqOriginHeader = req.headers.origin ?? (req.headers as any).Origin;
     const reqOrigin = Array.isArray(reqOriginHeader)
       ? reqOriginHeader[0]
-      : reqOriginHeader;
+      : (reqOriginHeader as string | undefined);
     if (reqOrigin) {
       const allowedOrigins = (process.env.CORS_ORIGINS || process.env.CORS_ORIGIN || '*')
         .split(',')
         .map(o => o.trim());
-      if (allowedOrigins.includes('*') || allowedOrigins.includes(reqOrigin as string)) {
-        res.setHeader('Access-Control-Allow-Origin', reqOrigin as string);
+      console.log('🔍 [OVERRIDE] Intentando override CORS. Origin:', reqOrigin);
+      console.log('🔍 [OVERRIDE] Orígenes permitidos:', allowedOrigins);
+      if (allowedOrigins.includes('*') || allowedOrigins.includes(reqOrigin)) {
+        console.log('✅ [OVERRIDE] Sobrescribiendo Access-Control-Allow-Origin a:', reqOrigin);
+        res.setHeader('Access-Control-Allow-Origin', reqOrigin);
         res.setHeader('Vary', 'Origin');
+      } else {
+        console.log('❌ [OVERRIDE] Origin no permitido, no se sobrescribe');
       }
+    } else {
+      console.log('⚠️ [OVERRIDE] No hay origin en request, no se puede sobrescribir');
     }
 
     // Enviar body
