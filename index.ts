@@ -194,6 +194,22 @@ async function handleLambdaResponse(
       }
     }
 
+    // IMPORTANT: En Render (Express wrapper), algunas respuestas Lambda se construyen con successResponse(...)
+    // sin pasar el `event`, lo que hace que Access-Control-Allow-Origin caiga al fallback (p.ej. localhost).
+    // Aquí forzamos el origin correcto basado en el request real (si está permitido).
+    const reqOrigin = Array.isArray(req.headers.origin)
+      ? req.headers.origin[0]
+      : (req.headers.origin || req.headers.Origin);
+    if (reqOrigin) {
+      const allowedOrigins = (process.env.CORS_ORIGINS || process.env.CORS_ORIGIN || '*')
+        .split(',')
+        .map(o => o.trim());
+      if (allowedOrigins.includes('*') || allowedOrigins.includes(reqOrigin as string)) {
+        res.setHeader('Access-Control-Allow-Origin', reqOrigin as string);
+        res.setHeader('Vary', 'Origin');
+      }
+    }
+
     // Enviar body
     if (result.body) {
       res.send(result.body);
