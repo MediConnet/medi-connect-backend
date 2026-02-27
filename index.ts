@@ -15,17 +15,25 @@ app.use(cors({
   origin: (origin, callback) => {
     const allowedOrigins = (process.env.CORS_ORIGINS || process.env.CORS_ORIGIN || '*').split(',').map(o => o.trim());
     
+    // Log para debugging
+    console.log('🔍 [CORS] Origin recibido:', origin);
+    console.log('🔍 [CORS] Orígenes permitidos:', allowedOrigins);
+    console.log('🔍 [CORS] CORS_ORIGINS env:', process.env.CORS_ORIGINS);
+    
     // Permitir requests sin origin (mobile apps, Postman, etc.)
     if (!origin) {
+      console.log('✅ [CORS] Request sin origin permitido');
       return callback(null, true);
     }
     
     // Si '*' está permitido o el origen está en la lista, permitirlo
     if (allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+      console.log(`✅ [CORS] Origin permitido: ${origin}`);
       return callback(null, true);
     }
     
     // Rechazar el origen
+    console.log(`❌ [CORS] Origin rechazado: ${origin}`);
     return callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
