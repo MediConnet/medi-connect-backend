@@ -69,17 +69,38 @@ function createApiGatewayEvent(
   req: express.Request,
   path: string
 ): APIGatewayProxyEventV2 {
+  // Obtener origin de forma segura
+  const origin = Array.isArray(req.headers.origin) 
+    ? req.headers.origin[0] 
+    : (req.headers.origin || req.headers.Origin || '');
+  
+  // Convertir todos los headers a strings y asegurar que origin esté presente
+  const headers: Record<string, string> = {};
+  Object.keys(req.headers).forEach(key => {
+    const value = req.headers[key];
+    if (value) {
+      headers[key] = Array.isArray(value) ? value[0] : String(value);
+    }
+  });
+  
+  // Asegurar que origin esté presente (en minúsculas y mayúsculas)
+  if (origin) {
+    headers['origin'] = origin;
+    headers['Origin'] = origin;
+  }
+  
+  // Asegurar content-type
+  headers['content-type'] = req.headers['content-type'] || 'application/json';
+  
+  console.log('🔍 [createApiGatewayEvent] Origin extraído:', origin);
+  console.log('🔍 [createApiGatewayEvent] Headers finales incluyen origin:', 'origin' in headers);
+  
   return {
     version: '2.0',
     routeKey: `${req.method} ${path}`,
     rawPath: path,
     rawQueryString: new URLSearchParams(req.query as any).toString(),
-    headers: {
-      ...req.headers as Record<string, string>,
-      'content-type': req.headers['content-type'] || 'application/json',
-      'origin': Array.isArray(req.headers.origin) ? req.headers.origin[0] : (req.headers.origin || req.headers.Origin || ''),
-      'Origin': Array.isArray(req.headers.origin) ? req.headers.origin[0] : (req.headers.origin || req.headers.Origin || ''),
-    },
+    headers: headers,
     requestContext: {
       accountId: 'local',
       apiId: 'local',
