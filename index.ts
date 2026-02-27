@@ -77,6 +77,8 @@ function createApiGatewayEvent(
     headers: {
       ...req.headers as Record<string, string>,
       'content-type': req.headers['content-type'] || 'application/json',
+      'origin': Array.isArray(req.headers.origin) ? req.headers.origin[0] : (req.headers.origin || req.headers.Origin || ''),
+      'Origin': Array.isArray(req.headers.origin) ? req.headers.origin[0] : (req.headers.origin || req.headers.Origin || ''),
     },
     requestContext: {
       accountId: 'local',
@@ -145,11 +147,22 @@ async function handleLambdaResponse(
     // Lambda response ya tiene statusCode y headers
     res.status(result.statusCode || 200);
 
-    // Copiar headers de la respuesta Lambda
+    // Copiar headers de la respuesta Lambda (asegurarse de incluir CORS)
     if (result.headers) {
       Object.entries(result.headers).forEach(([key, value]) => {
         res.setHeader(key, value as string);
       });
+    } else {
+      // Si no hay headers, asegurar que CORS esté configurado
+      const origin = req.headers.origin || req.headers.Origin || '*';
+      const allowedOrigins = (process.env.CORS_ORIGINS || process.env.CORS_ORIGIN || '*').split(',').map(o => o.trim());
+      
+      if (allowedOrigins.includes('*') || allowedOrigins.includes(origin as string)) {
+        res.setHeader('Access-Control-Allow-Origin', origin as string);
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+        res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,PATCH,OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Requested-With,Accept');
+      }
     }
 
     // Enviar body
