@@ -14,7 +14,8 @@ const PORT = process.env.PORT || 3000;
 app.use(cors({
   origin: process.env.CORS_ORIGINS?.split(',') || process.env.CORS_ORIGIN || '*',
   credentials: true,
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
   exposedHeaders: ['Authorization'],
 }));
 app.use(express.json({ limit: '10mb' })); // ⭐ Aumentar límite para subida de imágenes
@@ -321,8 +322,14 @@ if (clinicsHandler) {
 }
 
 // Health check
-app.get('/health', (req: express.Request, res: express.Response) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+app.get('/api/health', (req: express.Request, res: express.Response) => {
+  res.json({ 
+    success: true, 
+    data: { 
+      status: 'ok', 
+      timestamp: new Date().toISOString() 
+    } 
+  });
 });
 
 // Función para ejecutar migraciones

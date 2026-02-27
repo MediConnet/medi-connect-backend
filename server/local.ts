@@ -15,7 +15,8 @@ app.use(
     origin:
       process.env.CORS_ORIGINS?.split(",") || process.env.CORS_ORIGIN || "*",
     credentials: true,
-    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"],
     exposedHeaders: ["Authorization"],
   }),
 );
@@ -410,8 +411,14 @@ if (clinicsHandler) {
 }
 
 // Health check
-app.get("/health", (req, res) => {
-  res.json({ status: "ok", timestamp: new Date().toISOString() });
+app.get("/api/health", (req, res) => {
+  res.json({ 
+    success: true, 
+    data: { 
+      status: "ok", 
+      timestamp: new Date().toISOString() 
+    } 
+  });
 });
 
 // Start server
