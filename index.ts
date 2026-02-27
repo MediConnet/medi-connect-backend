@@ -149,19 +149,25 @@ async function handleLambdaResponse(
 
     // Copiar headers de la respuesta Lambda (asegurarse de incluir CORS)
     if (result.headers) {
+      console.log('🔍 [RESPONSE] Headers de Lambda:', Object.keys(result.headers));
+      console.log('🔍 [RESPONSE] Access-Control-Allow-Origin:', result.headers['Access-Control-Allow-Origin']);
       Object.entries(result.headers).forEach(([key, value]) => {
         res.setHeader(key, value as string);
       });
     } else {
       // Si no hay headers, asegurar que CORS esté configurado
-      const origin = req.headers.origin || req.headers.Origin || '*';
+      const origin = Array.isArray(req.headers.origin) ? req.headers.origin[0] : (req.headers.origin || req.headers.Origin || '*');
       const allowedOrigins = (process.env.CORS_ORIGINS || process.env.CORS_ORIGIN || '*').split(',').map(o => o.trim());
+      
+      console.log('🔍 [RESPONSE] No hay headers en Lambda, configurando CORS manualmente');
+      console.log('🔍 [RESPONSE] Origin:', origin);
       
       if (allowedOrigins.includes('*') || allowedOrigins.includes(origin as string)) {
         res.setHeader('Access-Control-Allow-Origin', origin as string);
         res.setHeader('Access-Control-Allow-Credentials', 'true');
         res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,PATCH,OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Requested-With,Accept');
+        console.log('✅ [RESPONSE] Headers CORS configurados:', origin);
       }
     }
 
