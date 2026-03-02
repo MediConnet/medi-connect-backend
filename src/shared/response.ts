@@ -1,5 +1,8 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResult } from 'aws-lambda';
 
+// Control de logs de debugging (activar con DEBUG_LOGS=true en producción)
+const DEBUG_MODE = process.env.DEBUG_LOGS === 'true' || process.env.NODE_ENV === 'development';
+
 export interface SuccessResponse<T = any> {
   success: true;
   data: T;
@@ -25,18 +28,24 @@ function getAllowedOrigin(event?: APIGatewayProxyEventV2): string {
     const origin = event.headers.origin || event.headers.Origin || event.headers['origin'] || event.headers['Origin'] || '';
     const allowedOrigins = (process.env.CORS_ORIGINS || process.env.CORS_ORIGIN || '*').split(',').map(o => o.trim());
     
-    console.log('🔍 [getAllowedOrigin] Origin del event:', origin);
-    console.log('🔍 [getAllowedOrigin] Headers disponibles:', Object.keys(event.headers));
+    if (DEBUG_MODE) {
+      console.log('🔍 [getAllowedOrigin] Origin del event:', origin);
+      console.log('🔍 [getAllowedOrigin] Headers disponibles:', Object.keys(event.headers));
+    }
     
     // Si '*' está permitido o el origen está en la lista, permitirlo
     if (origin && (allowedOrigins.includes('*') || allowedOrigins.includes(origin))) {
-      console.log('✅ [getAllowedOrigin] Retornando origin del event:', origin);
+      if (DEBUG_MODE) {
+        console.log('✅ [getAllowedOrigin] Retornando origin del event:', origin);
+      }
       return origin;
     }
   }
   // Fallback a variable de entorno o '*'
   const fallback = process.env.CORS_ORIGIN || process.env.CORS_ORIGINS?.split(',')[0]?.trim() || '*';
-  console.log('⚠️ [getAllowedOrigin] Usando fallback:', fallback);
+  if (DEBUG_MODE) {
+    console.log('⚠️ [getAllowedOrigin] Usando fallback:', fallback);
+  }
   return fallback;
 }
 

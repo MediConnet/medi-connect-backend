@@ -7,6 +7,9 @@ import { execSync } from 'child_process';
 // Cargar variables de entorno
 dotenv.config();
 
+// Control de logs de debugging (activar con DEBUG_LOGS=true en producción)
+const DEBUG_MODE = process.env.DEBUG_LOGS === 'true' || process.env.NODE_ENV === 'development';
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -15,24 +18,30 @@ app.use(cors({
   origin: (origin, callback) => {
     const allowedOrigins = (process.env.CORS_ORIGINS || process.env.CORS_ORIGIN || '*').split(',').map(o => o.trim());
     
-    // Log para debugging
-    console.log('🔍 [CORS] Origin recibido:', origin);
-    console.log('🔍 [CORS] Orígenes permitidos:', allowedOrigins);
-    console.log('🔍 [CORS] CORS_ORIGINS env:', process.env.CORS_ORIGINS);
+    // Log para debugging (solo si DEBUG_MODE está activo)
+    if (DEBUG_MODE) {
+      console.log('🔍 [CORS] Origin recibido:', origin);
+      console.log('🔍 [CORS] Orígenes permitidos:', allowedOrigins);
+      console.log('🔍 [CORS] CORS_ORIGINS env:', process.env.CORS_ORIGINS);
+    }
     
     // Permitir requests sin origin (mobile apps, Postman, etc.)
     if (!origin) {
-      console.log('✅ [CORS] Request sin origin permitido');
+      if (DEBUG_MODE) {
+        console.log('✅ [CORS] Request sin origin permitido');
+      }
       return callback(null, true);
     }
     
     // Si '*' está permitido o el origen está en la lista, permitirlo
     if (allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
-      console.log(`✅ [CORS] Origin permitido: ${origin}`);
+      if (DEBUG_MODE) {
+        console.log(`✅ [CORS] Origin permitido: ${origin}`);
+      }
       return callback(null, true);
     }
     
-    // Rechazar el origen
+    // Rechazar el origen (siempre loguear errores)
     console.log(`❌ [CORS] Origin rechazado: ${origin}`);
     return callback(new Error('Not allowed by CORS'));
   },
@@ -46,21 +55,26 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' })); // ⭐ Aumentar 
 
 // Middleware de logging para todas las requests
 app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.log(`\n🌐 [INCOMING] ${req.method} ${req.originalUrl}`);
-  console.log(`🔍 [INCOMING] Todos los headers:`, Object.keys(req.headers).join(', '));
-  const authHeader = Array.isArray(req.headers.authorization) 
-    ? req.headers.authorization[0] 
-    : req.headers.authorization;
-  const authHeaderUpper = Array.isArray(req.headers.Authorization)
-    ? req.headers.Authorization[0]
-    : req.headers.Authorization;
+  // Log básico siempre activo
+  console.log(`🌐 [INCOMING] ${req.method} ${req.originalUrl}`);
   
-  console.log(`🔍 [INCOMING] Headers específicos:`, {
-    authorization: authHeader ? `${authHeader.substring(0, 50)}...` : 'Ausente',
-    Authorization: authHeaderUpper ? `${authHeaderUpper.substring(0, 50)}...` : 'Ausente',
-    'content-type': req.headers['content-type'],
-    origin: req.headers.origin,
-  });
+  // Logs detallados solo en modo debug
+  if (DEBUG_MODE) {
+    console.log(`🔍 [INCOMING] Todos los headers:`, Object.keys(req.headers).join(', '));
+    const authHeader = Array.isArray(req.headers.authorization) 
+      ? req.headers.authorization[0] 
+      : req.headers.authorization;
+    const authHeaderUpper = Array.isArray(req.headers.Authorization)
+      ? req.headers.Authorization[0]
+      : req.headers.Authorization;
+    
+    console.log(`🔍 [INCOMING] Headers específicos:`, {
+      authorization: authHeader ? `${authHeader.substring(0, 50)}...` : 'Ausente',
+      Authorization: authHeaderUpper ? `${authHeaderUpper.substring(0, 50)}...` : 'Ausente',
+      'content-type': req.headers['content-type'],
+      origin: req.headers.origin,
+    });
+  }
   next();
 });
 
@@ -135,13 +149,15 @@ async function handleLambdaResponse(
   path: string
 ) {
   const startTime = Date.now();
-  console.log(`\n📥 [REQUEST] ${req.method} ${path} - Iniciando...`);
-  console.log(`🔍 [REQUEST] Headers recibidos:`, {
-    authorization: req.headers.authorization ? 'Presente' : 'Ausente',
-    Authorization: req.headers.Authorization ? 'Presente' : 'Ausente',
-    'content-type': req.headers['content-type'],
-    origin: req.headers.origin,
-  });
+  if (DEBUG_MODE) {
+    console.log(`📥 [REQUEST] ${req.method} ${path} - Iniciando...`);
+    console.log(`🔍 [REQUEST] Headers recibidos:`, {
+      authorization: req.headers.authorization ? 'Presente' : 'Ausente',
+      Authorization: req.headers.Authorization ? 'Presente' : 'Ausente',
+      'content-type': req.headers['content-type'],
+      origin: req.headers.origin,
+    });
+  }
   
   // Validar que el handler sea una función
   if (!handler || typeof handler !== 'function') {
@@ -156,24 +172,29 @@ async function handleLambdaResponse(
   
   try {
     const event = createApiGatewayEvent(req, path);
-    console.log(`🔍 [REQUEST] Event creado. Headers en event:`, {
-      authorization: event.headers.authorization ? 'Presente' : 'Ausente',
-      Authorization: event.headers.Authorization ? 'Presente' : 'Ausente',
-      origin: event.headers.origin || event.headers.Origin || 'Ausente',
-    });
-    console.log(`🔍 [REQUEST] Todos los headers del event:`, Object.keys(event.headers));
+    if (DEBUG_MODE) {
+      console.log(`🔍 [REQUEST] Event creado. Headers en event:`, {
+        authorization: event.headers.authorization ? 'Presente' : 'Ausente',
+        Authorization: event.headers.Authorization ? 'Presente' : 'Ausente',
+        origin: event.headers.origin || event.headers.Origin || 'Ausente',
+      });
+      console.log(`🔍 [REQUEST] Todos los headers del event:`, Object.keys(event.headers));
+    }
     
     const result = await handler(event);
     const duration = Date.now() - startTime;
-    console.log(`✅ [REQUEST] ${req.method} ${path} - Completado en ${duration}ms - Status: ${result.statusCode}`);
+    // Log de completado siempre activo (útil para monitoreo)
+    console.log(`✅ [REQUEST] ${req.method} ${path} - ${duration}ms - Status: ${result.statusCode}`);
 
     // Lambda response ya tiene statusCode y headers
     res.status(result.statusCode || 200);
 
     // Copiar headers de la respuesta Lambda (asegurarse de incluir CORS)
     if (result.headers) {
-      console.log('🔍 [RESPONSE] Headers de Lambda:', Object.keys(result.headers));
-      console.log('🔍 [RESPONSE] Access-Control-Allow-Origin:', result.headers['Access-Control-Allow-Origin']);
+      if (DEBUG_MODE) {
+        console.log('🔍 [RESPONSE] Headers de Lambda:', Object.keys(result.headers));
+        console.log('🔍 [RESPONSE] Access-Control-Allow-Origin:', result.headers['Access-Control-Allow-Origin']);
+      }
       Object.entries(result.headers).forEach(([key, value]) => {
         res.setHeader(key, value as string);
       });
@@ -182,15 +203,19 @@ async function handleLambdaResponse(
       const origin = Array.isArray(req.headers.origin) ? req.headers.origin[0] : (req.headers.origin || req.headers.Origin || '*');
       const allowedOrigins = (process.env.CORS_ORIGINS || process.env.CORS_ORIGIN || '*').split(',').map(o => o.trim());
       
-      console.log('🔍 [RESPONSE] No hay headers en Lambda, configurando CORS manualmente');
-      console.log('🔍 [RESPONSE] Origin:', origin);
+      if (DEBUG_MODE) {
+        console.log('🔍 [RESPONSE] No hay headers en Lambda, configurando CORS manualmente');
+        console.log('🔍 [RESPONSE] Origin:', origin);
+      }
       
       if (allowedOrigins.includes('*') || allowedOrigins.includes(origin as string)) {
         res.setHeader('Access-Control-Allow-Origin', origin as string);
         res.setHeader('Access-Control-Allow-Credentials', 'true');
         res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,PATCH,OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Requested-With,Accept');
-        console.log('✅ [RESPONSE] Headers CORS configurados:', origin);
+        if (DEBUG_MODE) {
+          console.log('✅ [RESPONSE] Headers CORS configurados:', origin);
+        }
       }
     }
 
@@ -205,17 +230,24 @@ async function handleLambdaResponse(
       const allowedOrigins = (process.env.CORS_ORIGINS || process.env.CORS_ORIGIN || '*')
         .split(',')
         .map(o => o.trim());
-      console.log('🔍 [OVERRIDE] Intentando override CORS. Origin:', reqOrigin);
-      console.log('🔍 [OVERRIDE] Orígenes permitidos:', allowedOrigins);
+      if (DEBUG_MODE) {
+        console.log('🔍 [OVERRIDE] Intentando override CORS. Origin:', reqOrigin);
+        console.log('🔍 [OVERRIDE] Orígenes permitidos:', allowedOrigins);
+      }
       if (allowedOrigins.includes('*') || allowedOrigins.includes(reqOrigin)) {
-        console.log('✅ [OVERRIDE] Sobrescribiendo Access-Control-Allow-Origin a:', reqOrigin);
+        if (DEBUG_MODE) {
+          console.log('✅ [OVERRIDE] Sobrescribiendo Access-Control-Allow-Origin a:', reqOrigin);
+        }
         res.setHeader('Access-Control-Allow-Origin', reqOrigin);
         res.setHeader('Vary', 'Origin');
       } else {
+        // Siempre loguear errores
         console.log('❌ [OVERRIDE] Origin no permitido, no se sobrescribe');
       }
     } else {
-      console.log('⚠️ [OVERRIDE] No hay origin en request, no se puede sobrescribir');
+      if (DEBUG_MODE) {
+        console.log('⚠️ [OVERRIDE] No hay origin en request, no se puede sobrescribir');
+      }
     }
 
     // Enviar body
