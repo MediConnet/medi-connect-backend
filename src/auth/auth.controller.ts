@@ -1353,16 +1353,25 @@ export async function forgotPassword(
       resetToken,
     });
 
-    await sendEmail({
+    // Enviar email de forma asíncrona (no bloquear la respuesta)
+    // El usuario recibe la respuesta inmediatamente, el email se envía en segundo plano
+    sendEmail({
       to: user.email,
       subject: "Recuperación de Contraseña - DOCALINK",
       html: emailHtml,
+    }).then(() => {
+      console.log(
+        `✅ [FORGOT-PASSWORD] Email de recuperación enviado a: ${user.email}`,
+      );
+    }).catch((error: any) => {
+      console.error(
+        `❌ [FORGOT-PASSWORD] Error al enviar email a ${user.email}:`,
+        error.message,
+      );
+      // No lanzar error aquí, el email se enviará en segundo plano
     });
 
-    console.log(
-      `✅ [FORGOT-PASSWORD] Email de recuperación enviado a: ${user.email}`,
-    );
-
+    // Retornar respuesta inmediatamente (no esperar a que se envíe el email)
     return successResponse(standardResponse);
   } catch (error: any) {
     console.error("❌ [FORGOT-PASSWORD] Error:", error.message);

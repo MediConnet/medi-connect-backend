@@ -53,6 +53,10 @@ function initializeNodemailer(): nodemailer.Transporter | null {
         user: smtpUser,
         pass: smtpPassword,
       },
+      // Timeouts para evitar que se cuelgue la conexión
+      connectionTimeout: 10000, // 10 segundos para establecer conexión
+      greetingTimeout: 10000, // 10 segundos para recibir saludo del servidor
+      socketTimeout: 10000, // 10 segundos de timeout en el socket
     });
 
     console.log('✅ [NODEMAILER] Transporter inicializado correctamente');
