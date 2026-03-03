@@ -1294,20 +1294,20 @@ export async function forgotPassword(
       return successResponse(standardResponse);
     }
 
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
     const recentAttempts = await prisma.password_resets.count({
       where: {
         email: body.email.toLowerCase(),
-        created_at: { gte: oneHourAgo },
+        created_at: { gte: thirtyMinutesAgo },
       },
     });
 
-    if (recentAttempts >= 3) {
+    if (recentAttempts >= 5) {
       console.log(
         `⚠️ [FORGOT-PASSWORD] Límite de intentos excedido para: ${body.email}`,
       );
       return errorResponse(
-        "Demasiados intentos. Por favor intenta en 1 hora.",
+        "Demasiados intentos. Por favor intenta en 30 minutos.",
         429,
       );
     }
