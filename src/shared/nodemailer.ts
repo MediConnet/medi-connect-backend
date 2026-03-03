@@ -1,7 +1,7 @@
 /**
- * Módulo de Nodemailer para envío de correos con Gmail SMTP
+ * Módulo de Nodemailer para envío de correos con SMTP (Gmail, Hostinger, etc.)
  * 
- * Más simple y confiable para desarrollo que Mailjet o Resend
+ * Soporta múltiples proveedores SMTP mediante variables de entorno
  */
 
 import nodemailer from 'nodemailer';
@@ -18,7 +18,7 @@ interface EmailOptions {
 let transporter: nodemailer.Transporter | null = null;
 
 /**
- * Inicializa el transporter de Nodemailer con Gmail SMTP
+ * Inicializa el transporter de Nodemailer con SMTP (Gmail, Hostinger, etc.)
  */
 function initializeNodemailer(): nodemailer.Transporter | null {
   if (transporter) {
@@ -33,20 +33,22 @@ function initializeNodemailer(): nodemailer.Transporter | null {
 
   if (!smtpUser || !smtpPassword) {
     console.error('❌ [NODEMAILER] SMTP_USER o SMTP_PASSWORD no configurados');
-    console.log('💡 [NODEMAILER] Para usar Gmail:');
-    console.log('   1. Ve a https://myaccount.google.com/apppasswords');
-    console.log('   2. Genera una "App Password"');
-    console.log('   3. Configura en .env:');
-    console.log('      SMTP_USER=tu-email@gmail.com');
-    console.log('      SMTP_PASSWORD=tu-app-password');
+    console.log('💡 [NODEMAILER] Configura las variables de entorno:');
+    console.log('   SMTP_HOST=smtp.hostinger.com (o tu servidor SMTP)');
+    console.log('   SMTP_PORT=465 (SSL) o 587 (TLS)');
+    console.log('   SMTP_USER=tu-email@docalink.com');
+    console.log('   SMTP_PASSWORD=tu-contraseña');
     return null;
   }
 
   try {
+    // Puerto 465 requiere SSL (secure: true), otros puertos usan TLS (secure: false)
+    const useSSL = smtpPort === 465;
+    
     transporter = nodemailer.createTransport({
       host: smtpHost,
       port: smtpPort,
-      secure: false, // true para 465, false para otros puertos
+      secure: useSSL, // true para 465 (SSL), false para otros puertos (TLS)
       auth: {
         user: smtpUser,
         pass: smtpPassword,
@@ -65,7 +67,7 @@ function initializeNodemailer(): nodemailer.Transporter | null {
 }
 
 /**
- * Envía un correo usando Nodemailer con Gmail SMTP
+ * Envía un correo usando Nodemailer con SMTP
  */
 export async function sendEmail(options: EmailOptions): Promise<boolean> {
   try {
