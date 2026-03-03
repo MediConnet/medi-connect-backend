@@ -26,10 +26,11 @@ function initializeNodemailer(): nodemailer.Transporter | null {
   }
 
   // Obtener credenciales desde variables de entorno
+  // Por defecto usar Hostinger
   const smtpUser = process.env.SMTP_USER || process.env.GMAIL_USER;
   const smtpPassword = process.env.SMTP_PASSWORD || process.env.GMAIL_APP_PASSWORD;
-  const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
-  const smtpPort = parseInt(process.env.SMTP_PORT || '587');
+  const smtpHost = process.env.SMTP_HOST || 'smtp.hostinger.com';
+  const smtpPort = parseInt(process.env.SMTP_PORT || '465'); // Puerto 465 para Hostinger con SSL
 
   if (!smtpUser || !smtpPassword) {
     console.error('❌ [NODEMAILER] SMTP_USER o SMTP_PASSWORD no configurados');
@@ -45,6 +46,7 @@ function initializeNodemailer(): nodemailer.Transporter | null {
     // Puerto 465 requiere SSL (secure: true), otros puertos usan TLS (secure: false)
     const useSSL = smtpPort === 465;
     
+    // Configuración optimizada para Hostinger
     transporter = nodemailer.createTransport({
       host: smtpHost,
       port: smtpPort,
@@ -53,14 +55,24 @@ function initializeNodemailer(): nodemailer.Transporter | null {
         user: smtpUser,
         pass: smtpPassword,
       },
-      // Timeouts para evitar que se cuelgue la conexión
-      connectionTimeout: 10000, // 10 segundos para establecer conexión
-      greetingTimeout: 10000, // 10 segundos para recibir saludo del servidor
-      socketTimeout: 10000, // 10 segundos de timeout en el socket
+      // Timeouts aumentados para evitar errores de conexión (especialmente en Render)
+      connectionTimeout: 30000, // 30 segundos para establecer conexión
+      greetingTimeout: 30000, // 30 segundos para recibir saludo del servidor
+      socketTimeout: 30000, // 30 segundos de timeout en el socket
+      // Opciones adicionales para mejorar la conexión con Hostinger
+      tls: {
+        rejectUnauthorized: false, // Permitir certificados autofirmados
+        ciphers: 'SSLv3', // Compatibilidad con servidores SMTP antiguos
+      },
+      // Opciones adicionales para Hostinger
+      pool: true, // Usar pool de conexiones para mejor rendimiento
+      maxConnections: 1, // Máximo 1 conexión simultánea
+      maxMessages: 3, // Máximo 3 mensajes por conexión
     });
 
     console.log('✅ [NODEMAILER] Transporter inicializado correctamente');
     console.log(`📧 [NODEMAILER] Email remitente: ${smtpUser}`);
+    console.log(`📧 [NODEMAILER] Servidor SMTP: ${smtpHost}:${smtpPort} (${useSSL ? 'SSL' : 'TLS'})`);
     
     return transporter;
   } catch (error: any) {
@@ -102,15 +114,28 @@ export async function sendEmail(options: EmailOptions): Promise<boolean> {
     
     // Log más detallado del error
     if (error.code) {
-      console.error('   Código de error:', error.code);
+      console.error(`   Código de error: ${error.code}`);
+      
+      // Mensajes específicos para errores comunes
+      if (error.code === 'ETIMEDOUT' || error.code === 'ECONNREFUSED') {
+        console.error('   ⚠️ Error de conexión: Verifica que el servidor SMTP esté accesible desde Render');
+        console.error('   💡 Sugerencia: Verifica SMTP_HOST, SMTP_PORT y que el firewall permita conexiones');
+      } else if (error.code === 'EAUTH') {
+        console.error('   ⚠️ Error de autenticación: Verifica SMTP_USER y SMTP_PASSWORD');
+      }
     }
     if (error.response) {
-      console.error('   Respuesta:', error.response);
+      console.error('   Respuesta del servidor:', error.response);
+    }
+    if (error.responseCode) {
+      console.error('   Código de respuesta:', error.responseCode);
     }
     
     logger.error('Error sending email with Nodemailer', error, { 
       to: options.to, 
-      subject: options.subject 
+      subject: options.subject,
+      errorCode: error.code,
+      errorMessage: error.message
     });
     
     return false;

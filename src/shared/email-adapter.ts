@@ -24,9 +24,10 @@ interface EmailAdapterConfig {
 }
 
 // Configuración por defecto
+// Usar Nodemailer (SMTP/Hostinger) por defecto
 const defaultConfig: EmailAdapterConfig = {
-  provider: (process.env.EMAIL_PROVIDER as EmailProvider) || 'mailerlite',
-  fallbackToResend: process.env.EMAIL_FALLBACK_TO_RESEND === 'true' || true,
+  provider: (process.env.EMAIL_PROVIDER as EmailProvider) || 'nodemailer',
+  fallbackToResend: process.env.EMAIL_FALLBACK_TO_RESEND === 'true', // Deshabilitado por defecto
 };
 
 /**
@@ -49,19 +50,19 @@ function determineProvider(config: EmailAdapterConfig): 'nodemailer' | 'mailjet'
     return config.provider;
   }
   
-  // Modo auto: usar MailerLite si está configurado, sino Nodemailer, sino Mailjet, sino Resend
+  // Modo auto: usar Nodemailer si está configurado, sino MailerLite, sino Mailjet
   if (config.provider === 'auto') {
+    const nodemailerStatus = getNodemailerStatus();
+    if (nodemailerStatus.configured) {
+      console.log('📧 [EMAIL-ADAPTER] Usando Nodemailer (configurado)');
+      return 'nodemailer';
+    }
+    
     const { getMailerLiteStatus } = require('./mailerlite');
     const mailerliteStatus = getMailerLiteStatus();
     if (mailerliteStatus.configured) {
       console.log('📧 [EMAIL-ADAPTER] Usando MailerLite (configurado)');
       return 'mailerlite';
-    }
-    
-    const nodemailerStatus = getNodemailerStatus();
-    if (nodemailerStatus.configured) {
-      console.log('📧 [EMAIL-ADAPTER] Usando Nodemailer (configurado)');
-      return 'nodemailer';
     }
     
     const mailjetStatus = getMailjetStatus();
@@ -70,12 +71,12 @@ function determineProvider(config: EmailAdapterConfig): 'nodemailer' | 'mailjet'
       return 'mailjet';
     }
     
-    console.log('📧 [EMAIL-ADAPTER] Usando Resend (por defecto)');
-    return 'resend';
+    console.log('📧 [EMAIL-ADAPTER] Usando Nodemailer (por defecto)');
+    return 'nodemailer';
   }
   
-  // Por defecto, usar MailerLite
-  return 'mailerlite';
+  // Por defecto, usar Nodemailer
+  return 'nodemailer';
 }
 
 /**
@@ -112,7 +113,7 @@ export async function sendEmail(
         return false;
       }
     } else if (provider === 'nodemailer') {
-      // Usar Nodemailer
+      // Usar Nodemailer (SMTP/Hostinger) - sin fallback
       return await sendEmailNodemailer(options);
     } else if (provider === 'mailjet') {
       // Intentar enviar con Mailjet
