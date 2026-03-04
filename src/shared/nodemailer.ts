@@ -26,11 +26,11 @@ function initializeNodemailer(): nodemailer.Transporter | null {
   }
 
   // Obtener credenciales desde variables de entorno
-  // Por defecto usar Hostinger con puerto 587 (TLS) - más confiable que 465
+  // Por defecto usar Hostinger con puerto 465 (SSL) según configuración oficial
   const smtpUser = process.env.SMTP_USER || process.env.GMAIL_USER;
   const smtpPassword = process.env.SMTP_PASSWORD || process.env.GMAIL_APP_PASSWORD;
   const smtpHost = process.env.SMTP_HOST || 'smtp.hostinger.com';
-  const smtpPort = parseInt(process.env.SMTP_PORT || '587'); // Puerto 587 (TLS) por defecto - más confiable
+  const smtpPort = parseInt(process.env.SMTP_PORT || '465'); // Puerto 465 (SSL) por defecto según Hostinger
 
   if (!smtpUser || !smtpPassword) {
     console.error('❌ [NODEMAILER] SMTP_USER o SMTP_PASSWORD no configurados');
@@ -55,14 +55,15 @@ function initializeNodemailer(): nodemailer.Transporter | null {
         user: smtpUser,
         pass: smtpPassword,
       },
-      // Timeouts aumentados para evitar errores de conexión
-      connectionTimeout: 30000, // 30 segundos para establecer conexión
-      greetingTimeout: 30000, // 30 segundos para recibir saludo del servidor
-      socketTimeout: 30000, // 30 segundos de timeout en el socket
-      // Configuración TLS mejorada (sin SSLv3 que es muy antiguo)
+      // Timeouts aumentados para evitar errores de conexión (especialmente importante para Render)
+      connectionTimeout: 60000, // 60 segundos para establecer conexión
+      greetingTimeout: 60000, // 60 segundos para recibir saludo del servidor
+      socketTimeout: 60000, // 60 segundos de timeout en el socket
+      // Configuración TLS/SSL mejorada para Hostinger
       tls: {
         rejectUnauthorized: false, // Permitir certificados autofirmados
-        minVersion: 'TLSv1.2', // Usar TLS 1.2 o superior (más seguro y compatible)
+        minVersion: 'TLSv1.2', // Usar TLS 1.2 o superior
+        servername: smtpHost, // Especificar el nombre del servidor para SSL
       },
       // Deshabilitar pool para evitar problemas de conexión en Render
       pool: false, // Sin pool - conexiones directas más confiables
