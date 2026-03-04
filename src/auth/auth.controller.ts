@@ -1355,6 +1355,10 @@ export async function forgotPassword(
 
     // Enviar email de forma asíncrona (no bloquear la respuesta)
     // El backend responde rápido al frontend, el email se envía en segundo plano
+    console.log(
+      `📧 [FORGOT-PASSWORD] Iniciando envío de email de recuperación a: ${user.email}`,
+    );
+    
     sendEmail({
       to: user.email,
       subject: "Recuperación de Contraseña - DOCALINK",
@@ -1367,15 +1371,27 @@ export async function forgotPassword(
           );
         } else {
           console.error(
-            `❌ [FORGOT-PASSWORD] No se pudo enviar email a ${user.email} - verifica logs anteriores`,
+            `❌ [FORGOT-PASSWORD] FALLO: No se pudo enviar email a ${user.email}`,
+          );
+          console.error(
+            `⚠️ [FORGOT-PASSWORD] IMPORTANTE: El usuario ${user.email} NO recibirá el email de recuperación`,
+          );
+          console.error(
+            `💡 [FORGOT-PASSWORD] Revisa los logs anteriores de NODEMAILER para ver el error específico`,
           );
         }
       })
       .catch((error: any) => {
         console.error(
-          `❌ [FORGOT-PASSWORD] Error al enviar email a ${user.email}:`,
+          `❌ [FORGOT-PASSWORD] ERROR al enviar email a ${user.email}:`,
           error.message,
         );
+        console.error(
+          `⚠️ [FORGOT-PASSWORD] IMPORTANTE: El usuario ${user.email} NO recibirá el email de recuperación`,
+        );
+        if (error.code) {
+          console.error(`   Código de error: ${error.code}`);
+        }
       });
 
     // Retornar respuesta inmediatamente (no esperar a que se envíe el email)
