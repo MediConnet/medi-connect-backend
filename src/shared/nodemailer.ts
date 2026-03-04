@@ -26,11 +26,11 @@ function initializeNodemailer(): nodemailer.Transporter | null {
   }
 
   // Obtener credenciales desde variables de entorno
-  // Por defecto usar Hostinger
+  // Por defecto usar Hostinger con puerto 587 (TLS) - más confiable que 465
   const smtpUser = process.env.SMTP_USER || process.env.GMAIL_USER;
   const smtpPassword = process.env.SMTP_PASSWORD || process.env.GMAIL_APP_PASSWORD;
   const smtpHost = process.env.SMTP_HOST || 'smtp.hostinger.com';
-  const smtpPort = parseInt(process.env.SMTP_PORT || '465'); // Puerto 465 para Hostinger con SSL
+  const smtpPort = parseInt(process.env.SMTP_PORT || '587'); // Puerto 587 (TLS) por defecto - más confiable
 
   if (!smtpUser || !smtpPassword) {
     console.error('❌ [NODEMAILER] SMTP_USER o SMTP_PASSWORD no configurados');
@@ -46,7 +46,7 @@ function initializeNodemailer(): nodemailer.Transporter | null {
     // Puerto 465 requiere SSL (secure: true), otros puertos usan TLS (secure: false)
     const useSSL = smtpPort === 465;
     
-    // Configuración optimizada para Hostinger
+    // Configuración optimizada para Hostinger y Render
     transporter = nodemailer.createTransport({
       host: smtpHost,
       port: smtpPort,
@@ -55,20 +55,18 @@ function initializeNodemailer(): nodemailer.Transporter | null {
         user: smtpUser,
         pass: smtpPassword,
       },
-      // Timeouts aumentados para evitar errores de conexión (especialmente en Render)
+      // Timeouts aumentados para evitar errores de conexión
       connectionTimeout: 30000, // 30 segundos para establecer conexión
       greetingTimeout: 30000, // 30 segundos para recibir saludo del servidor
       socketTimeout: 30000, // 30 segundos de timeout en el socket
-      // Opciones adicionales para mejorar la conexión con Hostinger
+      // Configuración TLS mejorada (sin SSLv3 que es muy antiguo)
       tls: {
         rejectUnauthorized: false, // Permitir certificados autofirmados
-        ciphers: 'SSLv3', // Compatibilidad con servidores SMTP antiguos
+        minVersion: 'TLSv1.2', // Usar TLS 1.2 o superior (más seguro y compatible)
       },
-      // Opciones adicionales para Hostinger
-      pool: true, // Usar pool de conexiones para mejor rendimiento
-      maxConnections: 1, // Máximo 1 conexión simultánea
-      maxMessages: 3, // Máximo 3 mensajes por conexión
-    });
+      // Deshabilitar pool para evitar problemas de conexión en Render
+      pool: false, // Sin pool - conexiones directas más confiables
+    } as any); // Type assertion para evitar problemas de tipos con nodemailer
 
     console.log('✅ [NODEMAILER] Transporter inicializado correctamente');
     console.log(`📧 [NODEMAILER] Email remitente: ${smtpUser}`);
