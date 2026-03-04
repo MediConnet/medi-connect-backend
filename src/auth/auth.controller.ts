@@ -1353,34 +1353,33 @@ export async function forgotPassword(
       resetToken,
     });
 
-    // Enviar email y esperar el resultado para verificar si se envió correctamente
-    try {
-      const emailSent = await sendEmail({
-        to: user.email,
-        subject: "Recuperación de Contraseña - DOCALINK",
-        html: emailHtml,
+    // Enviar email de forma asíncrona (no bloquear la respuesta)
+    // El backend responde rápido al frontend, el email se envía en segundo plano
+    sendEmail({
+      to: user.email,
+      subject: "Recuperación de Contraseña - DOCALINK",
+      html: emailHtml,
+    })
+      .then((emailSent) => {
+        if (emailSent) {
+          console.log(
+            `✅ [FORGOT-PASSWORD] Email de recuperación enviado exitosamente a: ${user.email}`,
+          );
+        } else {
+          console.error(
+            `❌ [FORGOT-PASSWORD] No se pudo enviar email a ${user.email} - verifica logs anteriores`,
+          );
+        }
+      })
+      .catch((error: any) => {
+        console.error(
+          `❌ [FORGOT-PASSWORD] Error al enviar email a ${user.email}:`,
+          error.message,
+        );
       });
 
-      if (emailSent) {
-        console.log(
-          `✅ [FORGOT-PASSWORD] Email de recuperación enviado exitosamente a: ${user.email}`,
-        );
-      } else {
-        console.error(
-          `❌ [FORGOT-PASSWORD] No se pudo enviar email a ${user.email} - verifica logs anteriores`,
-        );
-        // Aún retornar éxito por seguridad (no revelar si el email existe)
-        // Pero el error ya fue logueado en sendEmail()
-      }
-    } catch (error: any) {
-      console.error(
-        `❌ [FORGOT-PASSWORD] Error al enviar email a ${user.email}:`,
-        error.message,
-      );
-      // Aún retornar éxito por seguridad (no revelar si el email existe)
-    }
-
-    // Retornar respuesta (siempre éxito por seguridad, pero el email puede haber fallado)
+    // Retornar respuesta inmediatamente (no esperar a que se envíe el email)
+    // Esto evita que el frontend tenga timeout de 30 segundos
     return successResponse(standardResponse);
   } catch (error: any) {
     console.error("❌ [FORGOT-PASSWORD] Error:", error.message);
