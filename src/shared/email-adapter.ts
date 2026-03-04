@@ -24,9 +24,9 @@ interface EmailAdapterConfig {
 }
 
 // Configuración por defecto
-// Usar Nodemailer (SMTP/Hostinger) por defecto
+// Usar Resend por defecto
 const defaultConfig: EmailAdapterConfig = {
-  provider: (process.env.EMAIL_PROVIDER as EmailProvider) || 'nodemailer',
+  provider: (process.env.EMAIL_PROVIDER as EmailProvider) || 'resend',
   fallbackToResend: process.env.EMAIL_FALLBACK_TO_RESEND === 'true', // Deshabilitado por defecto
 };
 
@@ -71,12 +71,12 @@ function determineProvider(config: EmailAdapterConfig): 'nodemailer' | 'mailjet'
       return 'mailjet';
     }
     
-    console.log('📧 [EMAIL-ADAPTER] Usando Nodemailer (por defecto)');
-    return 'nodemailer';
+    console.log('📧 [EMAIL-ADAPTER] Usando Resend (por defecto)');
+    return 'resend';
   }
   
-  // Por defecto, usar Nodemailer
-  return 'nodemailer';
+  // Por defecto, usar Resend
+  return 'resend';
 }
 
 /**

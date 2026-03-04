@@ -24,7 +24,7 @@ function initializeEmailService(): Resend | null {
   const resendApiToken = process.env.RESEND_API_KEY || process.env.RESEND_API_TOKEN || 're_SSG1TwXf_7c58f9HHEiPPaHbAverY4DKb';
   
   // Email desde el que se enviarán los correos (debe estar verificado en Resend)
-  const fromEmail = process.env.RESEND_FROM_EMAIL || process.env.SMTP_FROM || 'noreply@mediconnect.com';
+  const fromEmail = process.env.RESEND_FROM_EMAIL || process.env.SMTP_FROM || 'noreply@docalink.com';
 
   // Si no hay API key, retornar null (modo desarrollo)
   if (!resendApiToken) {
