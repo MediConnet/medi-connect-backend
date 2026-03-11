@@ -50,6 +50,13 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
   exposedHeaders: ['Authorization'],
 }));
+
+// ⭐ Soporte para multipart/form-data (documentos) - DEBE estar ANTES de express.json()
+app.use(
+  '/api/auth',
+  express.raw({ type: 'multipart/form-data', limit: '20mb' }),
+);
+
 app.use(express.json({ limit: '10mb' })); // ⭐ Aumentar límite para subida de imágenes
 app.use(express.urlencoded({ extended: true, limit: '10mb' })); // ⭐ Aumentar límite para subida de imágenes
 
@@ -109,6 +116,22 @@ function createApiGatewayEvent(
   console.log('🔍 [createApiGatewayEvent] Origin extraído:', origin);
   console.log('🔍 [createApiGatewayEvent] Headers finales incluyen origin:', 'origin' in headers);
   
+  // Determinar el body: si es Buffer (multipart), convertir a base64; sino usar req.body
+  const contentType = req.headers['content-type'] || '';
+  let body: string | undefined;
+  let isBase64Encoded = false;
+  
+  if (contentType.includes('multipart/form-data') && Buffer.isBuffer(req.body)) {
+    // Para multipart, req.body es un Buffer (gracias a express.raw())
+    body = req.body.toString('base64');
+    isBase64Encoded = true;
+    console.log('🔍 [createApiGatewayEvent] Body multipart capturado, tamaño:', req.body.length, 'bytes');
+  } else if (req.body) {
+    // Para JSON o urlencoded, convertir a string
+    body = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
+    console.log('🔍 [createApiGatewayEvent] Body JSON/urlencoded, tamaño:', body.length, 'chars');
+  }
+  
   return {
     version: '2.0',
     routeKey: `${req.method} ${path}`,
@@ -133,8 +156,8 @@ function createApiGatewayEvent(
       time: new Date().toISOString(),
       timeEpoch: Date.now(),
     },
-    body: req.body ? JSON.stringify(req.body) : undefined,
-    isBase64Encoded: false,
+    body: body,
+    isBase64Encoded: isBase64Encoded,
     queryStringParameters: Object.keys(req.query).length > 0
       ? req.query as Record<string, string>
       : undefined,
