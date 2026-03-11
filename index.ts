@@ -465,6 +465,9 @@ if (clinicsHandler) {
   });
 }
 
+// Servir imágenes de plantillas de email (público)
+app.use('/email-assets', express.static('email-templates'));
+
 // Health check
 app.get('/api/health', (req: express.Request, res: express.Response) => {
   res.json({ 
