@@ -863,7 +863,10 @@ async function approveRequest(event: APIGatewayProxyEventV2): Promise<APIGateway
   // Buscar el provider
   const provider = await prisma.providers.findUnique({
     where: { id: requestId },
-    include: { users: true },
+    include: { 
+      users: true,
+      service_categories: true,
+    },
   });
 
   if (!provider) {
@@ -892,6 +895,55 @@ async function approveRequest(event: APIGatewayProxyEventV2): Promise<APIGateway
     where: { provider_id: requestId },
     data: { is_active: true },
   });
+
+  // 📧 Enviar email de bienvenida
+  if (provider.users) {
+    try {
+      const { sendEmail, generateWelcomeEmail } = await import('../shared/email');
+      
+      // Determinar el nombre del usuario
+      const userName = provider.commercial_name || provider.users.email;
+      
+      // Determinar el rol para mostrar
+      const roleMap: Record<string, string> = {
+        'doctor': 'Doctor',
+        'pharmacy': 'Farmacia',
+        'laboratory': 'Laboratorio',
+        'ambulance': 'Servicio de Ambulancia',
+        'supplies': 'Proveedor de Insumos',
+      };
+      const userRole = provider.service_categories?.slug 
+        ? roleMap[provider.service_categories.slug] || 'Proveedor'
+        : 'Proveedor';
+      
+      // URL del frontend
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+      const loginUrl = `${frontendUrl}/login`;
+      
+      // Generar HTML del email
+      const welcomeHtml = generateWelcomeEmail({
+        userName,
+        userRole,
+        loginUrl,
+      });
+      
+      // Enviar email
+      const emailSent = await sendEmail({
+        to: provider.users.email,
+        subject: '¡Bienvenido a DOCALINK! 🎉',
+        html: welcomeHtml,
+      });
+      
+      if (emailSent) {
+        console.log(`✅ [APPROVE_REQUEST] Email de bienvenida enviado a ${provider.users.email}`);
+      } else {
+        console.log(`⚠️ [APPROVE_REQUEST] No se pudo enviar el email de bienvenida a ${provider.users.email}`);
+      }
+    } catch (emailError: any) {
+      console.error(`❌ [APPROVE_REQUEST] Error al enviar email de bienvenida:`, emailError.message);
+      // No fallar la aprobación si el email falla
+    }
+  }
 
   console.log(`✅ [APPROVE_REQUEST] Solicitud ${requestId} aprobada exitosamente`);
   return successResponse({ success: true });

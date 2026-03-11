@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bienvenido a DOCALINK</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f9fafb;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f9fafb; padding: 40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+          
+          <!-- Header -->
+          <tr>
+            <td style="background: linear-gradient(135deg, #14b8a6 0%, #0d9488 100%); padding: 50px 30px; text-align: center;">
+              <h1 style="margin: 0; color: #ffffff; font-size: 36px; font-weight: 700;">
+                🎉 ¡Bienvenido!
+              </h1>
+              <p style="margin: 15px 0 0 0; color: #ffffff; font-size: 18px; opacity: 0.9;">
+                Tu cuenta ha sido creada exitosamente
+              </p>
+            </td>
+          </tr>
+          
+          <!-- Contenido -->
+          <tr>
+            <td style="padding: 40px 30px;">
+              <h2 style="margin: 0 0 20px 0; color: #1f2937; font-size: 24px; font-weight: 600;">
+                Hola {{userName}}, 👋
+              </h2>
+              
+              <p style="margin: 0 0 15px 0; color: #6b7280; font-size: 16px; line-height: 1.6;">
+                Gracias por unirte a <strong style="color: #14b8a6;">DOCALINK</strong>, la plataforma que conecta tu salud.
+              </p>
+              
+              <p style="margin: 0 0 25px 0; color: #6b7280; font-size: 15px; line-height: 1.6;">
+                Estamos emocionados de tenerte con nosotros. Tu cuenta como <strong>{{userRole}}</strong> está lista para usar.
+              </p>
+              
+              <!-- Botón CTA -->
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center" style="padding: 20px 0;">
+                    <a href="{{dashboardLink}}" style="display: inline-block; background-color: #14b8a6; color: #ffffff; text-decoration: none; padding: 16px 40px; border-radius: 8px; font-size: 16px; font-weight: 600; box-shadow: 0 4px 6px rgba(20, 184, 166, 0.3);">
+                      Ir a Mi Panel →
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              
+              <!-- Próximos Pasos -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-top: 30px; background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); border-radius: 12px; padding: 25px; border: 2px solid #14b8a6;">
+                <tr>
+                  <td>
+                    <p style="margin: 0 0 15px 0; color: #1f2937; font-size: 16px; font-weight: 600;">
+                      🚀 Próximos pasos:
+                    </p>
+                    <table width="100%" cellpadding="8" cellspacing="0">
+                      <tr>
+                        <td style="vertical-align: top; width: 30px;">
+                          <span style="display: inline-block; background-color: #14b8a6; color: white; width: 24px; height: 24px; border-radius: 50%; text-align: center; line-height: 24px; font-size: 12px; font-weight: 600;">1</span>
+                        </td>
+                        <td style="color: #1f2937; font-size: 14px; line-height: 1.6;">
+                          <strong>Completa tu perfil</strong><br>
+                          <span style="color: #6b7280; font-size: 13px;">Agrega tu foto, información de contacto y especialidades</span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="vertical-align: top;">
+                          <span style="display: inline-block; background-color: #14b8a6; color: white; width: 24px; height: 24px; border-radius: 50%; text-align: center; line-height: 24px; font-size: 12px; font-weight: 600;">2</span>
+                        </td>
+                        <td style="color: #1f2937; font-size: 14px; line-height: 1.6;">
+                          <strong>Configura tu disponibilidad</strong><br>
+                          <span style="color: #6b7280; font-size: 13px;">Define tus horarios de atención y días disponibles</span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="vertical-align: top;">
+                          <span style="display: inline-block; background-color: #14b8a6; color: white; width: 24px; height: 24px; border-radius: 50%; text-align: center; line-height: 24px; font-size: 12px; font-weight: 600;">3</span>
+                        </td>
+                        <td style="color: #1f2937; font-size: 14px; line-height: 1.6;">
+                          <strong>Explora la plataforma</strong><br>
+                          <span style="color: #6b7280; font-size: 13px;">Familiarízate con todas las funcionalidades disponibles</span>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+              
+              <!-- Recursos -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-top: 30px;">
+                <tr>
+                  <td>
+                    <p style="margin: 0 0 15px 0; color: #1f2937; font-size: 15px; font-weight: 600;">
+                      📚 Recursos útiles:
+                    </p>
+                    <table width="100%" cellpadding="8" cellspacing="0">
+                      <tr>
+                        <td>
+                          <a href="{{guideLink}}" style="color: #14b8a6; text-decoration: none; font-size: 14px;">
+                            📖 Guía de inicio rápido →
+                          </a>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <a href="{{faqLink}}" style="color: #14b8a6; text-decoration: none; font-size: 14px;">
+                            ❓ Preguntas frecuentes →
+                          </a>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <a href="{{supportLink}}" style="color: #14b8a6; text-decoration: none; font-size: 14px;">
+                            💬 Centro de ayuda →
+                          </a>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+              
+              <!-- Soporte -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-top: 30px; background-color: #f0f9ff; border-radius: 8px; padding: 20px; border-left: 4px solid #3b82f6;">
+                <tr>
+                  <td>
+                    <p style="margin: 0 0 10px 0; color: #1e40af; font-size: 15px; font-weight: 600;">
+                      💡 ¿Necesitas ayuda?
+                    </p>
+                    <p style="margin: 0; color: #1e3a8a; font-size: 14px; line-height: 1.6;">
+                      Nuestro equipo de soporte está disponible 24/7 para ayudarte.<br>
+                      📧 Email: <a href="mailto:soporte@docalink.com" style="color: #3b82f6;">soporte@docalink.com</a><br>
+                      📱 WhatsApp: <a href="https://wa.me/{{supportPhone}}" style="color: #3b82f6;">{{supportPhone}}</a>
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #f9fafb; padding: 30px; text-align: center; border-top: 1px solid #e5e7eb;">
+              <p style="margin: 0 0 15px 0; color: #6b7280; font-size: 14px;">
+                Síguenos en redes sociales:
+              </p>
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center">
+                    <a href="{{facebookLink}}" style="display: inline-block; margin: 0 8px; color: #6b7280; text-decoration: none; font-size: 24px;">📘</a>
+                    <a href="{{instagramLink}}" style="display: inline-block; margin: 0 8px; color: #6b7280; text-decoration: none; font-size: 24px;">📷</a>
+                    <a href="{{twitterLink}}" style="display: inline-block; margin: 0 8px; color: #6b7280; text-decoration: none; font-size: 24px;">🐦</a>
+                    <a href="{{linkedinLink}}" style="display: inline-block; margin: 0 8px; color: #6b7280; text-decoration: none; font-size: 24px;">💼</a>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin: 20px 0 0 0; color: #9ca3af; font-size: 12px;">
+                © 2024 DOCALINK - Conecta tu salud<br>
+                Este es un email automático, por favor no respondas a este mensaje.
+              </p>
+            </td>
+          </tr>
+          
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
