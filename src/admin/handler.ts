@@ -863,7 +863,7 @@ async function approveRequest(event: APIGatewayProxyEventV2): Promise<APIGateway
   // Buscar el provider
   const provider = await prisma.providers.findUnique({
     where: { id: requestId },
-    include: { users: true },
+    include: { users: true, service_categories: true },
   });
 
   if (!provider) {
@@ -892,6 +892,64 @@ async function approveRequest(event: APIGatewayProxyEventV2): Promise<APIGateway
     where: { provider_id: requestId },
     data: { is_active: true },
   });
+
+  // Enviar email de bienvenida (asíncrono, no bloquea la respuesta)
+  if (provider.users?.email) {
+    const { sendEmail } = await import("../shared/email-adapter");
+    const { generateWelcomeEmail } = await import("../shared/email");
+
+    const userName =
+      provider.commercial_name ||
+      provider.users.email.split("@")[0] ||
+      "Usuario";
+
+    const userRole =
+      provider.service_categories?.slug ||
+      provider.service_categories?.name?.toLowerCase() ||
+      "provider";
+
+    const emailHtml = generateWelcomeEmail({
+      userName,
+      userRole,
+    });
+
+    console.log(
+      `📧 [APPROVE_REQUEST] Iniciando envío de email de bienvenida a: ${provider.users.email}`,
+    );
+
+    sendEmail({
+      to: provider.users.email,
+      subject: "¡Bienvenido a DOCALINK! 🎉",
+      html: emailHtml,
+    })
+      .then((emailSent) => {
+        if (emailSent) {
+          console.log(
+            `✅ [APPROVE_REQUEST] Email de bienvenida enviado exitosamente a: ${provider.users.email}`,
+          );
+        } else {
+          console.error(
+            `❌ [APPROVE_REQUEST] FALLO: No se pudo enviar email de bienvenida a ${provider.users.email}`,
+          );
+          console.error(
+            `⚠️ [APPROVE_REQUEST] IMPORTANTE: El usuario ${provider.users.email} NO recibirá el email de bienvenida`,
+          );
+        }
+      })
+      .catch((error: any) => {
+        console.error(
+          `❌ [APPROVE_REQUEST] ERROR al enviar email de bienvenida a ${provider.users.email}:`,
+          error.message,
+        );
+        console.error(
+          `⚠️ [APPROVE_REQUEST] IMPORTANTE: El usuario ${provider.users.email} NO recibirá el email de bienvenida`,
+        );
+      });
+  } else {
+    console.warn(
+      "⚠️ [APPROVE_REQUEST] No se puede enviar email de bienvenida: usuario sin email",
+    );
+  }
 
   console.log(`✅ [APPROVE_REQUEST] Solicitud ${requestId} aprobada exitosamente`);
   return successResponse({ success: true });

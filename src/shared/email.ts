@@ -494,6 +494,90 @@ export function generatePasswordResetEmail(data: {
 }
 
 /**
+ * Genera el HTML del email de bienvenida
+ * (Estilo consistente con el email de recuperación, pero con contenido de onboarding)
+ */
+export function generateWelcomeEmail(data: {
+  userName: string;
+  userRole: string;
+}): string {
+  const frontendUrl = process.env.FRONTEND_URL || "https://docalink.com";
+  const dashboardLink = `${frontendUrl}/dashboard`;
+
+  // Mapear roles a nombres más amigables (para mostrar en el email)
+  const roleNames: Record<string, string> = {
+    provider: "Proveedor de Servicios",
+    patient: "Paciente",
+    doctor: "Médico",
+    pharmacy: "Farmacia",
+    laboratory: "Laboratorio",
+    ambulance: "Ambulancia",
+    supplies: "Suministros Médicos",
+    clinic: "Clínica",
+  };
+
+  const displayRole =
+    roleNames[(data.userRole || "").toLowerCase()] || data.userRole || "Usuario";
+
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+    .header { background: linear-gradient(135deg, #14b8a6 0%, #0d9488 100%); color: white; padding: 28px; text-align: center; border-radius: 12px 12px 0 0; }
+    .content { padding: 22px; background-color: #ffffff; border: 1px solid #e5e7eb; border-top: none; }
+    .highlight { background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); padding: 16px; border-radius: 10px; border: 2px solid #14b8a6; margin: 18px 0; }
+    .button { display: inline-block; background: #14b8a6; color: white; padding: 14px 34px; text-decoration: none; border-radius: 10px; font-weight: bold; font-size: 15px; margin: 18px 0; box-shadow: 0 4px 6px rgba(20, 184, 166, 0.25); }
+    .steps { margin: 14px 0 0 0; padding-left: 18px; color: #374151; }
+    .steps li { margin: 8px 0; }
+    .footer { text-align: center; padding: 18px; color: #6b7280; font-size: 12px; background-color: #f9fafb; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 12px 12px; }
+    .muted { color: #6b7280; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1 style="margin: 0; font-size: 28px;">🎉 ¡Bienvenido a DOCALINK!</h1>
+      <p style="margin: 10px 0 0 0; font-size: 15px; opacity: 0.95;">Tu cuenta ya está activa</p>
+    </div>
+    <div class="content">
+      <p>Hola <strong>${data.userName}</strong>, 👋</p>
+      <p>Tu registro fue aprobado y ya puedes usar <strong>DOCALINK</strong>.</p>
+
+      <div class="highlight">
+        <p style="margin: 0 0 8px 0;"><strong>Tipo de cuenta:</strong> ${displayRole}</p>
+        <p class="muted" style="margin: 0;">Te recomendamos completar tu perfil para aprovechar al máximo la plataforma.</p>
+      </div>
+
+      <div style="text-align: center;">
+        <a href="${dashboardLink}" class="button">Ir a mi panel</a>
+      </div>
+
+      <p style="margin-top: 6px;"><strong>Próximos pasos:</strong></p>
+      <ul class="steps">
+        <li>Completa tu perfil y datos de contacto.</li>
+        <li>Configura tu disponibilidad y horarios.</li>
+        <li>Explora las funcionalidades de la plataforma.</li>
+      </ul>
+
+      <p class="muted" style="margin-top: 18px;">
+        Si no fuiste tú quien creó esta cuenta, puedes ignorar este email.
+      </p>
+    </div>
+    <div class="footer">
+      <p style="margin: 0;"><strong>DOCALINK</strong> - Conecta tu salud</p>
+      <p style="margin: 6px 0 0 0;">Este es un email automático, por favor no respondas.</p>
+    </div>
+  </div>
+</body>
+</html>
+  `;
+}
+
+/**
  * Genera el HTML del email de bienvenida para nuevos usuarios aprobados
  */
 export function generateWelcomeEmail(data: {
