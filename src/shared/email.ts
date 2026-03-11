@@ -88,7 +88,7 @@ export async function sendEmail(options: EmailOptions): Promise<boolean> {
  */
 function getLogoBase64(): string {
   try {
-    const logoPath = path.join(process.cwd(), 'email-templates', 'images', 'docalink-logo.png');
+    const logoPath = path.join(process.cwd(), 'public', 'images', 'docalink-logo.png');
     
     // Verificar si el archivo existe
     if (fs.existsSync(logoPath)) {
@@ -101,7 +101,7 @@ function getLogoBase64(): string {
       const baseUrl = process.env.FILE_BASE_URL || 
                       process.env.FRONTEND_URL?.replace('/api', '') || 
                       `http://localhost:${process.env.PORT || 3000}`;
-      return `${baseUrl}/email-assets/images/docalink-logo.png`;
+      return `${baseUrl}/public/images/docalink-logo.png`;
     }
   } catch (error: any) {
     console.error(`❌ [EMAIL] Error al leer logo:`, error.message);
@@ -109,7 +109,7 @@ function getLogoBase64(): string {
     const baseUrl = process.env.FILE_BASE_URL || 
                     process.env.FRONTEND_URL?.replace('/api', '') || 
                     `http://localhost:${process.env.PORT || 3000}`;
-    return `${baseUrl}/email-assets/images/docalink-logo.png`;
+    return `${baseUrl}/public/images/docalink-logo.png`;
   }
 }
 
