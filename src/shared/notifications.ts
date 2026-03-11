@@ -255,13 +255,47 @@ export async function notifyAppointmentConfirmed(
   patient: any
 ): Promise<void> {
   try {
-    // Por ahora solo log, el recordatorio 24h antes se implementará con un job/cron
     console.log(`✅ [NOTIFICATIONS] Cita confirmada: ${appointment.id}`);
-    console.log(`   Recordatorio 24h antes se enviará automáticamente`);
     
-    // TODO: Programar recordatorio 24h antes (job/cron)
-    // Por ahora, si la cita es para mañana, enviar recordatorio inmediatamente
     const appointmentDate = appointment.scheduled_for ? new Date(appointment.scheduled_for) : null;
+    
+    // Enviar email de confirmación al paciente (asíncrono, no bloquea)
+    if (patient?.users?.email && appointmentDate) {
+      const patientEmail = patient.users.email;
+      const patientName = patient.full_name || 'Paciente';
+      const clinicName = clinic?.name || 'Clínica';
+      const clinicAddress = clinic?.address || 'Dirección no especificada';
+      
+      console.log(`📧 [NOTIFICATIONS] Iniciando envío de email de confirmación a: ${patientEmail}`);
+      
+      sendEmailToPatient(
+        patientEmail,
+        patientName,
+        clinicName,
+        {
+          appointment_id: appointment.id,
+          doctor_id: doctor?.id,
+          doctor_name: doctor?.name,
+          doctor_specialty: doctor?.specialty || 'Especialidad',
+          patient_id: patient.id,
+          patient_name: patient.full_name,
+          date: formatDate(appointmentDate),
+          time: formatTime(appointmentDate),
+          reason: appointment.reason || undefined,
+        },
+        clinicAddress,
+        'Tu cita ha sido confirmada',
+        false // isReminder = false (es confirmación, no recordatorio)
+      )
+        .then(() => {
+          console.log(`✅ [NOTIFICATIONS] Email de confirmación enviado exitosamente a: ${patientEmail}`);
+        })
+        .catch((error: any) => {
+          console.error(`❌ [NOTIFICATIONS] ERROR al enviar email de confirmación a ${patientEmail}:`, error.message);
+        });
+    }
+    
+    // Si la cita es para mañana, también enviar recordatorio inmediatamente
     if (appointmentDate) {
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
@@ -273,8 +307,11 @@ export async function notifyAppointmentConfirmed(
       // Si la cita es para mañana, enviar recordatorio
       if (appointmentDay.getTime() === tomorrow.getTime()) {
         if (patient?.users?.email) {
-          await sendEmailToPatient(
-            patient.users.email,
+          const patientEmail = patient.users.email;
+          console.log(`📧 [NOTIFICATIONS] Cita es para mañana, enviando recordatorio a: ${patientEmail}`);
+          
+          sendEmailToPatient(
+            patientEmail,
             patient.full_name || 'Paciente',
             clinic?.name || 'Clínica',
             {
@@ -287,9 +324,19 @@ export async function notifyAppointmentConfirmed(
               time: formatTime(appointmentDate),
               reason: appointment.reason || undefined,
             },
-            'Recordatorio: Tu cita es mañana'
-          );
+            clinic?.address,
+            'Recordatorio: Tu cita es mañana',
+            true // isReminder = true
+          )
+            .then(() => {
+              console.log(`✅ [NOTIFICATIONS] Recordatorio enviado exitosamente a: ${patientEmail}`);
+            })
+            .catch((error: any) => {
+              console.error(`❌ [NOTIFICATIONS] ERROR al enviar recordatorio a ${patientEmail}:`, error.message);
+            });
         }
+      } else {
+        console.log(`📅 [NOTIFICATIONS] Recordatorio 24h antes se enviará automáticamente mediante job/cron`);
       }
     }
   } catch (error: any) {

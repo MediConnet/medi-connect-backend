@@ -494,6 +494,65 @@ export function generatePasswordResetEmail(data: {
 }
 
 /**
+ * Genera el HTML del email de invitación a médico
+ */
+export function generateDoctorInvitationEmail(data: {
+  clinicName: string;
+  invitationLink: string;
+}): string {
+  const frontendUrl = process.env.FRONTEND_URL || 'https://docalink.com';
+  
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+    .header { background-color: #14b8a6; color: white; padding: 20px; text-align: center; }
+    .content { padding: 20px; background-color: #f9f9f9; }
+    .button { display: inline-block; background: #14b8a6; color: white; padding: 15px 40px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px; margin: 20px 0; }
+    .link-box { background: #f3f4f6; padding: 15px; border-radius: 8px; margin: 20px 0; word-break: break-all; }
+    .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🏥 Invitación a DOCALINK</h1>
+    </div>
+    <div class="content">
+      <p>Hola,</p>
+      <p>Has sido invitado a unirte a <strong>${data.clinicName}</strong> en la plataforma <strong>DOCALINK</strong>.</p>
+      <p>DOCALINK es la plataforma que conecta profesionales de la salud con pacientes, facilitando la gestión de citas y el acceso a servicios médicos.</p>
+      <p>Para aceptar la invitación y crear tu cuenta, haz clic en el siguiente botón:</p>
+      <div style="text-align: center;">
+        <a href="${data.invitationLink}" class="button">Aceptar Invitación</a>
+      </div>
+      <p style="color: #6b7280; font-size: 14px;">
+        ⏰ <strong>Esta invitación expira en 7 días</strong> por seguridad.
+      </p>
+      <div class="link-box">
+        <p style="margin: 0; font-size: 13px; color: #6b7280;">
+          Si el botón no funciona, copia y pega este enlace en tu navegador:<br>
+          <a href="${data.invitationLink}" style="color: #14b8a6;">${data.invitationLink}</a>
+        </p>
+      </div>
+      <p>Si no solicitaste esta invitación, puedes ignorar este email.</p>
+    </div>
+    <div class="footer">
+      <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
+      <p><strong>DOCALINK</strong> - Conecta tu salud<br>
+      Este es un email automático, por favor no respondas.</p>
+    </div>
+  </div>
+</body>
+</html>
+  `;
+}
+
+/**
  * Genera el HTML del email de bienvenida
  * (Estilo consistente con el email de recuperación, pero con contenido de onboarding)
  */

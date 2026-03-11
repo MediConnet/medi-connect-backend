@@ -236,6 +236,37 @@ export async function inviteDoctor(event: APIGatewayProxyEventV2): Promise<APIGa
       });
       
       console.log(`✅ [CLINICS] Invitación actualizada exitosamente: ${body.email}`);
+      
+      // Enviar email de invitación (asíncrono, no bloquea la respuesta)
+      const frontendUrl = process.env.FRONTEND_URL || 'https://docalink.com';
+      const invitationLink = `${frontendUrl}/clinic/invite?token=${result.invitationToken}`;
+      
+      const { sendEmail } = await import('../shared/email-adapter');
+      const { generateDoctorInvitationEmail } = await import('../shared/email');
+      
+      const emailHtml = generateDoctorInvitationEmail({
+        clinicName: clinic.name,
+        invitationLink,
+      });
+
+      console.log(`📧 [CLINICS] Iniciando envío de email de invitación a: ${body.email}`);
+      
+      sendEmail({
+        to: body.email,
+        subject: `Invitación de ${clinic.name} - DOCALINK`,
+        html: emailHtml,
+      })
+        .then((emailSent) => {
+          if (emailSent) {
+            console.log(`✅ [CLINICS] Email de invitación enviado exitosamente a: ${body.email}`);
+          } else {
+            console.error(`❌ [CLINICS] FALLO: No se pudo enviar email de invitación a ${body.email}`);
+          }
+        })
+        .catch((error: any) => {
+          console.error(`❌ [CLINICS] ERROR al enviar email de invitación a ${body.email}:`, error.message);
+        });
+      
       return successResponse(
         {
           id: existingDoctor.id,
@@ -245,7 +276,7 @@ export async function inviteDoctor(event: APIGatewayProxyEventV2): Promise<APIGa
           expiresAt: result.expiresAt.toISOString(),
           status: 'pending',
           message: 'Invitation updated successfully',
-          invitationLink: `https://app.mediconnect.com/clinic/invite?token=${result.invitationToken}`,
+          invitationLink,
         },
         200
       );
@@ -283,6 +314,37 @@ export async function inviteDoctor(event: APIGatewayProxyEventV2): Promise<APIGa
     });
 
     console.log(`✅ [CLINICS] Médico invitado exitosamente: ${body.email}`);
+    
+    // Enviar email de invitación (asíncrono, no bloquea la respuesta)
+    const frontendUrl = process.env.FRONTEND_URL || 'https://docalink.com';
+    const invitationLink = `${frontendUrl}/clinic/invite?token=${invitationToken}`;
+    
+    const { sendEmail } = await import('../shared/email-adapter');
+    const { generateDoctorInvitationEmail } = await import('../shared/email');
+    
+    const emailHtml = generateDoctorInvitationEmail({
+      clinicName: clinic.name,
+      invitationLink,
+    });
+
+    console.log(`📧 [CLINICS] Iniciando envío de email de invitación a: ${body.email}`);
+    
+    sendEmail({
+      to: body.email,
+      subject: `Invitación de ${clinic.name} - DOCALINK`,
+      html: emailHtml,
+    })
+      .then((emailSent) => {
+        if (emailSent) {
+          console.log(`✅ [CLINICS] Email de invitación enviado exitosamente a: ${body.email}`);
+        } else {
+          console.error(`❌ [CLINICS] FALLO: No se pudo enviar email de invitación a ${body.email}`);
+        }
+      })
+      .catch((error: any) => {
+        console.error(`❌ [CLINICS] ERROR al enviar email de invitación a ${body.email}:`, error.message);
+      });
+    
     return successResponse(
       {
         id: result.invitation.id,
@@ -292,7 +354,7 @@ export async function inviteDoctor(event: APIGatewayProxyEventV2): Promise<APIGa
         expiresAt: expiresAt.toISOString(),
         status: 'pending',
         createdAt: result.invitation.created_at?.toISOString() || null,
-        invitationLink: `https://app.mediconnect.com/clinic/invite?token=${invitationToken}`,
+        invitationLink,
       },
       201
     );
