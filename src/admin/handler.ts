@@ -898,9 +898,12 @@ async function approveRequest(event: APIGatewayProxyEventV2): Promise<APIGateway
     const { sendEmail } = await import("../shared/email-adapter");
     const { generateWelcomeEmail } = await import("../shared/email");
 
+    // Guardar email en variable para evitar problemas de null check en callbacks
+    const userEmail = provider.users.email;
+
     const userName =
       provider.commercial_name ||
-      provider.users.email.split("@")[0] ||
+      userEmail.split("@")[0] ||
       "Usuario";
 
     const userRole =
@@ -914,35 +917,35 @@ async function approveRequest(event: APIGatewayProxyEventV2): Promise<APIGateway
     });
 
     console.log(
-      `📧 [APPROVE_REQUEST] Iniciando envío de email de bienvenida a: ${provider.users.email}`,
+      `📧 [APPROVE_REQUEST] Iniciando envío de email de bienvenida a: ${userEmail}`,
     );
 
     sendEmail({
-      to: provider.users.email,
+      to: userEmail,
       subject: "¡Bienvenido a DOCALINK! 🎉",
       html: emailHtml,
     })
       .then((emailSent) => {
         if (emailSent) {
           console.log(
-            `✅ [APPROVE_REQUEST] Email de bienvenida enviado exitosamente a: ${provider.users.email}`,
+            `✅ [APPROVE_REQUEST] Email de bienvenida enviado exitosamente a: ${userEmail}`,
           );
         } else {
           console.error(
-            `❌ [APPROVE_REQUEST] FALLO: No se pudo enviar email de bienvenida a ${provider.users.email}`,
+            `❌ [APPROVE_REQUEST] FALLO: No se pudo enviar email de bienvenida a ${userEmail}`,
           );
           console.error(
-            `⚠️ [APPROVE_REQUEST] IMPORTANTE: El usuario ${provider.users.email} NO recibirá el email de bienvenida`,
+            `⚠️ [APPROVE_REQUEST] IMPORTANTE: El usuario ${userEmail} NO recibirá el email de bienvenida`,
           );
         }
       })
       .catch((error: any) => {
         console.error(
-          `❌ [APPROVE_REQUEST] ERROR al enviar email de bienvenida a ${provider.users.email}:`,
+          `❌ [APPROVE_REQUEST] ERROR al enviar email de bienvenida a ${userEmail}:`,
           error.message,
         );
         console.error(
-          `⚠️ [APPROVE_REQUEST] IMPORTANTE: El usuario ${provider.users.email} NO recibirá el email de bienvenida`,
+          `⚠️ [APPROVE_REQUEST] IMPORTANTE: El usuario ${userEmail} NO recibirá el email de bienvenida`,
         );
       });
   } else {
