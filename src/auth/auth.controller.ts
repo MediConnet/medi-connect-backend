@@ -407,66 +407,88 @@ export async function register(
     if (isMultipart) {
       console.log('🔍 [REGISTER] Intentando parsear multipart...');
       
-      const parsed = await parseMultipartBody({
-        body: event.body || undefined,
-        isBase64Encoded: (event as any).isBase64Encoded,
-        headers: event.headers as any,
-        limits: { fileSize: 15 * 1024 * 1024, files: 20, fields: 200 },
-      });
-      
-      console.log('🔍 [REGISTER] Parsing completado');
-      console.log('🔍 [REGISTER] Archivos encontrados:', parsed.files.length);
+      try {
+        const parsed = await parseMultipartBody({
+          body: event.body || undefined,
+          isBase64Encoded: (event as any).isBase64Encoded,
+          headers: event.headers as any,
+          limits: { fileSize: 15 * 1024 * 1024, files: 20, fields: 200 },
+        });
+        
+        console.log('🔍 [REGISTER] Parsing completado');
+        console.log('🔍 [REGISTER] Archivos encontrados:', parsed.files.length);
 
-      const f = parsed.fields;
-      
-      // 🔍 DEBUG: Ver qué campos llegaron
-      console.log('🔍 [REGISTER] Campos parseados del FormData:', Object.keys(f));
-      console.log('📧 [REGISTER] Email recibido:', f["email"]);
-      console.log('🔑 [REGISTER] Password recibido:', f["password"] ? '***' : undefined);
-      console.log('📋 [REGISTER] Todos los campos:', JSON.stringify(f, null, 2));
-      
-      const specialtiesRaw = f["specialties"];
-      const specialties = Array.isArray(specialtiesRaw)
-        ? specialtiesRaw
-        : specialtiesRaw
-          ? [specialtiesRaw]
-          : undefined;
+        const f = parsed.fields;
+        
+        // 🔍 DEBUG: Ver qué campos llegaron
+        console.log('🔍 [REGISTER] Campos parseados del FormData:', Object.keys(f));
+        console.log('📧 [REGISTER] Email recibido:', f["email"]);
+        console.log('🔑 [REGISTER] Password recibido:', f["password"] ? '***' : undefined);
+        
+        // 🔧 FIX: Si el FormData está vacío, intentar parsear como JSON
+        if (Object.keys(f).length === 0 && event.body) {
+          console.log('⚠️ [REGISTER] FormData vacío, intentando parsear como JSON...');
+          try {
+            const jsonBody = JSON.parse(event.body);
+            console.log('✅ [REGISTER] JSON parseado exitosamente');
+            body = registerSchema.parse(jsonBody);
+            uploadedDocuments = [];
+          } catch (jsonError) {
+            console.error('❌ [REGISTER] Tampoco se pudo parsear como JSON:', jsonError);
+            throw new Error('No se pudo parsear el body ni como FormData ni como JSON');
+          }
+        } else {
+          // FormData tiene campos, continuar normalmente
+          const specialtiesRaw = f["specialties"];
+          const specialties = Array.isArray(specialtiesRaw)
+            ? specialtiesRaw
+            : specialtiesRaw
+              ? [specialtiesRaw]
+              : undefined;
 
-      body = registerSchema.parse({
-        email: f["email"],
-        password: f["password"],
-        firstName: f["firstName"],
-        lastName: f["lastName"],
-        name: f["name"],
-        serviceName: f["serviceName"],
-        yearsOfExperience: f["yearsOfExperience"],
-        phone: f["phone"],
-        role: f["role"],
-        address: f["address"],
-        cityId: f["cityId"],
-        city: f["city"],
-        description: f["description"],
-        price: f["price"],
-        chainId: f["chainId"],
-        type: f["type"],
-        specialties,
-        whatsapp: f["whatsapp"],
-      });
+          body = registerSchema.parse({
+            email: f["email"],
+            password: f["password"],
+            firstName: f["firstName"],
+            lastName: f["lastName"],
+            name: f["name"],
+            serviceName: f["serviceName"],
+            yearsOfExperience: f["yearsOfExperience"],
+            phone: f["phone"],
+            role: f["role"],
+            address: f["address"],
+            cityId: f["cityId"],
+            city: f["city"],
+            description: f["description"],
+            price: f["price"],
+            chainId: f["chainId"],
+            type: f["type"],
+            specialties,
+            whatsapp: f["whatsapp"],
+          });
 
-      const baseUrl =
-        process.env.FILE_BASE_URL ||
-        `http://localhost:${process.env.PORT || 3000}`;
+          const baseUrl =
+            process.env.FILE_BASE_URL ||
+            `http://localhost:${process.env.PORT || 3000}`;
 
-      uploadedDocuments = await storeFilesLocally({
-        files: parsed.files.map((x) => ({
-          fieldname: x.fieldname,
-          filename: x.filename,
-          mimetype: x.mimetype,
-          buffer: x.buffer,
-          size: x.size,
-        })),
-        baseUrl,
-      });
+          uploadedDocuments = await storeFilesLocally({
+            files: parsed.files.map((x) => ({
+              fieldname: x.fieldname,
+              filename: x.filename,
+              mimetype: x.mimetype,
+              buffer: x.buffer,
+              size: x.size,
+            })),
+            baseUrl,
+          });
+        }
+      } catch (multipartError: any) {
+        console.error('❌ [REGISTER] Error al parsear multipart:', multipartError.message);
+        // Intentar como JSON como fallback
+        console.log('⚠️ [REGISTER] Intentando parsear como JSON (fallback)...');
+        body = parseBody(event.body, registerSchema);
+        uploadedDocuments = [];
+      }
     } else {
       body = parseBody(event.body, registerSchema);
     }
