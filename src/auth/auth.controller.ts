@@ -406,6 +406,13 @@ export async function register(
       });
 
       const f = parsed.fields;
+      
+      // 🔍 DEBUG: Ver qué campos llegaron
+      console.log('🔍 [REGISTER] Campos parseados del FormData:', Object.keys(f));
+      console.log('📧 [REGISTER] Email recibido:', f["email"]);
+      console.log('🔑 [REGISTER] Password recibido:', f["password"] ? '***' : undefined);
+      console.log('📋 [REGISTER] Todos los campos:', JSON.stringify(f, null, 2));
+      
       const specialtiesRaw = f["specialties"];
       const specialties = Array.isArray(specialtiesRaw)
         ? specialtiesRaw
