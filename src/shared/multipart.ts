@@ -52,7 +52,28 @@ export async function parseMultipartBody(params: {
     headers["CONTENT-TYPE"] ||
     "";
 
-  const buf = isBase64Encoded ? Buffer.from(body, "base64") : Buffer.from(body);
+  // 🔧 FIX: Manejar correctamente el encoding del body
+  let buf: Buffer;
+  
+  if (isBase64Encoded) {
+    // Si viene en base64, decodificar
+    buf = Buffer.from(body, "base64");
+  } else {
+    // Si viene como string, puede ser UTF-8 o binary
+    // Intentar detectar si es binary o UTF-8
+    try {
+      // Si el body contiene el boundary, es texto plano
+      if (body.includes('Content-Disposition')) {
+        buf = Buffer.from(body, 'utf8');
+      } else {
+        // Intentar como binary
+        buf = Buffer.from(body, 'binary');
+      }
+    } catch (e) {
+      // Fallback a UTF-8
+      buf = Buffer.from(body, 'utf8');
+    }
+  }
 
   const bb = Busboy({
     headers: {
@@ -94,7 +115,11 @@ export async function parseMultipartBody(params: {
       });
     });
 
-    bb.on("error", reject);
+    bb.on("error", (err) => {
+      console.error('❌ [MULTIPART] Error en Busboy:', err);
+      reject(err);
+    });
+    
     bb.on("finish", () => resolve({ fields, files }));
   });
 

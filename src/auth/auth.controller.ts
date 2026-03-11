@@ -394,16 +394,28 @@ export async function register(
     const isMultipart = isMultipartContentType(contentType);
     validatePayloadSize(event, isMultipart ? 25 * 1024 * 1024 : 200 * 1024);
 
+    // 🔍 DEBUG: Ver headers y body
+    console.log('🔍 [REGISTER] Content-Type:', contentType);
+    console.log('🔍 [REGISTER] Is Multipart:', isMultipart);
+    console.log('🔍 [REGISTER] Body length:', event.body?.length || 0);
+    console.log('🔍 [REGISTER] Is Base64:', (event as any).isBase64Encoded);
+    console.log('🔍 [REGISTER] Body preview:', event.body?.substring(0, 200));
+
     let body: any;
     let uploadedDocuments: any[] = [];
 
     if (isMultipart) {
+      console.log('🔍 [REGISTER] Intentando parsear multipart...');
+      
       const parsed = await parseMultipartBody({
         body: event.body || undefined,
         isBase64Encoded: (event as any).isBase64Encoded,
         headers: event.headers as any,
         limits: { fileSize: 15 * 1024 * 1024, files: 20, fields: 200 },
       });
+      
+      console.log('🔍 [REGISTER] Parsing completado');
+      console.log('🔍 [REGISTER] Archivos encontrados:', parsed.files.length);
 
       const f = parsed.fields;
       
