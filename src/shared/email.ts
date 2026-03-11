@@ -1,4 +1,6 @@
 import { Resend } from 'resend';
+import * as fs from 'fs';
+import * as path from 'path';
 import { logger } from './logger';
 
 interface EmailOptions {
@@ -81,23 +83,44 @@ export async function sendEmail(options: EmailOptions): Promise<boolean> {
 }
 
 /**
- * Obtiene la URL del logo de DOCALINK para usar en emails
+ * Obtiene el logo de DOCALINK en base64 para usar en emails
+ * Esto garantiza que la imagen siempre se muestre sin depender de URLs externas
  */
-function getLogoUrl(): string {
-  const baseUrl = process.env.FILE_BASE_URL || 
-                  process.env.FRONTEND_URL?.replace('/api', '') || 
-                  `http://localhost:${process.env.PORT || 3000}`;
-  return `${baseUrl}/email-assets/images/docalink-logo.png`;
+function getLogoBase64(): string {
+  try {
+    const logoPath = path.join(process.cwd(), 'email-templates', 'images', 'docalink-logo.png');
+    
+    // Verificar si el archivo existe
+    if (fs.existsSync(logoPath)) {
+      const imageBuffer = fs.readFileSync(logoPath);
+      const base64Image = imageBuffer.toString('base64');
+      return `data:image/png;base64,${base64Image}`;
+    } else {
+      console.warn(`⚠️ [EMAIL] Logo no encontrado en: ${logoPath}`);
+      // Fallback: retornar URL si no se encuentra el archivo
+      const baseUrl = process.env.FILE_BASE_URL || 
+                      process.env.FRONTEND_URL?.replace('/api', '') || 
+                      `http://localhost:${process.env.PORT || 3000}`;
+      return `${baseUrl}/email-assets/images/docalink-logo.png`;
+    }
+  } catch (error: any) {
+    console.error(`❌ [EMAIL] Error al leer logo:`, error.message);
+    // Fallback a URL
+    const baseUrl = process.env.FILE_BASE_URL || 
+                    process.env.FRONTEND_URL?.replace('/api', '') || 
+                    `http://localhost:${process.env.PORT || 3000}`;
+    return `${baseUrl}/email-assets/images/docalink-logo.png`;
+  }
 }
 
 /**
  * Genera el header del email con el logo de DOCALINK
  */
 function generateEmailHeader(title: string, headerColor: string = '#14b8a6'): string {
-  const logoUrl = getLogoUrl();
+  const logoDataUri = getLogoBase64();
   return `
     <div class="header" style="background: linear-gradient(135deg, ${headerColor} 0%, ${headerColor}dd 100%); color: white; padding: 30px 20px; text-align: center;">
-      <img src="${logoUrl}" alt="DOCALINK" style="max-width: 180px; height: auto; margin-bottom: 15px; display: block; margin-left: auto; margin-right: auto;" />
+      <img src="${logoDataUri}" alt="DOCALINK" style="max-width: 180px; height: auto; margin-bottom: 15px; display: block; margin-left: auto; margin-right: auto;" />
       <h1 style="margin: 0; font-size: 24px; font-weight: 600;">${title}</h1>
     </div>
   `;
@@ -112,7 +135,7 @@ function generateEmailTemplateBase(options: {
   content: string;
 }): string {
   const headerColor = options.headerColor || '#14b8a6';
-  const logoUrl = getLogoUrl();
+  const logoDataUri = getLogoBase64();
   
   return `
 <!DOCTYPE html>
@@ -138,7 +161,7 @@ function generateEmailTemplateBase(options: {
 <body>
   <div class="container">
     <div class="header">
-      <img src="${logoUrl}" alt="DOCALINK" />
+      <img src="${logoDataUri}" alt="DOCALINK" />
       <h1>${options.title}</h1>
     </div>
     <div class="content">
