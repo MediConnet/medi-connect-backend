@@ -33,14 +33,14 @@ export async function getAmbulanceProfile(
 
     const prisma = getPrismaClient();
 
-    // Buscar provider de tipo "ambulance" del usuario autenticado (más reciente aprobado)
+    // Buscar provider de tipo "ambulance" del usuario autenticado (aprobado o pendiente)
     const provider = await prisma.providers.findFirst({
       where: {
         user_id: authContext.user.id,
         service_categories: {
           slug: "ambulance",
         },
-        verification_status: "APPROVED",
+        verification_status: { in: ['APPROVED', 'PENDING'] },
       },
       include: {
         service_categories: { select: { slug: true, name: true } },
@@ -68,9 +68,27 @@ export async function getAmbulanceProfile(
 
     if (!provider) {
       console.log(
-        "⚠️ [AMBULANCES] Provider de tipo 'ambulance' no encontrado para user_id:",
+        "⚠️ [AMBULANCES] Provider de tipo 'ambulance' no encontrado (ni APPROVED ni PENDING) para user_id:",
         authContext.user.id,
       );
+      // Si no encuentra provider aprobado ni pendiente, buscar cualquier provider de tipo ambulance para obtener el status real
+      const anyProvider = await prisma.providers.findFirst({
+        where: {
+          user_id: authContext.user.id,
+          service_categories: {
+            slug: "ambulance",
+          },
+        },
+        select: {
+          verification_status: true,
+        },
+        orderBy: {
+          id: "desc",
+        },
+      });
+      
+      const actualStatus = anyProvider?.verification_status || "PENDING";
+      
       return successResponse({
         id: null,
         name: "Servicio de Ambulancia",
@@ -86,7 +104,7 @@ export async function getAmbulanceProfile(
         city: null,
         latitude: null,
         longitude: null,
-        status: "PENDING",
+        status: actualStatus,
       });
     }
 
