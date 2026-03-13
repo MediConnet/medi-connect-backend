@@ -541,9 +541,11 @@ async function getRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayPro
   
   // Agregar headers de no-caché para evitar caché del navegador
   const response = successResponse(requests, 200, event);
-  response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate';
-  response.headers['Pragma'] = 'no-cache';
-  response.headers['Expires'] = '0';
+  if (response.headers) {
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate';
+    response.headers['Pragma'] = 'no-cache';
+    response.headers['Expires'] = '0';
+  }
   return response;
 }
 
@@ -886,9 +888,11 @@ async function getHistory(event: APIGatewayProxyEventV2): Promise<APIGatewayProx
   
   // Agregar headers de no-caché para evitar caché del navegador
   const response = successResponse(history, 200, event);
-  response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate';
-  response.headers['Pragma'] = 'no-cache';
-  response.headers['Expires'] = '0';
+  if (response.headers) {
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate';
+    response.headers['Pragma'] = 'no-cache';
+    response.headers['Expires'] = '0';
+  }
   return response;
 }
 
