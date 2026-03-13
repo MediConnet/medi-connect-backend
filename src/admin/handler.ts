@@ -735,7 +735,7 @@ async function getProviderRequests(event: APIGatewayProxyEventV2): Promise<APIGa
 }
 
 async function getHistory(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('📜 [GET_HISTORY] Obteniendo historial');
+  console.log('📜 [GET_HISTORY] Obteniendo historial de solicitudes aprobadas y rechazadas');
   const authResult = await requireRole(event, [enum_roles.admin]);
   if ('statusCode' in authResult) {
     console.error('❌ [GET_HISTORY] Error de autenticación');
@@ -743,13 +743,139 @@ async function getHistory(event: APIGatewayProxyEventV2): Promise<APIGatewayProx
   }
 
   const queryParams = event.queryStringParameters || {};
+  const status = queryParams.status; // Opcional: 'APPROVED' o 'REJECTED' para filtrar
   const limit = parseInt(queryParams.limit || '50', 10);
   const offset = parseInt(queryParams.offset || '0', 10);
+  const search = queryParams.search?.trim(); // Búsqueda por nombre, email o ciudad
 
-  // TODO: Implementar historial real cuando existan los modelos
-  // Por ahora retornar array vacío con estructura esperada
-  console.log(`✅ [GET_HISTORY] Retornando array vacío (modelo no implementado)`);
-  return successResponse([]);
+  const prisma = getPrismaClient();
+
+  // Construir el filtro WHERE - por defecto incluir APPROVED y REJECTED
+  const statusFilter = {
+    verification_status: {
+      in: status === 'APPROVED' ? ['APPROVED'] :
+          status === 'REJECTED' ? ['REJECTED'] :
+          ['APPROVED', 'REJECTED'], // Por defecto, ambos estados
+    },
+  };
+
+  // Construir el filtro completo
+  const whereClause: any = search ? {
+    AND: [
+      statusFilter,
+      {
+        OR: [
+          { commercial_name: { contains: search, mode: 'insensitive' } },
+          { users: { email: { contains: search, mode: 'insensitive' } } },
+          { provider_branches: { 
+            some: {
+              OR: [
+                { address_text: { contains: search, mode: 'insensitive' } },
+                { cities: { name: { contains: search, mode: 'insensitive' } } },
+              ],
+            },
+          } },
+        ],
+      },
+    ],
+  } : statusFilter;
+
+  console.log(`🔍 [GET_HISTORY] Buscando providers con status: ${whereClause.verification_status.in.join(', ')}`);
+  if (search) {
+    console.log(`🔍 [GET_HISTORY] Búsqueda: "${search}"`);
+  }
+
+  // Obtener providers aprobados y rechazados
+  const providers = await prisma.providers.findMany({
+    where: whereClause,
+    include: {
+      users: {
+        select: {
+          id: true,
+          email: true,
+          profile_picture_url: true,
+          created_at: true,
+        },
+      },
+      service_categories: {
+        select: {
+          slug: true,
+          name: true,
+        },
+      },
+      provider_branches: {
+        include: {
+          cities: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+        take: 1, // Solo la primera sucursal
+      },
+    },
+    orderBy: {
+      id: 'desc', // Más recientes primero
+    },
+    take: limit,
+    skip: offset,
+  });
+
+  // Obtener ciudades para mapear (si no se incluyeron en el include)
+  const cityIds = providers
+    .flatMap((p: typeof providers[0]) => p.provider_branches.map((b: typeof p.provider_branches[0]) => b.city_id))
+    .filter((id: string | null): id is string => id !== null);
+  
+  const cities = await prisma.cities.findMany({
+    where: {
+      id: { in: cityIds },
+    },
+  });
+
+  // Crear mapa de ciudades
+  const cityMap: Record<string, { name: string }> = {};
+  cities.forEach((c: { id: string; name: string }) => {
+    cityMap[c.id] = { name: c.name };
+  });
+
+  // Mapear a la estructura esperada por el frontend
+  const history = providers.map((provider: typeof providers[0]) => {
+    const branch = provider.provider_branches[0];
+    // Intentar obtener ciudad del include primero, luego del mapa
+    const city = branch?.cities || (branch?.city_id ? cityMap[branch.city_id] : undefined);
+    const docs = Array.isArray((provider as any).documents) ? (provider as any).documents : [];
+
+    return {
+      id: provider.id,
+      providerName: provider.commercial_name || 'Sin nombre',
+      email: provider.users?.email || '',
+      avatarUrl: provider.users?.profile_picture_url || undefined,
+      serviceType: provider.service_categories?.slug || provider.service_categories?.name?.toLowerCase() || 'doctor',
+      submissionDate: provider.users?.created_at 
+        ? new Date(provider.users.created_at).toISOString().split('T')[0]
+        : new Date().toISOString().split('T')[0],
+      documentsCount: docs.length,
+      status: provider.verification_status === 'APPROVED' ? 'APPROVED' :
+              provider.verification_status === 'REJECTED' ? 'REJECTED' :
+              'PENDING',
+      rejectionReason: null, // TODO: Agregar campo de razón de rechazo si existe
+      phone: branch?.phone_contact || '',
+      whatsapp: branch?.phone_contact || '',
+      city: city?.name || 'Sin ciudad',
+      address: branch?.address_text || '',
+      description: provider.description || '',
+      documents: docs,
+    };
+  });
+
+  const approvedCount = history.filter(h => h.status === 'APPROVED').length;
+  const rejectedCount = history.filter(h => h.status === 'REJECTED').length;
+  
+  console.log(`✅ [GET_HISTORY] Retornando ${history.length} registros del historial`);
+  console.log(`📊 [GET_HISTORY] Distribución: ${approvedCount} aprobados, ${rejectedCount} rechazados`);
+  
+  return successResponse(history);
 }
 
 async function getRejectedServices(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
