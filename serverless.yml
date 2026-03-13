@@ -425,3 +425,119 @@ functions:
       - httpApi:
           path: /api/pharmacy-chains
           method: GET
+
+  # Admin
+  adminHandler:
+    handler: src/admin/handler.handler
+    events:
+      # Dashboard Stats
+      - httpApi:
+          path: /api/admin/dashboard/stats
+          method: GET
+      # Settings (NEW - Comisiones)
+      - httpApi:
+          path: /api/admin/settings
+          method: GET
+      - httpApi:
+          path: /api/admin/settings
+          method: PUT
+      # Requests
+      - httpApi:
+          path: /api/admin/requests
+          method: GET
+      - httpApi:
+          path: /api/admin/requests/{id}
+          method: GET
+      - httpApi:
+          path: /api/admin/requests/{id}/approve
+          method: POST
+      - httpApi:
+          path: /api/admin/requests/{id}/approve
+          method: PUT
+      - httpApi:
+          path: /api/admin/requests/{id}/reject
+          method: POST
+      - httpApi:
+          path: /api/admin/requests/{id}/reject
+          method: PUT
+      # Ad Requests
+      - httpApi:
+          path: /api/admin/ad-requests
+          method: GET
+      - httpApi:
+          path: /api/admin/ad-requests/{id}/approve
+          method: POST
+      - httpApi:
+          path: /api/admin/ad-requests/{id}/approve
+          method: PUT
+      - httpApi:
+          path: /api/admin/ad-requests/{id}/reject
+          method: POST
+      - httpApi:
+          path: /api/admin/ad-requests/{id}/reject
+          method: PUT
+      # Provider Requests
+      - httpApi:
+          path: /api/admin/provider-requests
+          method: GET
+      # Activity & History
+      - httpApi:
+          path: /api/admin/activity
+          method: GET
+      - httpApi:
+          path: /api/admin/history
+          method: GET
+      - httpApi:
+          path: /api/admin/historial
+          method: GET
+      - httpApi:
+          path: /api/admin/rejected-services
+          method: GET
+      - httpApi:
+          path: /api/admin/services/rejected
+          method: GET
+      # Pharmacy Chains
+      - httpApi:
+          path: /api/admin/pharmacy-chains
+          method: GET
+      - httpApi:
+          path: /api/admin/pharmacy-chains
+          method: POST
+      - httpApi:
+          path: /api/admin/pharmacy-chains/{id}
+          method: PUT
+      - httpApi:
+          path: /api/admin/pharmacy-chains/{id}
+          method: DELETE
+      # Payments
+      - httpApi:
+          path: /api/admin/payments/doctors
+          method: GET
+      - httpApi:
+          path: /api/admin/payments/clinics
+          method: GET
+      - httpApi:
+          path: /api/admin/payments/doctors/{doctorId}/mark-paid
+          method: POST
+      - httpApi:
+          path: /api/admin/payments/clinics/{clinicPaymentId}/mark-paid
+          method: POST
+      - httpApi:
+          path: /api/admin/payments/history
+          method: GET
+      # Users
+      - httpApi:
+          path: /api/admin/users
+          method: GET
+      - httpApi:
+          path: /api/admin/users/{id}
+          method: GET
+      - httpApi:
+          path: /api/admin/users/{id}
+          method: PUT
+      - httpApi:
+          path: /api/admin/users/{id}
+          method: DELETE
+      - httpApi:
+          path: /api/admin/users/{id}/status
+          method: PATCH
