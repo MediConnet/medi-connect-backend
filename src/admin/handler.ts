@@ -470,10 +470,11 @@ async function getRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayPro
         take: 1, // Solo la primera sucursal
       },
     },
-    // Ordenar por ID (más recientes primero, asumiendo que IDs más grandes son más recientes)
-    // En el futuro, cuando se agregue created_at a providers, usar ese campo
+    // Ordenar por fecha de creación del usuario (más recientes primero)
     orderBy: {
-      id: 'desc',
+      users: {
+        created_at: 'desc',
+      },
     },
     take: limit,
     skip: offset,
@@ -537,7 +538,13 @@ async function getRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayPro
 
     console.log(`✅ [GET_REQUESTS] Retornando ${requests.length} solicitudes`);
     console.log(`🔍 [GET_REQUESTS] IDs de providers encontrados:`, providers.map((p: typeof providers[0]) => ({ id: p.id, name: p.commercial_name, status: p.verification_status })));
-  return successResponse(requests);
+  
+  // Agregar headers de no-caché para evitar caché del navegador
+  const response = successResponse(requests, 200, event);
+  response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate';
+  response.headers['Pragma'] = 'no-cache';
+  response.headers['Expires'] = '0';
+  return response;
 }
 
 async function getRequestDetail(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
@@ -816,7 +823,9 @@ async function getHistory(event: APIGatewayProxyEventV2): Promise<APIGatewayProx
       },
     },
     orderBy: {
-      id: 'desc', // Más recientes primero
+      users: {
+        created_at: 'desc',
+      },
     },
     take: limit,
     skip: offset,
@@ -875,7 +884,12 @@ async function getHistory(event: APIGatewayProxyEventV2): Promise<APIGatewayProx
   console.log(`✅ [GET_HISTORY] Retornando ${history.length} registros del historial`);
   console.log(`📊 [GET_HISTORY] Distribución: ${approvedCount} aprobados, ${rejectedCount} rechazados`);
   
-  return successResponse(history);
+  // Agregar headers de no-caché para evitar caché del navegador
+  const response = successResponse(history, 200, event);
+  response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate';
+  response.headers['Pragma'] = 'no-cache';
+  response.headers['Expires'] = '0';
+  return response;
 }
 
 async function getRejectedServices(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
