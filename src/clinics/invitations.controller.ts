@@ -64,8 +64,9 @@ export async function generateInvitationLink(event: APIGatewayProxyEventV2): Pro
 
     // Si existe una invitación pendiente válida, retornar el link existente
     if (existingInvitation) {
-      const frontendUrl = process.env.FRONTEND_URL || 'https://app.mediconnect.com';
-      const invitationLink = `${frontendUrl}/clinic/invite?token=${existingInvitation.invitation_token}`;
+      // Frontend espera la ruta: https://www.docalink.com/clinic/invite/{TOKEN}
+      const frontendUrl = process.env.FRONTEND_URL || 'https://docalink.com';
+      const invitationLink = `${frontendUrl}/clinic/invite/${existingInvitation.invitation_token}`;
       
       console.log(`✅ [CLINICS] Invitación existente encontrada para: ${body.email}`);
       return successResponse({
@@ -107,8 +108,9 @@ export async function generateInvitationLink(event: APIGatewayProxyEventV2): Pro
     });
 
     // Generar URL de invitación
-    const frontendUrl = process.env.FRONTEND_URL || 'https://app.mediconnect.com';
-    const invitationLink = `${frontendUrl}/clinic/invite?token=${invitationToken}`;
+    // Frontend espera la ruta: https://www.docalink.com/clinic/invite/{TOKEN}
+    const frontendUrl = process.env.FRONTEND_URL || 'https://docalink.com';
+    const invitationLink = `${frontendUrl}/clinic/invite/${invitationToken}`;
 
     console.log(`✅ [CLINICS] Link de invitación generado exitosamente para: ${body.email}`);
     return successResponse({
@@ -236,7 +238,10 @@ export async function sendInvitation(event: APIGatewayProxyEventV2): Promise<API
     });
 
     // Generar URL de invitación
-    const invitationUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/invite/${invitationToken}`;
+    // Frontend espera la ruta pública principal: https://www.docalink.com/clinic/invite/{TOKEN}
+    // (también existe alias /invite/{TOKEN}, pero usamos la principal)
+    const baseFrontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const invitationUrl = `${baseFrontendUrl}/clinic/invite/${invitationToken}`;
 
     // Enviar email de invitación
     console.log(`📧 [CLINICS] Enviando email a: ${email}`);

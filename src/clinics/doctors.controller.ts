@@ -238,8 +238,9 @@ export async function inviteDoctor(event: APIGatewayProxyEventV2): Promise<APIGa
       console.log(`✅ [CLINICS] Invitación actualizada exitosamente: ${body.email}`);
       
       // Enviar email de invitación (asíncrono, no bloquea la respuesta)
+      // Frontend espera la ruta: https://www.docalink.com/clinic/invite/{TOKEN}
       const frontendUrl = process.env.FRONTEND_URL || 'https://docalink.com';
-      const invitationLink = `${frontendUrl}/clinic/invite?token=${result.invitationToken}`;
+      const invitationLink = `${frontendUrl}/clinic/invite/${result.invitationToken}`;
       
       const { sendEmail } = await import('../shared/email-adapter');
       const { generateDoctorInvitationEmail } = await import('../shared/email');
@@ -316,8 +317,9 @@ export async function inviteDoctor(event: APIGatewayProxyEventV2): Promise<APIGa
     console.log(`✅ [CLINICS] Médico invitado exitosamente: ${body.email}`);
     
     // Enviar email de invitación (asíncrono, no bloquea la respuesta)
+    // Frontend espera la ruta: https://www.docalink.com/clinic/invite/{TOKEN}
     const frontendUrl = process.env.FRONTEND_URL || 'https://docalink.com';
-    const invitationLink = `${frontendUrl}/clinic/invite?token=${invitationToken}`;
+    const invitationLink = `${frontendUrl}/clinic/invite/${invitationToken}`;
     
     const { sendEmail } = await import('../shared/email-adapter');
     const { generateDoctorInvitationEmail } = await import('../shared/email');
