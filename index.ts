@@ -296,6 +296,7 @@ import { handler as authHandler } from './src/auth/handler';
 import { handler as doctorsHandler } from './src/doctors/handler';
 import { handler as suppliesHandler } from './src/supplies/handler';
 import { handler as pharmaciesHandler } from './src/pharmacies/handler';
+import { handler as pharmacyChainsHandler } from './src/pharmacy-chains/handler';
 import { handler as publicHandler } from './src/public/handler';
 import { handler as homeHandler } from './src/home/handler';
 
@@ -389,7 +390,7 @@ app.use('/api/supplies', async (req: express.Request, res: express.Response) => 
 // Routes - Pharmacy Chains (público)
 app.use('/api/pharmacy-chains', async (req: express.Request, res: express.Response) => {
   const path = req.originalUrl.split('?')[0];
-  await handleLambdaResponse(pharmaciesHandler, req, res, path);
+  await handleLambdaResponse(pharmacyChainsHandler, req, res, path);
 });
 
 // Routes - Patients
