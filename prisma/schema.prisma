@@ -589,6 +589,29 @@ model consultation_prices {
   @@index([specialty_id])
 }
 
+model admin_settings {
+  id                            Int       @id @default(1)
+  commission_doctor             Decimal   @default(15.00) @db.Decimal(5, 2)
+  commission_clinic             Decimal   @default(10.00) @db.Decimal(5, 2)
+  commission_laboratory         Decimal   @default(12.00) @db.Decimal(5, 2)
+  commission_pharmacy           Decimal   @default(8.00) @db.Decimal(5, 2)
+  commission_supplies           Decimal   @default(10.00) @db.Decimal(5, 2)
+  commission_ambulance          Decimal   @default(15.00) @db.Decimal(5, 2)
+  notify_new_requests           Boolean   @default(true)
+  notify_email_summary          Boolean   @default(true)
+  auto_approve_services         Boolean   @default(false)
+  maintenance_mode              Boolean   @default(false)
+  only_admin_can_publish_ads    Boolean   @default(true)
+  require_ad_approval           Boolean   @default(true)
+  max_ads_per_provider          Int       @default(1)
+  ad_approval_required          Boolean   @default(true)
+  service_approval_required     Boolean   @default(true)
+  allow_service_self_activation Boolean   @default(false)
+  allow_ad_self_publishing      Boolean   @default(false)
+  updated_at                    DateTime  @default(now()) @db.Timestamp(6)
+  created_at                    DateTime  @default(now()) @db.Timestamp(6)
+}
+
 enum enum_appt_status {
   CONFIRMED
   CANCELLED

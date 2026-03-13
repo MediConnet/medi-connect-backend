@@ -21,6 +21,7 @@ import {
   updateUser,
   deleteUser
 } from './users.controller';
+import { getSettings, updateSettings } from './settings.controller';
 
 export async function handler(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   const method = event.requestContext.http.method;
@@ -35,6 +36,22 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
   }
 
   try {
+    // GET /api/admin/settings
+    if (method === 'GET' && path === '/api/admin/settings') {
+      console.log('✅ [ADMIN] GET /api/admin/settings - Obteniendo configuración');
+      const result = await getSettings(event);
+      console.log(`✅ [ADMIN] GET /api/admin/settings - Completado con status ${result.statusCode}`);
+      return result;
+    }
+
+    // PUT /api/admin/settings
+    if (method === 'PUT' && path === '/api/admin/settings') {
+      console.log('✅ [ADMIN] PUT /api/admin/settings - Actualizando configuración');
+      const result = await updateSettings(event);
+      console.log(`✅ [ADMIN] PUT /api/admin/settings - Completado con status ${result.statusCode}`);
+      return result;
+    }
+
     // GET /api/admin/dashboard/stats
     if (method === 'GET' && path === '/api/admin/dashboard/stats') {
       console.log('✅ [ADMIN] GET /api/admin/dashboard/stats - Obteniendo estadísticas');
