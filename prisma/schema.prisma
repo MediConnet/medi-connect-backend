@@ -334,6 +334,7 @@ model providers {
   logo_url              String?                 @db.VarChar(255)
   description           String?
   verification_status   String?                 @db.VarChar(255)
+  rejection_reason      String?
   commission_percentage Decimal?                @db.Decimal
   years_of_experience   Int?                    @default(0)
   chain_id              String?                 @db.Uuid

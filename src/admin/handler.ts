@@ -526,7 +526,7 @@ async function getRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayPro
       status: provider.verification_status === 'APPROVED' ? 'APPROVED' :
               provider.verification_status === 'REJECTED' ? 'REJECTED' :
               'PENDING',
-      rejectionReason: null, // TODO: Agregar campo de razón de rechazo
+      rejectionReason: (provider as any).rejection_reason || null,
       phone: branch?.phone_contact || '',           // ✅ Desde provider_branches.phone_contact
       whatsapp: branch?.phone_contact || '',     // ✅ Mismo teléfono para whatsapp
       city: city?.name || 'Sin ciudad',
@@ -608,7 +608,7 @@ async function getRequestDetail(event: APIGatewayProxyEventV2): Promise<APIGatew
     status: provider.verification_status === 'APPROVED' ? 'APPROVED' :
             provider.verification_status === 'REJECTED' ? 'REJECTED' :
             'PENDING',
-    rejectionReason: null,
+    rejectionReason: (provider as any).rejection_reason || null,
     phone: branch?.phone_contact || '',           // ✅ Desde provider_branches.phone_contact
     whatsapp: branch?.phone_contact || '',     // ✅ Mismo teléfono para whatsapp
     city: city?.name || 'Sin ciudad',
@@ -699,7 +699,7 @@ async function getAdRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayP
       serviceType: serviceType as 'doctor' | 'pharmacy' | 'laboratory' | 'ambulance' | 'supplies',
       submissionDate: submissionDate,
       status: ad.status as 'PENDING' | 'APPROVED' | 'REJECTED',
-      rejectionReason: null, // TODO: Agregar campo de razón de rechazo al schema
+      rejectionReason: (provider as any).rejection_reason || null,
       approvedAt: ad.status === 'APPROVED' ? submissionDate : undefined,
       rejectedAt: ad.status === 'REJECTED' ? submissionDate : undefined,
       hasActiveAd: hasActiveAd,
@@ -870,7 +870,7 @@ async function getHistory(event: APIGatewayProxyEventV2): Promise<APIGatewayProx
       status: provider.verification_status === 'APPROVED' ? 'APPROVED' :
               provider.verification_status === 'REJECTED' ? 'REJECTED' :
               'PENDING',
-      rejectionReason: null, // TODO: Agregar campo de razón de rechazo si existe
+      rejectionReason: (provider as any).rejection_reason || null,
       phone: branch?.phone_contact || '',
       whatsapp: branch?.phone_contact || '',
       city: city?.name || 'Sin ciudad',
@@ -1150,11 +1150,12 @@ async function rejectRequest(event: APIGatewayProxyEventV2): Promise<APIGatewayP
     return notFoundResponse('Provider request not found');
   }
 
-  // Actualizar estado a REJECTED
+  // Actualizar estado a REJECTED y guardar motivo
   await prisma.providers.update({
     where: { id: requestId },
     data: {
       verification_status: 'REJECTED', // Usar string directamente
+      rejection_reason: reason || null, // Guardar motivo de rechazo
     },
   });
 
