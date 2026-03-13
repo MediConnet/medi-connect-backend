@@ -331,6 +331,19 @@ try {
   console.error('❌ [CLINICS] Stack:', e.stack);
 }
 
+let ambulancesHandler: any;
+try {
+  ambulancesHandler = require('./src/ambulances/handler').handler;
+  if (!ambulancesHandler) {
+    console.error('❌ [AMBULANCES] Handler exportado pero es undefined');
+  } else {
+    console.log('✅ [AMBULANCES] Handler de ambulancias cargado correctamente');
+  }
+} catch (e: any) {
+  console.error('❌ [AMBULANCES] Error al cargar handler:', e.message);
+  console.error('❌ [AMBULANCES] Stack:', e.stack);
+}
+
 // Routes - Auth
 app.use('/api/auth', async (req: express.Request, res: express.Response) => {
   // Usar originalUrl para obtener el path completo
@@ -428,13 +441,24 @@ if (laboratoriesHandler) {
   });
 }
 
-// Routes - Ambulances (ahora manejadas por publicHandler)
-console.log('✅ [AMBULANCES] Registrando rutas de ambulancias en /api/ambulances (usando publicHandler)');
-app.use('/api/ambulances', async (req: express.Request, res: express.Response) => {
-  const path = req.originalUrl.split('?')[0];
-  console.log(`🔍 [AMBULANCES ROUTE] ${req.method} ${path} - originalUrl: ${req.originalUrl}`);
-  await handleLambdaResponse(publicHandler, req, res, path);
-});
+// Routes - Ambulances (usando handler específico para rutas privadas del panel)
+if (ambulancesHandler) {
+  console.log('✅ [AMBULANCES] Registrando rutas de ambulancias en /api/ambulances');
+  app.use('/api/ambulances', async (req: express.Request, res: express.Response) => {
+    const path = req.originalUrl.split('?')[0];
+    console.log(`🔍 [AMBULANCES ROUTE] ${req.method} ${path} - originalUrl: ${req.originalUrl}`);
+    await handleLambdaResponse(ambulancesHandler, req, res, path);
+  });
+} else {
+  console.error('❌ [AMBULANCES] Handler de ambulancias no disponible - Las rutas no se registrarán');
+  app.use('/api/ambulances', (req: express.Request, res: express.Response) => {
+    console.error(`❌ [AMBULANCES] Petición recibida pero handler no disponible: ${req.method} ${req.originalUrl}`);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Ambulances handler not available. Check server logs.' 
+    });
+  });
+}
 
 // Routes - Clinics (si existe)
 if (clinicsHandler) {
