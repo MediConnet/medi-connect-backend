@@ -271,6 +271,17 @@ export async function updateSuppliesProfile(
       "❌ [SUPPLIES] Error updating supplies profile:",
       error.message,
     );
+    console.error('❌ [SUPPLIES] Error details:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name,
+    });
+    if (error.message && error.message.includes('Validation error')) {
+      return errorResponse(error.message, 400);
+    }
+    if (error.message) {
+      return errorResponse(error.message, 500);
+    }
     return internalErrorResponse("Error al actualizar perfil de insumos");
   }
 }
