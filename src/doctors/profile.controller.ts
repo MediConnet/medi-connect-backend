@@ -168,7 +168,9 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
 
   try {
     const authContext = authResult as AuthContext;
+    console.log('📤 [DOCTORS] PUT /api/doctors/profile - Body recibido:', event.body?.substring(0, 500));
     const body = parseBody(event.body || null, updateDoctorProfileSchema);
+    console.log('✅ [DOCTORS] Body validado:', JSON.stringify(body, null, 2));
     const prisma = getPrismaClient();
 
     let profile = await prisma.providers.findFirst({
@@ -254,10 +256,14 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
         Object.keys(branchData).forEach(key => branchData[key] === undefined && delete branchData[key]);
 
         if (Object.keys(branchData).length > 0) {
+          console.log('💾 [DOCTORS] Actualizando branch con datos:', JSON.stringify(branchData, null, 2));
           await tx.provider_branches.update({
             where: { id: mainBranch.id },
             data: branchData
           });
+          console.log('✅ [DOCTORS] Branch actualizado exitosamente');
+        } else {
+          console.log('⚠️ [DOCTORS] No hay datos para actualizar en branch');
         }
 
         // C. ACTUALIZAR HORARIOS (WORK SCHEDULE) 
@@ -423,8 +429,16 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
 
   } catch (error: any) {
     logger.error('Error in updateProfile', error);
-    if (error.message.includes('Validation error')) {
+    console.error('❌ [DOCTORS] Error details:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name,
+    });
+    if (error.message && error.message.includes('Validation error')) {
       return errorResponse(error.message, 400);
+    }
+    if (error.message) {
+      return errorResponse(error.message, 500);
     }
     return internalErrorResponse('Failed to update profile');
   }
