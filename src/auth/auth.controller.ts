@@ -1181,10 +1181,14 @@ export async function me(
   };
 
   if (user.role === enum_roles.provider) {
+    // Buscar provider incluyendo null como PENDING
     const provider = await prisma.providers.findFirst({
       where: {
         user_id: user.id,
-        verification_status: { in: ["APPROVED", "PENDING"] },
+        OR: [
+          { verification_status: { in: ["APPROVED", "PENDING"] } },
+          { verification_status: null } // Tratar null como PENDING
+        ],
       },
       include: {
         service_categories: { select: { slug: true, name: true } },

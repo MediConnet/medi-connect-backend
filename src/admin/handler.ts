@@ -440,11 +440,20 @@ async function getRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayPro
   }, {} as Record<string, number>);
   console.log(`📊 [GET_REQUESTS] Distribución de estados:`, statusCounts);
 
-  // Buscar usando el string directamente
+  // Buscar usando el string directamente, incluyendo null como PENDING
+  const whereClause = verificationStatus === 'PENDING'
+    ? {
+        OR: [
+          { verification_status: 'PENDING' },
+          { verification_status: null }
+        ]
+      }
+    : {
+        verification_status: verificationStatus,
+      };
+
   const providers = await prisma.providers.findMany({
-    where: {
-      verification_status: verificationStatus,
-    },
+    where: whereClause,
     include: {
       users: {
         select: {
@@ -470,11 +479,11 @@ async function getRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayPro
         take: 1, // Solo la primera sucursal
       },
     },
-    // Ordenar por fecha de creación del usuario (más recientes primero)
+    // Ordenar por ID descendente (más recientes primero)
+    // Nota: Si necesitas ordenar por fecha de creación del usuario, 
+    // sería mejor agregar un campo created_at al modelo providers
     orderBy: {
-      users: {
-        created_at: 'desc',
-      },
+      id: 'desc',
     },
     take: limit,
     skip: offset,
@@ -825,9 +834,7 @@ async function getHistory(event: APIGatewayProxyEventV2): Promise<APIGatewayProx
       },
     },
     orderBy: {
-      users: {
-        created_at: 'desc',
-      },
+      id: 'desc', // Ordenar por ID descendente (más recientes primero)
     },
     take: limit,
     skip: offset,
