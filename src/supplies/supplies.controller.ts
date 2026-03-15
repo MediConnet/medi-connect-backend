@@ -22,9 +22,27 @@ const suppliesProfileSchema = z.object({
   phone: z.string().optional(),
   whatsapp: z.string().optional(),
   address: z.string().optional(),
-  latitude: z.number().min(-90).max(90).optional().nullable(),
-  longitude: z.number().min(-180).max(180).optional().nullable(),
-  google_maps_url: z.string().url("Google Maps URL must be a valid URL").optional().nullable().or(z.literal("")),
+  latitude: z.preprocess(
+    (val) => (val === "" || val === undefined ? undefined : val),
+    z.union([
+      z.number().min(-90, "Latitude must be between -90 and 90").max(90, "Latitude must be between -90 and 90"),
+      z.null(),
+    ]).optional(),
+  ),
+  longitude: z.preprocess(
+    (val) => (val === "" || val === undefined ? undefined : val),
+    z.union([
+      z.number().min(-180, "Longitude must be between -180 and 180").max(180, "Longitude must be between -180 and 180"),
+      z.null(),
+    ]).optional(),
+  ),
+  google_maps_url: z.preprocess(
+    (val) => (val === "" || val === undefined ? undefined : val),
+    z.union([
+      z.string().url("Google Maps URL must be a valid URL"),
+      z.null(),
+    ]).optional(),
+  ),
   schedule: z.string().optional(),
   isActive: z.boolean().optional(),
   logoUrl: z
@@ -227,10 +245,12 @@ export async function updateSuppliesProfile(
     if (body.longitude !== undefined) branchUpdateData.longitude = body.longitude !== null ? body.longitude : null;
     if (body.google_maps_url !== undefined) branchUpdateData.google_maps_url = body.google_maps_url !== null && body.google_maps_url !== "" ? body.google_maps_url : null;
     
+    console.log('💾 [SUPPLIES] Actualizando branch con datos:', JSON.stringify(branchUpdateData, null, 2));
     const updatedBranch = await prisma.provider_branches.update({
       where: { id: branch.id },
       data: branchUpdateData,
     });
+    console.log('✅ [SUPPLIES] Branch actualizado exitosamente');
 
     return successResponse({
       id: updatedProvider.id,

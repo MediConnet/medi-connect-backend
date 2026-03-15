@@ -113,7 +113,9 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
 
   try {
     const authContext = authResult as AuthContext;
+    console.log('📤 [PHARMACIES] PUT /api/pharmacies/profile - Body recibido:', event.body?.substring(0, 500));
     const body = parseBody(event.body || null, updatePharmacyProfileSchema);
+    console.log('✅ [PHARMACIES] Body validado:', JSON.stringify(body, null, 2));
     const prisma = getPrismaClient();
 
     // ⭐ Buscar provider (solo aprobados o pendientes, más reciente primero)
@@ -199,10 +201,14 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
         Object.keys(branchData).forEach(key => branchData[key] === undefined && delete branchData[key]);
 
         if (Object.keys(branchData).length > 0) {
+          console.log('💾 [PHARMACIES] Actualizando branch con datos:', JSON.stringify(branchData, null, 2));
           await tx.provider_branches.update({
             where: { id: mainBranch.id },
             data: branchData
           });
+          console.log('✅ [PHARMACIES] Branch actualizado exitosamente');
+        } else {
+          console.log('⚠️ [PHARMACIES] No hay datos para actualizar en branch');
         }
 
         // C. ACTUALIZAR HORARIOS (WORK SCHEDULE) 
@@ -297,8 +303,16 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
 
   } catch (error: any) {
     logger.error('Error in updateProfile', error);
-    if (error.message.includes('Validation error')) {
+    console.error('❌ [PHARMACIES] Error details:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name,
+    });
+    if (error.message && error.message.includes('Validation error')) {
       return errorResponse(error.message, 400);
+    }
+    if (error.message) {
+      return errorResponse(error.message, 500);
     }
     return internalErrorResponse('Failed to update profile');
   }

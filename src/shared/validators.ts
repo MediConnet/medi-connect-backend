@@ -253,9 +253,27 @@ export const updatePharmacyProfileSchema = z.object({
   bio: z.string().optional(),
   description: z.string().optional(),
   address: z.string().optional(),
-  latitude: z.number().min(-90).max(90).optional().nullable(),
-  longitude: z.number().min(-180).max(180).optional().nullable(),
-  google_maps_url: z.string().url("Google Maps URL must be a valid URL").optional().nullable().or(z.literal("")),
+  latitude: z.preprocess(
+    (val) => (val === "" || val === undefined ? undefined : val),
+    z.union([
+      z.number().min(-90, "Latitude must be between -90 and 90").max(90, "Latitude must be between -90 and 90"),
+      z.null(),
+    ]).optional(),
+  ),
+  longitude: z.preprocess(
+    (val) => (val === "" || val === undefined ? undefined : val),
+    z.union([
+      z.number().min(-180, "Longitude must be between -180 and 180").max(180, "Longitude must be between -180 and 180"),
+      z.null(),
+    ]).optional(),
+  ),
+  google_maps_url: z.preprocess(
+    (val) => (val === "" || val === undefined ? undefined : val),
+    z.union([
+      z.string().url("Google Maps URL must be a valid URL"),
+      z.null(),
+    ]).optional(),
+  ),
   phone: z.string().optional(),
   whatsapp: z.string().optional(),
   is_published: z.boolean().optional(),

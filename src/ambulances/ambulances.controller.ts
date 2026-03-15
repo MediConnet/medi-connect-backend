@@ -189,7 +189,9 @@ export async function updateAmbulanceProfile(
       );
     }
 
+    console.log('📤 [AMBULANCES] PUT /api/ambulances/profile - Body recibido:', event.body?.substring(0, 500));
     const body = JSON.parse(event.body || "{}");
+    console.log('✅ [AMBULANCES] Body parseado:', JSON.stringify(body, null, 2));
     const {
       name,
       description,
@@ -252,10 +254,14 @@ export async function updateAmbulanceProfile(
       if (longitude !== undefined) branchUpdateData.longitude = longitude !== null ? longitude : null;
       if (google_maps_url !== undefined) branchUpdateData.google_maps_url = google_maps_url !== null && google_maps_url !== "" ? google_maps_url : null;
       
+      console.log('💾 [AMBULANCES] Actualizando branch con datos:', JSON.stringify(branchUpdateData, null, 2));
       await prisma.provider_branches.update({
         where: { id: mainBranch.id },
         data: branchUpdateData,
       });
+      console.log('✅ [AMBULANCES] Branch actualizado exitosamente');
+    } else {
+      console.log('⚠️ [AMBULANCES] No hay branch principal para actualizar');
     }
 
     const totalTrips = await prisma.appointments.count({
@@ -285,7 +291,12 @@ export async function updateAmbulanceProfile(
       coverageArea: updatedBranch?.coverage_area || null,
     });
   } catch (error: any) {
-    console.error("Error updating ambulance profile:", error);
+    console.error("❌ [AMBULANCES] Error updating ambulance profile:", error);
+    console.error('❌ [AMBULANCES] Error details:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name,
+    });
     return errorResponse(error.message || "Error al actualizar perfil", 500);
   }
 }

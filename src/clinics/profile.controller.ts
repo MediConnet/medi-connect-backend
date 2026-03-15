@@ -243,7 +243,9 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
   const prisma = getPrismaClient();
 
   try {
+    console.log('📤 [CLINICS] PUT /api/clinics/profile - Body recibido:', event.body?.substring(0, 500));
     const body = parseBody(event.body, updateClinicProfileSchema);
+    console.log('✅ [CLINICS] Body validado:', JSON.stringify(body, null, 2));
 
     // Buscar clínica del usuario autenticado
     const clinic = await prisma.clinics.findFirst({
@@ -295,10 +297,14 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
       }
 
       if (Object.keys(clinicUpdateData).length > 1) { // Más que solo updated_at
+        console.log('💾 [CLINICS] Actualizando clínica con datos:', JSON.stringify(clinicUpdateData, null, 2));
         await tx.clinics.update({
           where: { id: clinic.id },
           data: clinicUpdateData,
         });
+        console.log('✅ [CLINICS] Clínica actualizada exitosamente');
+      } else {
+        console.log('⚠️ [CLINICS] No hay datos para actualizar en clínica');
       }
 
       // 2. Actualizar especialidades
@@ -415,9 +421,17 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
     return successResponse(formattedResponse);
   } catch (error: any) {
     console.error(`❌ [CLINICS] Error al actualizar perfil:`, error.message);
+    console.error('❌ [CLINICS] Error details:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name,
+    });
     logger.error('Error updating clinic profile', error);
-    if (error.message.includes('Validation error')) {
+    if (error.message && error.message.includes('Validation error')) {
       return errorResponse(error.message, 400);
+    }
+    if (error.message) {
+      return errorResponse(error.message, 500);
     }
     return internalErrorResponse('Failed to update clinic profile');
   }
