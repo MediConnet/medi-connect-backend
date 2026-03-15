@@ -22,6 +22,9 @@ const suppliesProfileSchema = z.object({
   phone: z.string().optional(),
   whatsapp: z.string().optional(),
   address: z.string().optional(),
+  latitude: z.number().min(-90).max(90).optional().nullable(),
+  longitude: z.number().min(-180).max(180).optional().nullable(),
+  google_maps_url: z.string().url("Google Maps URL must be a valid URL").optional().nullable().or(z.literal("")),
   schedule: z.string().optional(),
   isActive: z.boolean().optional(),
   logoUrl: z
@@ -103,6 +106,9 @@ export async function getSuppliesProfile(
         phone: "",
         whatsapp: "",
         address: "",
+        latitude: null,
+        longitude: null,
+        google_maps_url: null,
         schedule: "",
         logoUrl: null,
         isActive: false,
@@ -122,6 +128,9 @@ export async function getSuppliesProfile(
       phone: branch.phone_contact || "",
       whatsapp: branch.phone_contact || "",
       address: branch.address_text || "",
+      latitude: branch.latitude ? Number(branch.latitude) : null,
+      longitude: branch.longitude ? Number(branch.longitude) : null,
+      google_maps_url: branch.google_maps_url || null,
       schedule: branch.opening_hours_text || "",
       logoUrl: provider.logo_url || null,
       isActive: Boolean(branch.is_active),
@@ -200,20 +209,27 @@ export async function updateSuppliesProfile(
       },
     });
 
+    const branchUpdateData: any = {
+      phone_contact:
+        body.phone !== undefined ? body.phone : branch.phone_contact,
+      address_text:
+        body.address !== undefined ? body.address : branch.address_text,
+      opening_hours_text:
+        body.schedule !== undefined
+          ? body.schedule
+          : branch.opening_hours_text,
+      is_active:
+        body.isActive !== undefined ? body.isActive : branch.is_active,
+    };
+    
+    // Agregar campos de ubicación si están presentes
+    if (body.latitude !== undefined) branchUpdateData.latitude = body.latitude !== null ? body.latitude : null;
+    if (body.longitude !== undefined) branchUpdateData.longitude = body.longitude !== null ? body.longitude : null;
+    if (body.google_maps_url !== undefined) branchUpdateData.google_maps_url = body.google_maps_url !== null && body.google_maps_url !== "" ? body.google_maps_url : null;
+    
     const updatedBranch = await prisma.provider_branches.update({
       where: { id: branch.id },
-      data: {
-        phone_contact:
-          body.phone !== undefined ? body.phone : branch.phone_contact,
-        address_text:
-          body.address !== undefined ? body.address : branch.address_text,
-        opening_hours_text:
-          body.schedule !== undefined
-            ? body.schedule
-            : branch.opening_hours_text,
-        is_active:
-          body.isActive !== undefined ? body.isActive : branch.is_active,
-      },
+      data: branchUpdateData,
     });
 
     return successResponse({
@@ -223,6 +239,9 @@ export async function updateSuppliesProfile(
       phone: updatedBranch.phone_contact || "",
       whatsapp: updatedBranch.phone_contact || "",
       address: updatedBranch.address_text || "",
+      latitude: updatedBranch.latitude ? Number(updatedBranch.latitude) : null,
+      longitude: updatedBranch.longitude ? Number(updatedBranch.longitude) : null,
+      google_maps_url: updatedBranch.google_maps_url || null,
       schedule: updatedBranch.opening_hours_text || "",
       logoUrl: updatedProvider.logo_url || null,
       isActive: Boolean(updatedBranch.is_active),

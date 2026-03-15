@@ -461,6 +461,17 @@ export const updateClinicProfileSchema = z.object({
         .optional(),
     )
     .optional(),
+  google_maps_url: z
+    .preprocess(
+      (val) => (val === "" || val === undefined ? undefined : val),
+      z
+        .union([
+          z.string().url("Google Maps URL must be a valid URL"),
+          z.null(),
+        ])
+        .optional(),
+    )
+    .optional(),
   consultationPrices: z
     .preprocess(
       (val) => (val === null ? undefined : val),

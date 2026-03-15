@@ -146,6 +146,7 @@ export async function getAmbulanceProfile(
       city: mainBranch?.cities?.name || null,
       latitude: mainBranch?.latitude ? Number(mainBranch.latitude) : null,
       longitude: mainBranch?.longitude ? Number(mainBranch.longitude) : null,
+      google_maps_url: mainBranch?.google_maps_url || null,
       status: provider.verification_status || "APPROVED",
       is24h: mainBranch?.is_24h ?? false,
       ambulanceTypes: mainBranch?.ambulance_types || [],
@@ -195,6 +196,9 @@ export async function updateAmbulanceProfile(
       phone,
       whatsapp,
       address,
+      latitude,
+      longitude,
+      google_maps_url,
       is24h,
       ambulanceTypes,
       coverageArea,
@@ -229,21 +233,28 @@ export async function updateAmbulanceProfile(
       provider.provider_branches.find((b) => b.is_main) ||
       provider.provider_branches[0];
     if (mainBranch) {
+      const branchUpdateData: any = {
+        phone_contact: phone,
+        address_text: address,
+        is_24h: is24h !== undefined ? is24h : mainBranch.is_24h,
+        ambulance_types:
+          ambulanceTypes !== undefined
+            ? ambulanceTypes
+            : mainBranch.ambulance_types,
+        coverage_area:
+          coverageArea !== undefined
+            ? coverageArea
+            : mainBranch.coverage_area,
+      };
+      
+      // Agregar campos de ubicación si están presentes
+      if (latitude !== undefined) branchUpdateData.latitude = latitude !== null ? latitude : null;
+      if (longitude !== undefined) branchUpdateData.longitude = longitude !== null ? longitude : null;
+      if (google_maps_url !== undefined) branchUpdateData.google_maps_url = google_maps_url !== null && google_maps_url !== "" ? google_maps_url : null;
+      
       await prisma.provider_branches.update({
         where: { id: mainBranch.id },
-        data: {
-          phone_contact: phone,
-          address_text: address,
-          is_24h: is24h !== undefined ? is24h : mainBranch.is_24h,
-          ambulance_types:
-            ambulanceTypes !== undefined
-              ? ambulanceTypes
-              : mainBranch.ambulance_types,
-          coverage_area:
-            coverageArea !== undefined
-              ? coverageArea
-              : mainBranch.coverage_area,
-        },
+        data: branchUpdateData,
       });
     }
 
@@ -262,6 +273,9 @@ export async function updateAmbulanceProfile(
       phone: updatedBranch?.phone_contact || "",
       whatsapp: updatedBranch?.phone_contact || "",
       address: updatedBranch?.address_text || "",
+      latitude: updatedBranch?.latitude ? Number(updatedBranch.latitude) : null,
+      longitude: updatedBranch?.longitude ? Number(updatedBranch.longitude) : null,
+      google_maps_url: updatedBranch?.google_maps_url || null,
       rating: updatedBranch?.rating_cache
         ? parseFloat(updatedBranch.rating_cache.toString())
         : 0,

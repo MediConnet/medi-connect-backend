@@ -210,6 +210,7 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
       whatsapp: clinic.whatsapp,
       latitude: clinic.latitude ? Number(clinic.latitude) : null,
       longitude: clinic.longitude ? Number(clinic.longitude) : null,
+      google_maps_url: clinic.google_maps_url || null,
       generalSchedule: schedule,
       description: clinic.description || '',
       isActive: clinic.is_active ?? true,
@@ -270,6 +271,7 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
       if (body.isActive !== undefined) clinicUpdateData.is_active = body.isActive;
       if (body.latitude !== undefined) clinicUpdateData.latitude = body.latitude !== null ? body.latitude : null;
       if (body.longitude !== undefined) clinicUpdateData.longitude = body.longitude !== null ? body.longitude : null;
+      if (body.google_maps_url !== undefined) clinicUpdateData.google_maps_url = body.google_maps_url !== null && body.google_maps_url !== "" ? body.google_maps_url : null;
       
       // Nuevos campos JSON
       if (body.consultationPrices !== undefined) {
@@ -397,6 +399,9 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
       address: updatedClinic.address,
       phone: updatedClinic.phone,
       whatsapp: updatedClinic.whatsapp,
+      latitude: updatedClinic.latitude ? Number(updatedClinic.latitude) : null,
+      longitude: updatedClinic.longitude ? Number(updatedClinic.longitude) : null,
+      google_maps_url: updatedClinic.google_maps_url || null,
       generalSchedule: schedule,
       description: updatedClinic.description || '',
       isActive: updatedClinic.is_active ?? true,
