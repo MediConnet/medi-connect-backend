@@ -95,8 +95,9 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
     address: mainBranch?.address_text || '',
     phone: mainBranch?.phone_contact || '',
     whatsapp: mainBranch?.phone_contact || '',
-    latitude: mainBranch?.latitude || null,
-    longitude: mainBranch?.longitude || null,
+    latitude: mainBranch?.latitude ? Number(mainBranch.latitude) : null,
+    longitude: mainBranch?.longitude ? Number(mainBranch.longitude) : null,
+    google_maps_url: mainBranch?.google_maps_url || null,
     status: profile.verification_status,
     is_published: mainBranch?.is_active ?? false, 
     commission_percentage: profile.commission_percentage,
@@ -242,6 +243,9 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
       if (mainBranch) {
         const branchData: any = {
             address_text: body.address,
+            latitude: body.latitude !== undefined ? body.latitude : undefined,
+            longitude: body.longitude !== undefined ? body.longitude : undefined,
+            google_maps_url: body.google_maps_url !== undefined ? (body.google_maps_url === "" ? null : body.google_maps_url) : undefined,
             phone_contact: body.whatsapp || body.phone, 
             payment_methods: body.payment_methods,
             is_active: body.is_published
@@ -353,8 +357,9 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
       address: updatedMainBranch?.address_text || '',
       phone: updatedMainBranch?.phone_contact || '',
       whatsapp: updatedMainBranch?.phone_contact || '',
-      latitude: updatedMainBranch?.latitude || null,
-      longitude: updatedMainBranch?.longitude || null,
+      latitude: updatedMainBranch?.latitude ? Number(updatedMainBranch.latitude) : null,
+      longitude: updatedMainBranch?.longitude ? Number(updatedMainBranch.longitude) : null,
+      google_maps_url: updatedMainBranch?.google_maps_url || null,
       status: updatedProfile?.verification_status,
       is_published: updatedMainBranch?.is_active ?? false,
       commission_percentage: updatedProfile?.commission_percentage,

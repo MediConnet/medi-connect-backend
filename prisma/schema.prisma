@@ -251,6 +251,7 @@ model provider_branches {
   address_text       String?
   latitude           Float?
   longitude          Float?
+  google_maps_url    String?              @db.VarChar(500)
   phone_contact      String?              @db.VarChar(20)
   email_contact      String?              @db.VarChar(255)
   image_url          String?              @db.VarChar(255)
