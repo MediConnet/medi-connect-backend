@@ -1,5 +1,7 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResult } from "aws-lambda";
 import { randomUUID } from "crypto";
+import * as fs from "fs";
+import * as path from "path";
 import { enum_roles } from "../generated/prisma/client";
 import { AuthContext, requireRole } from "../shared/auth";
 import { getPrismaClient } from "../shared/prisma";
@@ -13,9 +15,17 @@ import { parseBody, updateLaboratoryProfileSchema } from "../shared/validators";
 
 const LAB_CATEGORY_SLUGS = ["laboratory", "laboratorio"];
 
-function dayNumberToString(day: number): string {
-  const days = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
-  return days[day] ?? "Desconocido";
+function dayIdToSlug(dayId: number): string {
+  // IMPORTANT: frontend expects lowercase english slugs
+  const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+  return days[dayId] ?? "monday";
+}
+
+function formatTimeHHmm(time: Date | null): string {
+  if (!time) return "09:00";
+  const d = new Date(time);
+  // Use UTC to avoid timezone shifts for @db.Time columns
+  return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
 }
 
 function getDayIdFromString(day: string): number {
@@ -61,8 +71,8 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
       },
       include: {
         provider_branches: {
-          where: { is_main: true },
-          take: 1,
+          where: { is_active: true },
+          orderBy: [{ is_main: "desc" }],
           include: {
             provider_schedules: { orderBy: { day_of_week: "asc" } },
           },
@@ -88,13 +98,15 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
       google_maps_url: mainBranch?.google_maps_url ?? null,
       is_published: mainBranch?.is_active ?? false,
       branch_id: mainBranch?.id ?? null,
-      schedules: (mainBranch?.provider_schedules ?? []).map((s) => ({
-        day_id: s.day_of_week,
-        day: dayNumberToString(s.day_of_week ?? 0),
-        start: s.start_time,
-        end: s.end_time,
-        is_active: true,
-      })),
+      // Return ONLY enabled/open days (frontend will mark rest as closed)
+      schedules: (mainBranch?.provider_schedules ?? [])
+        .filter((s) => (s.is_active ?? true) && s.day_of_week != null)
+        .map((s) => ({
+          day_id: s.day_of_week,
+          day: dayIdToSlug(s.day_of_week ?? 1),
+          start: formatTimeHHmm(s.start_time),
+          end: formatTimeHHmm(s.end_time),
+        })),
       exams: (provider.provider_catalog ?? []).map((e) => ({
         id: e.id,
         name: e.name ?? "",
@@ -132,7 +144,11 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
         category_id: categoryId,
       },
       include: {
-        provider_branches: { where: { is_main: true }, take: 1 },
+        provider_branches: {
+          where: { is_active: true },
+          orderBy: [{ is_main: "desc" }],
+          take: 1,
+        },
       },
     });
 
@@ -145,7 +161,30 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
       const providerData: Record<string, unknown> = {};
       if (body.full_name !== undefined) providerData.commercial_name = body.full_name;
       if (body.description !== undefined) providerData.description = body.description;
-      if (body.logo_url !== undefined) providerData.logo_url = body.logo_url === "" ? null : body.logo_url;
+      if (body.logo_url !== undefined) {
+        const raw = body.logo_url;
+        if (raw === "") {
+          providerData.logo_url = null;
+        } else if (typeof raw === "string" && raw.startsWith("data:image/")) {
+          // providers.logo_url is VARCHAR(255); base64 doesn't fit. Store file locally and save URL path.
+          const match = raw.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+          if (!match) {
+            throw new Error("Invalid base64 image");
+          }
+          const mime = match[1];
+          const b64 = match[2];
+          const ext =
+            mime.includes("png") ? ".png" : mime.includes("jpeg") || mime.includes("jpg") ? ".jpg" : ".img";
+          const uploadsDir = path.join(process.cwd(), "uploads");
+          await fs.promises.mkdir(uploadsDir, { recursive: true });
+          const filename = `lab-logo-${randomUUID()}${ext}`;
+          const diskPath = path.join(uploadsDir, filename);
+          await fs.promises.writeFile(diskPath, Buffer.from(b64, "base64"));
+          providerData.logo_url = `/uploads/${encodeURIComponent(filename)}`;
+        } else {
+          providerData.logo_url = raw;
+        }
+      }
       if (Object.keys(providerData).length > 0) {
         await tx.providers.update({ where: { id: provider.id }, data: providerData });
       }
@@ -186,7 +225,8 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
       where: { id: provider.id },
       include: {
         provider_branches: {
-          where: { is_main: true },
+          where: { is_active: true },
+          orderBy: [{ is_main: "desc" }],
           take: 1,
           include: { provider_schedules: { orderBy: { day_of_week: "asc" } } },
         },
@@ -208,13 +248,14 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
       google_maps_url: upBranch?.google_maps_url ?? null,
       is_published: upBranch?.is_active ?? false,
       branch_id: upBranch?.id ?? null,
-      schedules: (upBranch?.provider_schedules ?? []).map((s) => ({
-        day_id: s.day_of_week,
-        day: dayNumberToString(s.day_of_week ?? 0),
-        start: s.start_time,
-        end: s.end_time,
-        is_active: true,
-      })),
+      schedules: (upBranch?.provider_schedules ?? [])
+        .filter((s) => (s.is_active ?? true) && s.day_of_week != null)
+        .map((s) => ({
+          day_id: s.day_of_week,
+          day: dayIdToSlug(s.day_of_week ?? 1),
+          start: formatTimeHHmm(s.start_time),
+          end: formatTimeHHmm(s.end_time),
+        })),
       exams: (updated?.provider_catalog ?? []).map((e) => ({
         id: e.id,
         name: e.name ?? "",

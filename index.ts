@@ -62,6 +62,9 @@ app.use(
 app.use(express.json({ limit: '10mb' })); // ⭐ Aumentar límite para subida de imágenes
 app.use(express.urlencoded({ extended: true, limit: '10mb' })); // ⭐ Aumentar límite para subida de imágenes
 
+// ⭐ Servir archivos subidos (logos/base64 guardados localmente)
+app.use('/uploads', express.static('uploads'));
+
 // Middleware de logging para todas las requests
 app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
   // Log básico siempre activo
