@@ -121,6 +121,24 @@ functions:
           path: /api/laboratories/search
           method: GET
       - httpApi:
+          path: /api/laboratories/profile
+          method: GET
+      - httpApi:
+          path: /api/laboratories/profile
+          method: PUT
+      - httpApi:
+          path: /api/laboratories/exams
+          method: GET
+      - httpApi:
+          path: /api/laboratories/exams
+          method: POST
+      - httpApi:
+          path: /api/laboratories/exams/{id}
+          method: PUT
+      - httpApi:
+          path: /api/laboratories/exams/{id}
+          method: DELETE
+      - httpApi:
           path: /api/laboratories/{id}
           method: GET
 

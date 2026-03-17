@@ -10,6 +10,8 @@ import {
   getLaboratoryById,
   getLaboratoryDashboard,
 } from "./laboratories.controller";
+import { getProfile, updateProfile } from "./profile.controller";
+import { getExams, createExam, updateExam, deleteExam } from "./exams.controller";
 import { getLaboratoryReviews } from "./reviews.controller";
 
 export async function handler(
@@ -28,6 +30,24 @@ export async function handler(
   }
 
   try {
+    // GET/PUT /api/laboratories/profile
+    if (normalizedPath === "/api/laboratories/profile") {
+      if (method === "GET") return await getProfile(event);
+      if (method === "PUT") return await updateProfile(event);
+    }
+
+    // GET/POST /api/laboratories/exams
+    if (normalizedPath === "/api/laboratories/exams") {
+      if (method === "GET") return await getExams(event);
+      if (method === "POST") return await createExam(event);
+    }
+
+    // PUT/DELETE /api/laboratories/exams/:id
+    if (normalizedPath.match(/^\/api\/laboratories\/exams\/[^/]+$/)) {
+      if (method === "PUT") return await updateExam(event);
+      if (method === "DELETE") return await deleteExam(event);
+    }
+
     // GET /api/laboratories/reviews - Obtener reseñas del laboratorio
     if (normalizedPath === "/api/laboratories/reviews" && method === "GET") {
       return await getLaboratoryReviews(event);
@@ -51,12 +71,12 @@ export async function handler(
       return await getLaboratoryDashboard(event);
     }
 
-    // GET /api/laboratories/{id} - Obtener laboratorio por ID
+    // GET /api/laboratories/{id} - Obtener laboratorio por ID (excluir reserved segments)
     if (normalizedPath.startsWith("/api/laboratories/") && method === "GET") {
       const pathParts = normalizedPath.split("/");
       const lastPart = pathParts[pathParts.length - 1];
-
-      if (lastPart !== "search" && lastPart !== "dashboard" && lastPart !== "reviews") {
+      const reserved = ["search", "dashboard", "reviews", "profile", "exams"];
+      if (!reserved.includes(lastPart) && !normalizedPath.startsWith("/api/laboratories/exams/")) {
         return await getLaboratoryById(event);
       }
     }

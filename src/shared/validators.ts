@@ -282,6 +282,55 @@ export const updatePharmacyProfileSchema = z.object({
   workSchedule: z.array(pharmacyScheduleItemSchema).optional(),
 });
 
+// Laboratory profile (same shape as pharmacy for branch + schedule; no chain)
+export const updateLaboratoryProfileSchema = z.object({
+  full_name: z.string().min(2, "El nombre es muy corto").optional(),
+  description: z.string().optional(),
+  address: z.string().optional(),
+  latitude: z.preprocess(
+    (val) => (val === "" || val === undefined ? undefined : val),
+    z.union([
+      z.number().min(-90).max(90),
+      z.null(),
+    ]).optional(),
+  ),
+  longitude: z.preprocess(
+    (val) => (val === "" || val === undefined ? undefined : val),
+    z.union([
+      z.number().min(-180).max(180),
+      z.null(),
+    ]).optional(),
+  ),
+  google_maps_url: z.preprocess(
+    (val) => (val === "" || val === undefined ? undefined : val),
+    z.union([z.string().url(), z.null()]).optional(),
+  ),
+  phone: z.string().optional(),
+  whatsapp: z.string().optional(),
+  logo_url: z.preprocess(
+    (val) => (val === null || val === "" ? undefined : val),
+    z.union([z.string().url(), z.string().startsWith("data:image/"), z.literal("")]).optional(),
+  ),
+  is_published: z.boolean().optional(),
+  workSchedule: z.array(pharmacyScheduleItemSchema).optional(),
+});
+
+// Laboratory exam (provider_catalog item)
+export const createLaboratoryExamSchema = z.object({
+  name: z.string().min(1, "El nombre del examen es requerido"),
+  description: z.string().optional(),
+  preparation: z.string().optional(), // stored in description or separate; we'll append to description
+  price: z.number().min(0, "El precio debe ser >= 0").optional().default(0),
+  is_available: z.boolean().optional().default(true),
+});
+export const updateLaboratoryExamSchema = z.object({
+  name: z.string().min(1).optional(),
+  description: z.string().optional(),
+  preparation: z.string().optional(),
+  price: z.number().min(0).optional(),
+  is_available: z.boolean().optional(),
+});
+
 export const createProductSchema = z.object({
   name: z.string().min(1, "Product name is required"),
   description: z.string().optional(),
