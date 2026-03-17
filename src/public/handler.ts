@@ -6,6 +6,7 @@ import {
   optionsResponse,
 } from "../shared/response";
 import { getAllAmbulances, getAmbulanceById } from "./ambulances.controller";
+import { getPublicAds, getActiveAds } from "../ads/ads.controller";
 
 import { getAllDoctors, getDoctorById, getDoctorConsultationPrices } from "./doctors.controller";
 import { debugConsultationPrices } from "./debug.controller";
@@ -37,6 +38,11 @@ export async function handler(
 
   try {
     // --- RUTAS GENERALES / UTILITARIAS ---
+
+    // GET /api/public/ads o /api/ads/active - Anuncios activos públicos
+    if ((path === '/api/public/ads' || path === '/api/ads/active') && method === 'GET') {
+      return await getActiveAds(event);
+    }
 
     // DEBUG ENDPOINT - TEMPORAL
     if (

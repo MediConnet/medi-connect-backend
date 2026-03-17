@@ -244,6 +244,49 @@ export async function getPublicAds(event: APIGatewayProxyEventV2): Promise<APIGa
   }
 }
 
+// --- 2b. GET /api/ads/active o /api/public/ads - Estructura para app de pacientes ---
+export async function getActiveAds(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  const prisma = getPrismaClient();
+  try {
+    const now = new Date();
+    const ads = await prisma.provider_ads.findMany({
+      where: {
+        status: 'APPROVED',
+        is_active: true,
+        start_date: { lte: now },
+        OR: [{ end_date: null }, { end_date: { gt: now } }],
+      },
+      include: {
+        providers: {
+          include: {
+            service_categories: { select: { slug: true } },
+          },
+        },
+      },
+      orderBy: [{ priority_order: 'asc' }, { start_date: 'desc' }],
+      take: 20,
+    });
+
+    const data = ads.map(ad => ({
+      id: ad.id,
+      label: ad.badge_text || '',
+      discount: ad.title || '',
+      description: ad.subtitle || '',
+      buttonText: ad.action_text || '',
+      imageUrl: ad.image_url || null,
+      startDate: ad.start_date ? new Date(ad.start_date).toISOString().split('T')[0] : null,
+      endDate: ad.end_date ? new Date(ad.end_date).toISOString().split('T')[0] : null,
+      providerName: ad.providers?.commercial_name || '',
+      serviceType: ad.providers?.service_categories?.slug || 'doctor',
+    }));
+
+    return successResponse(data);
+  } catch (error: any) {
+    console.error('Error getActiveAds:', error);
+    return internalErrorResponse('Error fetching active ads');
+  }
+}
+
 // --- 3. FUNCIÓN DE CONSULTA PROPIA (GET) ---
 export async function getMyAd(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   const authResult = await requireRole(event, [

@@ -99,6 +99,13 @@ functions:
       - httpApi:
           path: /api/public/specialties
           method: GET
+      # Public Ads (anuncios activos para app de pacientes)
+      - httpApi:
+          path: /api/public/ads
+          method: GET
+      - httpApi:
+          path: /api/ads/active
+          method: GET
       # Public Ambulances
       - httpApi:
           path: /api/ambulances
