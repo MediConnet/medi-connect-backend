@@ -7,35 +7,18 @@ import { parseBody, doctorBankAccountSchema } from '../shared/validators';
 
 /**
  * GET /api/doctors/bank-account
- * Obtener datos bancarios del médico asociado a clínica
+ * Obtener datos bancarios del médico (independiente o asociado a clínica)
  */
 export async function getBankAccount(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   try {
     const authResult = await requireAuth(event);
-    if ('statusCode' in authResult) {
-      return authResult;
-    }
+    if ('statusCode' in authResult) return authResult;
     const authContext = authResult as AuthContext;
 
     const prisma = getPrismaClient();
 
-    // Buscar asociación del médico con clínica
-    const doctorAssociation = await prisma.clinic_doctors.findFirst({
-      where: {
-        user_id: authContext.user.id,
-        is_active: true,
-      },
-    });
-
-    if (!doctorAssociation) {
-      return errorResponse('No estás asociado a ninguna clínica', 404);
-    }
-
-    // Buscar cuenta bancaria
     const bankAccount = await prisma.doctor_bank_accounts.findUnique({
-      where: {
-        doctor_id: doctorAssociation.id,
-      },
+      where: { user_id: authContext.user.id },
     });
 
     if (!bankAccount) {
@@ -61,47 +44,26 @@ export async function getBankAccount(event: APIGatewayProxyEventV2): Promise<API
 
 /**
  * PUT /api/doctors/bank-account
- * Crear o actualizar datos bancarios del médico (UPSERT)
+ * Crear o actualizar datos bancarios del médico (independiente o asociado a clínica)
  */
 export async function upsertBankAccount(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   try {
     const authResult = await requireAuth(event);
-    if ('statusCode' in authResult) {
-      return authResult;
-    }
+    if ('statusCode' in authResult) return authResult;
     const authContext = authResult as AuthContext;
 
     const body = parseBody(event.body, doctorBankAccountSchema);
-
     const prisma = getPrismaClient();
 
-    // Buscar asociación del médico con clínica
-    const doctorAssociation = await prisma.clinic_doctors.findFirst({
-      where: {
-        user_id: authContext.user.id,
-        is_active: true,
-      },
-    });
-
-    if (!doctorAssociation) {
-      return errorResponse('No estás asociado a ninguna clínica', 404);
-    }
-
-    // Verificar si ya existe cuenta bancaria
     const existingAccount = await prisma.doctor_bank_accounts.findUnique({
-      where: {
-        doctor_id: doctorAssociation.id,
-      },
+      where: { user_id: authContext.user.id },
     });
 
     let bankAccount;
 
     if (existingAccount) {
-      // Actualizar cuenta existente
       bankAccount = await prisma.doctor_bank_accounts.update({
-        where: {
-          doctor_id: doctorAssociation.id,
-        },
+        where: { user_id: authContext.user.id },
         data: {
           bank_name: body.bankName,
           account_number: body.accountNumber,
@@ -112,11 +74,10 @@ export async function upsertBankAccount(event: APIGatewayProxyEventV2): Promise<
         },
       });
     } else {
-      // Crear nueva cuenta
       bankAccount = await prisma.doctor_bank_accounts.create({
         data: {
           id: randomUUID(),
-          doctor_id: doctorAssociation.id,
+          user_id: authContext.user.id,
           bank_name: body.bankName,
           account_number: body.accountNumber,
           account_type: body.accountType,
