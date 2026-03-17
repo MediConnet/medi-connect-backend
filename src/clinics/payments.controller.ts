@@ -369,25 +369,19 @@ export async function getDoctorPayments(event: APIGatewayProxyEventV2): Promise<
       return successResponse([]);
     }
 
-    // Obtener distribuciones de pagos (filtrado directo por payout_id)
     const distributions = await prisma.clinic_payment_distributions.findMany({
       where: { payout_id: { in: payoutIds } },
       include: {
         clinic_doctors: {
           include: {
-            doctor_bank_accounts: true,
             users: {
-              select: {
-                id: true
-              }
+              select: { id: true }
             }
           },
         },
         payouts: true,
       },
-      orderBy: {
-        created_at: 'desc',
-      },
+      orderBy: { created_at: 'desc' },
       take: 500,
     });
 
@@ -399,14 +393,19 @@ export async function getDoctorPayments(event: APIGatewayProxyEventV2): Promise<
     const providers = doctorUserIds.length > 0
       ? await prisma.providers.findMany({
           where: { user_id: { in: doctorUserIds } },
-          select: {
-            user_id: true,
-            commercial_name: true
-          }
+          select: { user_id: true, commercial_name: true }
         })
       : [];
     
     const providerNameMap = new Map(providers.map(p => [p.user_id, p.commercial_name]));
+
+    // Obtener cuentas bancarias por user_id
+    const bankAccounts = doctorUserIds.length > 0
+      ? await prisma.doctor_bank_accounts.findMany({
+          where: { user_id: { in: doctorUserIds } },
+        })
+      : [];
+    const bankAccountMap = new Map(bankAccounts.map(b => [b.user_id, b]));
 
     // Mapear a formato del frontend
     const mappedPayments = distributions.map((dist) => {
@@ -425,11 +424,11 @@ export async function getDoctorPayments(event: APIGatewayProxyEventV2): Promise<
         paymentDate: dist.paid_at?.toISOString() || null,
         createdAt: dist.created_at?.toISOString(),
         clinicPaymentId: dist.payout_id,
-        doctorBankAccount: dist.clinic_doctors?.doctor_bank_accounts ? {
-          bankName: dist.clinic_doctors.doctor_bank_accounts.bank_name,
-          accountNumber: dist.clinic_doctors.doctor_bank_accounts.account_number,
-          accountType: dist.clinic_doctors.doctor_bank_accounts.account_type,
-          accountHolder: dist.clinic_doctors.doctor_bank_accounts.account_holder,
+        doctorBankAccount: dist.clinic_doctors?.user_id && bankAccountMap.get(dist.clinic_doctors.user_id) ? {
+          bankName: bankAccountMap.get(dist.clinic_doctors.user_id)!.bank_name,
+          accountNumber: bankAccountMap.get(dist.clinic_doctors.user_id)!.account_number,
+          accountType: bankAccountMap.get(dist.clinic_doctors.user_id)!.account_type,
+          accountHolder: bankAccountMap.get(dist.clinic_doctors.user_id)!.account_holder,
         } : undefined,
       };
     });
