@@ -50,11 +50,31 @@ async function getLaboratoryCategoryId(prisma: ReturnType<typeof getPrismaClient
   return cat?.id ?? null;
 }
 
+function getPublicBaseUrlFromEvent(event: APIGatewayProxyEventV2): string {
+  const envBase = (process.env.API_PUBLIC_URL || process.env.BACKEND_URL || "").replace(/\/$/, "");
+  if (envBase) return envBase;
+
+  const headers = event.headers ?? {};
+  const proto =
+    headers["x-forwarded-proto"] ||
+    headers["X-Forwarded-Proto"] ||
+    (headers["origin"] ? new URL(headers["origin"]).protocol.replace(":", "") : "") ||
+    "https";
+  const host =
+    headers["x-forwarded-host"] ||
+    headers["X-Forwarded-Host"] ||
+    headers["host"] ||
+    headers["Host"] ||
+    "";
+  if (!host) return "";
+  return `${proto}://${host}`.replace(/\/$/, "");
+}
+
 /** So the frontend can use logo_url in <img src>; relative /uploads/ path becomes full API URL */
-function toAbsoluteLogoUrl(logoUrl: string | null | undefined): string | null {
+function toAbsoluteLogoUrl(event: APIGatewayProxyEventV2, logoUrl: string | null | undefined): string | null {
   if (!logoUrl) return null;
   if (logoUrl.startsWith("http://") || logoUrl.startsWith("https://")) return logoUrl;
-  const base = (process.env.API_PUBLIC_URL || process.env.BACKEND_URL || "").replace(/\/$/, "");
+  const base = getPublicBaseUrlFromEvent(event);
   if (!base) return logoUrl;
   return logoUrl.startsWith("/") ? `${base}${logoUrl}` : `${base}/${logoUrl}`;
 }
@@ -98,7 +118,7 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
       id: provider.id,
       full_name: provider.commercial_name ?? "",
       description: provider.description ?? "",
-      logo_url: toAbsoluteLogoUrl(provider.logo_url) ?? null,
+      logo_url: toAbsoluteLogoUrl(event, provider.logo_url) ?? null,
       address: mainBranch?.address_text ?? "",
       phone: mainBranch?.phone_contact ?? "",
       whatsapp: mainBranch?.phone_contact ?? "",
@@ -248,7 +268,7 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
       id: updated?.id,
       full_name: updated?.commercial_name ?? "",
       description: updated?.description ?? "",
-      logo_url: toAbsoluteLogoUrl(updated?.logo_url ?? null) ?? null,
+      logo_url: toAbsoluteLogoUrl(event, updated?.logo_url ?? null) ?? null,
       address: upBranch?.address_text ?? "",
       phone: upBranch?.phone_contact ?? "",
       whatsapp: upBranch?.phone_contact ?? "",
