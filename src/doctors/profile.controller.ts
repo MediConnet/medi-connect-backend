@@ -332,11 +332,9 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
       }
 
       // D. Actualizar cuenta bancaria del doctor (si viene en el body)
-      if (body.bankAccount !== undefined) {
-        if (!clinicDoctor) {
-          throw new Error('No estás asociado a ninguna clínica');
-        }
-
+      // Nota: NO bloqueamos si el médico no está asociado a una clínica.
+      // Si no hay asociación, simplemente ignoramos la persistencia en esta tabla.
+      if (body.bankAccount !== undefined && clinicDoctor) {
         const existingAccount = await tx.doctor_bank_accounts.findUnique({
           where: {
             doctor_id: clinicDoctor.id,
