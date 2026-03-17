@@ -2,6 +2,8 @@ import { APIGatewayProxyEventV2 } from "aws-lambda";
 import cors from "cors";
 import * as dotenv from "dotenv";
 import express from "express";
+import http from "http";
+import { attachRealtimeToHttpServer } from "../src/shared/realtime";
 
 // Cargar variables de entorno
 dotenv.config();
@@ -436,10 +438,14 @@ app.get("/api/health", (req, res) => {
 });
 
 // Start server
-app.listen(PORT, async () => {
+const httpServer = http.createServer(app);
+attachRealtimeToHttpServer(httpServer);
+
+httpServer.listen(PORT, async () => {
   console.log(`🚀 MediConnect Backend - Local Development Server`);
   console.log(`📡 Server running on http://localhost:${PORT}`);
   console.log(`🌐 API available at http://localhost:${PORT}/api`);
+  console.log(`🔌 Realtime (Socket.IO) available at path ${process.env.SOCKET_IO_PATH || "/socket.io"}`);
 
   // Verificar conexión a la base de datos
   try {

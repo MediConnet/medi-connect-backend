@@ -15,6 +15,7 @@ import {
   extractIdFromPath,
   parseBody,
 } from "../shared/validators";
+import { emitToUser } from "../shared/realtime";
 
 // Configuración de tiempos (en minutos)
 const PAYMENT_TIMEOUT_MINUTES = 15;
@@ -163,6 +164,18 @@ export async function createAppointment(
     console.log(
       `✅ [PATIENTS] Cita creada. Estado: ${initialStatus} | Costo: ${appointmentCost} | Especialidad: ${body.specialtyId}`,
     );
+
+    // Realtime: appointment:created (to doctor, optionally clinic)
+    if ((doctor as any).user_id) {
+      emitToUser((doctor as any).user_id, "appointment:created", {
+        appointmentId: appointment.id,
+        patientName: patient.full_name || "Paciente",
+        date: body.date,
+        time: body.time,
+        reason: body.reason || null,
+        status: appointment.status,
+      });
+    }
 
     const appointmentWithRelations = appointment as any;
     const provider = appointmentWithRelations.providers;

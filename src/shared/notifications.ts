@@ -2,6 +2,7 @@ import { getPrismaClient } from './prisma';
 import { randomUUID } from 'crypto';
 import { logger } from './logger';
 import { sendEmail, generateDoctorNewAppointmentEmail, generateClinicNewAppointmentEmail, generatePatientNewAppointmentEmail, generatePatientReminderEmail, generateDoctorCancellationEmail, generatePatientCancellationEmail } from './email';
+import { emitToClinic } from './realtime';
 
 export interface AppointmentNotificationData {
   appointment_id: string;
@@ -27,7 +28,7 @@ export async function notifyClinic(
 ): Promise<void> {
   try {
     const prisma = getPrismaClient();
-    await prisma.clinic_notifications.create({
+    const notif = await prisma.clinic_notifications.create({
       data: {
         id: randomUUID(),
         clinic_id: clinicId,
@@ -39,6 +40,21 @@ export async function notifyClinic(
       },
     });
     console.log(`✅ [NOTIFICATIONS] Notificación de clínica creada: ${type} - ${clinicId}`);
+
+    // Realtime: notification:new (clinic room)
+    emitToClinic(clinicId, 'notification:new', {
+      scope: 'clinic',
+      clinicId,
+      notification: {
+        id: notif.id,
+        type: notif.type,
+        title: notif.title,
+        body: notif.body,
+        is_read: notif.is_read,
+        data: notif.data,
+        created_at: notif.created_at,
+      },
+    });
   } catch (error: any) {
     console.error(`❌ [NOTIFICATIONS] Error al crear notificación de clínica:`, error.message);
     logger.error('Error creating clinic notification', error);

@@ -5,6 +5,7 @@ import { AuthContext, requireRole } from '../shared/auth';
 import { getPrismaClient } from '../shared/prisma';
 import { errorResponse, successResponse } from '../shared/response';
 import { parseBody, updateAppointmentStatusSchema } from '../shared/validators';
+import { emitToUser } from '../shared/realtime';
 
 export async function getAppointments(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   try {
@@ -201,6 +202,30 @@ export async function updateAppointmentStatus(event: APIGatewayProxyEventV2): Pr
         is_paid: isPaidUpdate
       }
     });
+
+    // Realtime: appointment:updated (doctor + patient)
+    try {
+      const providerUserId = provider.user_id as string | undefined;
+      if (providerUserId) {
+        emitToUser(providerUserId, 'appointment:updated', {
+          appointmentId,
+          status: updatedAppointment.status,
+        });
+      }
+
+      const patient = await prisma.patients.findUnique({
+        where: { id: updatedAppointment.patient_id || '' },
+        select: { user_id: true, full_name: true },
+      });
+      if (patient?.user_id) {
+        emitToUser(patient.user_id, 'appointment:updated', {
+          appointmentId,
+          status: updatedAppointment.status,
+        });
+      }
+    } catch (e) {
+      // do not block response
+    }
 
     return successResponse({
       success: true,

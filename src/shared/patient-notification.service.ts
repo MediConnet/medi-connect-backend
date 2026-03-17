@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { logger } from "./logger";
 import { getPrismaClient } from "./prisma";
+import { emitToPatient } from "./realtime";
 
 // Tipos(enum_notif_types)
 export type PatientNotificationType =
@@ -52,6 +53,22 @@ export const patientNotificationService = {
       console.log(
         `🔔 [PATIENT-NOTIF] Individual para ${payload.patientId}: ${payload.title}`,
       );
+
+      // Realtime: notification:new (patient room)
+      emitToPatient(payload.patientId, "notification:new", {
+        scope: "patient",
+        patientId: payload.patientId,
+        notification: {
+          id: notification.id,
+          type: notification.type,
+          title: notification.title,
+          body: notification.body,
+          is_read: notification.is_read,
+          data: notification.data,
+          created_at: notification.created_at,
+        },
+      });
+
       return notification;
     } catch (error: any) {
       console.error("❌ [PATIENT-NOTIF] Error create:", error.message);

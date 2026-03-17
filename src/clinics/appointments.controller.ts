@@ -6,6 +6,7 @@ import { getPrismaClient } from '../shared/prisma';
 import { errorResponse, internalErrorResponse, notFoundResponse, successResponse } from '../shared/response';
 import { parseBody, updateAppointmentStatusClinicSchema, updateReceptionStatusSchema, extractIdFromPath } from '../shared/validators';
 import { notifyAppointmentCancelled, notifyAppointmentConfirmed } from '../shared/notifications';
+import { emitToUser } from '../shared/realtime';
 
 // Helper para obtener datos del doctor desde las relaciones
 async function getDoctorData(providerId: string, prisma: any) {
@@ -282,6 +283,38 @@ export async function updateAppointmentStatus(event: APIGatewayProxyEventV2): Pr
       where: { id: appointmentId },
       data: { status: dbStatus },
     });
+
+    // Realtime: appointment:updated (clinic + doctor + patient when resolvable)
+    try {
+      emitToUser(authContext.user.id, 'appointment:updated', {
+        appointmentId,
+        status: updatedAppointment.status,
+      });
+
+      const details = await prisma.appointments.findFirst({
+        where: { id: appointmentId },
+        include: {
+          patients: { select: { user_id: true, full_name: true } },
+          providers: { select: { user_id: true, commercial_name: true } },
+        },
+      });
+      const doctorUserId = details?.providers?.user_id || undefined;
+      const patientUserId = details?.patients?.user_id || undefined;
+      if (doctorUserId) {
+        emitToUser(doctorUserId, 'appointment:updated', {
+          appointmentId,
+          status: updatedAppointment.status,
+        });
+      }
+      if (patientUserId) {
+        emitToUser(patientUserId, 'appointment:updated', {
+          appointmentId,
+          status: updatedAppointment.status,
+        });
+      }
+    } catch (e) {
+      // do not block response
+    }
 
     // Enviar notificaciones según el estado (no bloquea la respuesta)
     if (body.status === 'cancelled' || body.status === 'no_show') {

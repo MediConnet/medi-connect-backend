@@ -9,6 +9,7 @@ import {
   successResponse,
 } from "../shared/response";
 import { createProviderReviewSchema, parseBody } from "../shared/validators";
+import { emitToUser } from "../shared/realtime";
 
 /**
  * Obtener reseñas de una sucursal (público)
@@ -257,6 +258,32 @@ export async function createProviderReview(
     }
 
     console.log(`✅ [PUBLIC REVIEWS] Reseña creada exitosamente: ${review.id}`);
+
+    // Realtime: review:new (to reviewed provider owner)
+    try {
+      const branchWithProvider = await prisma.provider_branches.findFirst({
+        where: { id: branch.id },
+        select: { provider_id: true },
+      });
+      const provider = branchWithProvider?.provider_id
+        ? await prisma.providers.findFirst({
+            where: { id: branchWithProvider.provider_id },
+            select: { user_id: true },
+          })
+        : null;
+      if (provider?.user_id) {
+        emitToUser(provider.user_id, "review:new", {
+          reviewId: review.id,
+          rating: review.rating,
+          comment: review.comment || null,
+          userName: review.patients?.full_name || "Paciente",
+          entityType: "branch",
+          branchId: branch.id,
+        });
+      }
+    } catch (e) {
+      // do not block response
+    }
 
     return successResponse(
       {

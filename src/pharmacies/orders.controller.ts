@@ -5,6 +5,7 @@ import { logger } from '../shared/logger';
 import { getPrismaClient } from '../shared/prisma';
 import { errorResponse, internalErrorResponse, notFoundResponse, successResponse } from '../shared/response';
 import { parseBody, updateOrderStatusSchema, extractIdFromPath } from '../shared/validators';
+import { emitToUser } from '../shared/realtime';
 
 // GET /api/pharmacies/orders - Listar pedidos
 export async function getOrders(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
@@ -216,6 +217,30 @@ export async function updateOrderStatus(event: APIGatewayProxyEventV2): Promise<
         status: dbStatus,
       },
     });
+
+    // Realtime: order:updated (provider + patient)
+    try {
+      // provider is the authenticated user (panel), emit to self
+      emitToUser(authContext.user.id, 'order:updated', {
+        orderId,
+        status: updatedOrder.status,
+      });
+
+      const patient = updatedOrder.patient_id
+        ? await prisma.patients.findUnique({
+            where: { id: updatedOrder.patient_id },
+            select: { user_id: true, full_name: true },
+          })
+        : null;
+      if (patient?.user_id) {
+        emitToUser(patient.user_id, 'order:updated', {
+          orderId,
+          status: updatedOrder.status,
+        });
+      }
+    } catch (e) {
+      // do not block response
+    }
 
     console.log(`✅ [PHARMACIES] Estado de pedido actualizado: ${orderId} -> ${body.status}`);
     return successResponse({

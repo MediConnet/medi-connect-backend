@@ -3,6 +3,8 @@ import cors from 'cors';
 import * as dotenv from 'dotenv';
 import express from 'express';
 import { execSync } from 'child_process';
+import http from 'http';
+import { attachRealtimeToHttpServer } from './src/shared/realtime';
 
 // Cargar variables de entorno
 dotenv.config();
@@ -522,10 +524,14 @@ async function runMigrations() {
 }
 
 // Start server
-app.listen(PORT, async () => {
+const httpServer = http.createServer(app);
+attachRealtimeToHttpServer(httpServer);
+
+httpServer.listen(PORT, async () => {
   console.log(`🚀 MediConnect Backend - Production Server`);
   console.log(`📡 Server running on port ${PORT}`);
   console.log(`🌐 API available at /api`);
+  console.log(`🔌 Realtime (Socket.IO) available at path ${process.env.SOCKET_IO_PATH || '/socket.io'}`);
   
   // Ejecutar migraciones antes de verificar la conexión
   await runMigrations();
