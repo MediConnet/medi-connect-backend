@@ -34,9 +34,10 @@ export async function getDashboard(event: APIGatewayProxyEventV2): Promise<APIGa
           address: true,
           phone: true,
           whatsapp: true,
-        }
-      }
-    }
+        },
+      },
+      doctor_bank_accounts: true,
+    },
   });
 
   // Determinar si el doctor está realmente asociado a una clínica
@@ -143,6 +144,7 @@ export async function getDashboard(event: APIGatewayProxyEventV2): Promise<APIGa
                       whatsapp: true,
                     },
                   },
+                  doctor_bank_accounts: true,
                 },
               });
 
@@ -248,6 +250,18 @@ export async function getDashboard(event: APIGatewayProxyEventV2): Promise<APIGa
     take: 5,
   });
 
+  // Construir objeto de cuenta bancaria del doctor (si existe)
+  const doctorBankAccount = clinicDoctor?.doctor_bank_accounts
+    ? {
+        bankName: clinicDoctor.doctor_bank_accounts.bank_name,
+        accountNumber: clinicDoctor.doctor_bank_accounts.account_number,
+        accountType: clinicDoctor.doctor_bank_accounts.account_type,
+        accountHolder: clinicDoctor.doctor_bank_accounts.account_holder,
+        identificationNumber:
+          clinicDoctor.doctor_bank_accounts.identification_number || null,
+      }
+    : null;
+
   return successResponse({
     totalAppointments,
     pendingAppointments,
@@ -278,6 +292,7 @@ export async function getDashboard(event: APIGatewayProxyEventV2): Promise<APIGa
       specialty: null, // Placeholder
       category: provider.service_categories,
       branches: provider.provider_branches,
+      bankAccount: doctorBankAccount,
     },
     // Solo devolver información de clínica si realmente está asociado
     clinic: isClinicAssociated && clinicDoctor?.clinics ? {

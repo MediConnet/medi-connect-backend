@@ -61,6 +61,28 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
 
   if (!profile) return notFoundResponse('Doctor profile not found');
 
+  // Buscar cuenta bancaria del doctor (si está asociado a una clínica)
+  const clinicDoctor = await prisma.clinic_doctors.findFirst({
+    where: {
+      user_id: authContext.user.id,
+      is_active: true,
+    },
+    include: {
+      doctor_bank_accounts: true,
+    },
+  });
+
+  const bankAccount = clinicDoctor?.doctor_bank_accounts
+    ? {
+        bankName: clinicDoctor.doctor_bank_accounts.bank_name,
+        accountNumber: clinicDoctor.doctor_bank_accounts.account_number,
+        accountType: clinicDoctor.doctor_bank_accounts.account_type,
+        accountHolder: clinicDoctor.doctor_bank_accounts.account_holder,
+        identificationNumber:
+          clinicDoctor.doctor_bank_accounts.identification_number || null,
+      }
+    : null;
+
   const mainBranch = profile.provider_branches[0] || null;
   const user = profile.users;
   
@@ -101,6 +123,7 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
     status: profile.verification_status,
     is_published: mainBranch?.is_active ?? false, 
     commission_percentage: profile.commission_percentage,
+    bankAccount,
     
     // Mapeo de horarios para el frontend - Estructura completa con todos los días
     schedules: (() => {
@@ -172,6 +195,14 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
     const body = parseBody(event.body || null, updateDoctorProfileSchema);
     console.log('✅ [DOCTORS] Body validado:', JSON.stringify(body, null, 2));
     const prisma = getPrismaClient();
+
+    // Buscar asociación del médico con clínica (para cuenta bancaria)
+    const clinicDoctor = await prisma.clinic_doctors.findFirst({
+      where: {
+        user_id: authContext.user.id,
+        is_active: true,
+      },
+    });
 
     let profile = await prisma.providers.findFirst({
       where: { user_id: authContext.user.id },
@@ -299,6 +330,57 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
             }
         }
       }
+
+      // D. Actualizar cuenta bancaria del doctor (si viene en el body)
+      if (body.bankAccount !== undefined) {
+        if (!clinicDoctor) {
+          throw new Error('No estás asociado a ninguna clínica');
+        }
+
+        const existingAccount = await tx.doctor_bank_accounts.findUnique({
+          where: {
+            doctor_id: clinicDoctor.id,
+          },
+        });
+
+        if (body.bankAccount === null) {
+          // Si el frontend envía null, eliminamos la cuenta bancaria existente
+          if (existingAccount) {
+            await tx.doctor_bank_accounts.delete({
+              where: {
+                doctor_id: clinicDoctor.id,
+              },
+            });
+          }
+        } else {
+          const data = {
+            bank_name: body.bankAccount.bankName,
+            account_number: body.bankAccount.accountNumber,
+            account_type: body.bankAccount.accountType,
+            account_holder: body.bankAccount.accountHolder,
+            identification_number:
+              body.bankAccount.identificationNumber || null,
+            updated_at: new Date(),
+          };
+
+          if (existingAccount) {
+            await tx.doctor_bank_accounts.update({
+              where: {
+                doctor_id: clinicDoctor.id,
+              },
+              data,
+            });
+          } else {
+            await tx.doctor_bank_accounts.create({
+              data: {
+                id: randomUUID(),
+                doctor_id: clinicDoctor.id,
+                ...data,
+              },
+            });
+          }
+        }
+      }
     });
 
     // --- RECUPERAR PERFIL ACTUALIZADO COMPLETO ---
@@ -329,6 +411,32 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
 
     const updatedMainBranch = updatedProfile?.provider_branches[0] || null;
     const updatedUser = updatedProfile?.users;
+
+    // Cuenta bancaria actualizada (si existe)
+    const updatedClinicDoctor = await prisma.clinic_doctors.findFirst({
+      where: {
+        user_id: authContext.user.id,
+        is_active: true,
+      },
+      include: {
+        doctor_bank_accounts: true,
+      },
+    });
+
+    const bankAccount =
+      updatedClinicDoctor?.doctor_bank_accounts
+        ? {
+            bankName: updatedClinicDoctor.doctor_bank_accounts.bank_name,
+            accountNumber:
+              updatedClinicDoctor.doctor_bank_accounts.account_number,
+            accountType: updatedClinicDoctor.doctor_bank_accounts.account_type,
+            accountHolder:
+              updatedClinicDoctor.doctor_bank_accounts.account_holder,
+            identificationNumber:
+              updatedClinicDoctor.doctor_bank_accounts.identification_number ||
+              null,
+          }
+        : null;
     
     // Mapear especialidades con sus tarifas
     const updatedSpecialtiesWithFees = updatedProfile?.provider_specialties.map(ps => ({
@@ -369,6 +477,7 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
       status: updatedProfile?.verification_status,
       is_published: updatedMainBranch?.is_active ?? false,
       commission_percentage: updatedProfile?.commission_percentage,
+      bankAccount,
       
       schedules: (() => {
         const daysMap: Record<number, any> = {};

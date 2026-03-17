@@ -106,6 +106,28 @@ const scheduleItemSchema = z
     },
   );
 
+// --- Shared Bank Account Schemas ---
+// Base schema used for clinic and doctor profile bank accounts
+const bankAccountSchema = z.object({
+  bankName: z.string().min(1, "Bank name is required"),
+  accountNumber: z.coerce
+    .string()
+    .min(10, "Account number must be at least 10 digits"),
+  accountType: z.enum(["checking", "savings"], {
+    errorMap: () => ({ message: "Account type must be checking or savings" }),
+  }),
+  accountHolder: z.string().min(1, "Account holder is required"),
+  identificationNumber: z.coerce
+    .string()
+    .min(10, "Identification number must be at least 10 digits")
+    .max(13, "Identification number must be at most 13 digits")
+    .optional()
+    .nullable(),
+});
+
+// Schema for doctor profile bank account (same shape as clinic)
+export const doctorProfileBankAccountSchema = bankAccountSchema;
+
 export const updateDoctorProfileSchema = z.object({
   licenseNumber: z.string().optional(),
   specialization: z.string().optional(),
@@ -142,6 +164,7 @@ export const updateDoctorProfileSchema = z.object({
   payment_methods: z.array(z.string()).optional(), // Array de strings
   is_published: z.boolean().optional(),
   workSchedule: z.array(scheduleItemSchema).optional(),
+  bankAccount: doctorProfileBankAccountSchema.optional().nullable(),
 });
 
 export const createDiagnosisSchema = z.object({
@@ -416,22 +439,6 @@ const consultationPriceSchema = z.object({
   specialty: z.string().min(1, "Specialty is required"),
   price: z.coerce.number().min(0, "Price must be >= 0"),
   isActive: z.coerce.boolean(),
-});
-
-// Schema para datos bancarios
-const bankAccountSchema = z.object({
-  bankName: z.string().min(1, "Bank name is required"),
-  accountNumber: z.coerce
-    .string()
-    .min(10, "Account number must be at least 10 digits"),
-  accountType: z.enum(["checking", "savings"], {
-    errorMap: () => ({ message: "Account type must be checking or savings" }),
-  }),
-  accountHolder: z.string().min(1, "Account holder is required"),
-  identificationNumber: z.coerce
-    .string()
-    .min(10, "Identification number must be at least 10 digits")
-    .max(13, "Identification number must be at most 13 digits"),
 });
 
 export const updateClinicProfileSchema = z.object({
