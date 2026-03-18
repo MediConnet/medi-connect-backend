@@ -246,8 +246,14 @@ export function parseBody<T extends z.ZodTypeAny>(
     throw new Error("Request body is required");
   }
 
+  let parsed: any;
   try {
-    const parsed = JSON.parse(body);
+    parsed = JSON.parse(body);
+  } catch {
+    throw new Error("Invalid JSON in request body");
+  }
+
+  try {
     return schema.parse(parsed) as z.infer<T>;
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -259,7 +265,7 @@ export function parseBody<T extends z.ZodTypeAny>(
         .join(", ");
       throw new Error(`Validation error: ${formatted}`);
     }
-    throw new Error("Invalid JSON in request body");
+    throw error;
   }
 }
 
@@ -482,12 +488,14 @@ export const updateClinicProfileSchema = z.object({
           ]),
         )
         .min(1, "At least one specialty is required")
-        .optional(),
-    )
-    .transform((arr) =>
-      (arr as any[])
-        .map((x) => (typeof x === "string" ? x : x?.name || x?.id))
-        .filter(Boolean),
+        .optional()
+        .transform((arr) =>
+          arr
+            ? (arr as any[])
+                .map((x) => (typeof x === "string" ? x : x?.name || x?.id))
+                .filter(Boolean)
+            : undefined,
+        ),
     )
     .optional(),
   address: z
