@@ -828,6 +828,11 @@ export const createAppointmentSchema = z.object({
     })
     .optional()
     .default("CASH"),
+  consultationPriceId: z
+    .string()
+    .uuid("Consultation price ID must be a valid UUID")
+    .optional()
+    .nullable(),
 });
 
 // Helper para extraer ID de la URL
