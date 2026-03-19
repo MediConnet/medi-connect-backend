@@ -163,6 +163,7 @@ export const updateDoctorProfileSchema = z.object({
   specialties: z.array(z.string()).optional(),
   payment_methods: z.array(z.string()).optional(), // Array de strings
   is_published: z.boolean().optional(),
+  imageUrl: z.string().optional().nullable(), // base64 o URL — se sube a Cloudinary
   workSchedule: z.array(scheduleItemSchema).optional(),
   bankAccount: doctorProfileBankAccountSchema.optional().nullable(),
 });
@@ -308,6 +309,7 @@ export const updatePharmacyProfileSchema = z.object({
   is_published: z.boolean().optional(),
   has_delivery: z.boolean().optional(),
   is_24h: z.boolean().optional(),
+  imageUrl: z.string().optional().nullable(), // base64 o URL — se sube a Cloudinary
   workSchedule: z.array(pharmacyScheduleItemSchema).optional(),
 });
 
@@ -340,6 +342,7 @@ export const updateLaboratoryProfileSchema = z.object({
     (val) => (val === null || val === "" ? undefined : val),
     z.union([z.string().url(), z.string().startsWith("data:image/"), z.literal("")]).optional(),
   ),
+  imageUrl: z.string().optional().nullable(), // alias de logo_url — se sube a Cloudinary
   is_published: z.boolean().optional(),
   workSchedule: z.array(pharmacyScheduleItemSchema).optional(),
 });

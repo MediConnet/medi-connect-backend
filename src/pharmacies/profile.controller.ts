@@ -6,6 +6,7 @@ import { getPrismaClient } from '../shared/prisma';
 import { errorResponse, internalErrorResponse, notFoundResponse, successResponse } from '../shared/response';
 import { parseBody, updatePharmacyProfileSchema } from '../shared/validators';
 import { randomUUID } from 'crypto';
+import { uploadImageToCloudinary, isBase64Image } from '../shared/cloudinary';
 
 // --- HELPER FUNCTIONS ---
 function dayNumberToString(day: number): string {
@@ -158,6 +159,20 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
       console.log(`ℹ️ [PHARMACIES] Farmacia pertenece a cadena, ignorando cambios a nombre y descripción`);
     }
 
+    // --- SUBIR IMAGEN A CLOUDINARY (fuera de la transacción) ---
+    let uploadedImageUrl: string | undefined;
+    if (body.imageUrl && isBase64Image(body.imageUrl)) {
+      try {
+        uploadedImageUrl = await uploadImageToCloudinary(body.imageUrl, 'providers/pharmacies');
+        console.log('✅ [PHARMACIES] Imagen subida a Cloudinary:', uploadedImageUrl);
+      } catch (imgErr: any) {
+        console.error('❌ [PHARMACIES] Error subiendo imagen a Cloudinary:', imgErr.message);
+        return errorResponse('Error al subir la imagen. Intenta de nuevo.', 500);
+      }
+    } else if (body.imageUrl && !isBase64Image(body.imageUrl)) {
+      uploadedImageUrl = body.imageUrl;
+    }
+
     // --- TRANSACCIÓN UNIFICADA ---
     await prisma.$transaction(async (tx) => {
       
@@ -196,6 +211,7 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
             is_active: body.is_published,
             has_delivery: body.has_delivery,
             is_24h: body.is_24h,
+            image_url: uploadedImageUrl, // Cloudinary URL
         };
         
         Object.keys(branchData).forEach(key => branchData[key] === undefined && delete branchData[key]);

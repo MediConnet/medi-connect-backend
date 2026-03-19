@@ -2,6 +2,7 @@ import { APIGatewayProxyEventV2, APIGatewayProxyResult } from "aws-lambda";
 import { AuthContext, requireAuth } from "../shared/auth";
 import { getPrismaClient } from "../shared/prisma";
 import { errorResponse, successResponse } from "../shared/response";
+import { uploadImageToCloudinary, isBase64Image } from "../shared/cloudinary";
 
 /**
  * GET /api/ambulances/profile
@@ -204,7 +205,22 @@ export async function updateAmbulanceProfile(
       is24h,
       ambulanceTypes,
       coverageArea,
+      imageUrl,
     } = body;
+
+    // --- SUBIR IMAGEN A CLOUDINARY ---
+    let uploadedImageUrl: string | undefined;
+    if (imageUrl && isBase64Image(imageUrl)) {
+      try {
+        uploadedImageUrl = await uploadImageToCloudinary(imageUrl, 'providers/ambulances');
+        console.log('✅ [AMBULANCES] Imagen subida a Cloudinary:', uploadedImageUrl);
+      } catch (imgErr: any) {
+        console.error('❌ [AMBULANCES] Error subiendo imagen:', imgErr.message);
+        return errorResponse('Error al subir la imagen. Intenta de nuevo.', 500);
+      }
+    } else if (imageUrl) {
+      uploadedImageUrl = imageUrl;
+    }
 
     const prisma = getPrismaClient();
 
@@ -253,6 +269,7 @@ export async function updateAmbulanceProfile(
       if (latitude !== undefined) branchUpdateData.latitude = latitude !== null ? latitude : null;
       if (longitude !== undefined) branchUpdateData.longitude = longitude !== null ? longitude : null;
       if (google_maps_url !== undefined) branchUpdateData.google_maps_url = google_maps_url !== null && google_maps_url !== "" ? google_maps_url : null;
+      if (uploadedImageUrl !== undefined) branchUpdateData.image_url = uploadedImageUrl;
       
       console.log('💾 [AMBULANCES] Actualizando branch con datos:', JSON.stringify(branchUpdateData, null, 2));
       await prisma.provider_branches.update({

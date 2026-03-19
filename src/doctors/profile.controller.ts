@@ -6,6 +6,7 @@ import { logger } from '../shared/logger';
 import { getPrismaClient } from '../shared/prisma';
 import { errorResponse, internalErrorResponse, notFoundResponse, successResponse } from '../shared/response';
 import { parseBody, updateDoctorProfileSchema } from '../shared/validators';
+import { uploadImageToCloudinary, isBase64Image } from '../shared/cloudinary';
 
 // --- HELPER FUNCTIONS ---
 function dayNumberToString(day: number): string {
@@ -198,6 +199,21 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
 
     if (!profile) return notFoundResponse('Doctor profile not found for updates');
 
+    // --- SUBIR IMAGEN A CLOUDINARY (fuera de la transacción) ---
+    let uploadedImageUrl: string | undefined;
+    if (body.imageUrl && isBase64Image(body.imageUrl)) {
+      try {
+        uploadedImageUrl = await uploadImageToCloudinary(body.imageUrl, 'providers/doctors');
+        console.log('✅ [DOCTORS] Imagen subida a Cloudinary:', uploadedImageUrl);
+      } catch (imgErr: any) {
+        console.error('❌ [DOCTORS] Error subiendo imagen a Cloudinary:', imgErr.message);
+        return errorResponse('Error al subir la imagen. Intenta de nuevo.', 500);
+      }
+    } else if (body.imageUrl && !isBase64Image(body.imageUrl)) {
+      // Ya es una URL (no base64), usarla directamente
+      uploadedImageUrl = body.imageUrl;
+    }
+
     // --- TRANSACCIÓN UNIFICADA ---
     await prisma.$transaction(async (tx) => {
       
@@ -268,7 +284,8 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
             google_maps_url: body.google_maps_url !== undefined ? (body.google_maps_url === "" ? null : body.google_maps_url) : undefined,
             phone_contact: body.whatsapp || body.phone, 
             payment_methods: body.payment_methods,
-            is_active: body.is_published
+            is_active: body.is_published,
+            image_url: uploadedImageUrl, // Cloudinary URL
         };
         
         Object.keys(branchData).forEach(key => branchData[key] === undefined && delete branchData[key]);

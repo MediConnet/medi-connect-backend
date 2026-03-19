@@ -1,10 +1,9 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResult } from "aws-lambda";
 import { randomUUID } from "crypto";
-import * as fs from "fs";
-import * as path from "path";
 import { enum_roles } from "../generated/prisma/client";
 import { AuthContext, requireRole } from "../shared/auth";
 import { getPrismaClient } from "../shared/prisma";
+import { uploadImageToCloudinary, isBase64Image } from "../shared/cloudinary";
 import {
   errorResponse,
   internalErrorResponse,
@@ -190,28 +189,19 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
       const providerData: Record<string, unknown> = {};
       if (body.full_name !== undefined) providerData.commercial_name = body.full_name;
       if (body.description !== undefined) providerData.description = body.description;
-      if (body.logo_url !== undefined) {
-        const raw = body.logo_url;
-        if (raw === "") {
+      if (body.logo_url !== undefined || body.imageUrl !== undefined) {
+        const raw = body.imageUrl || body.logo_url;
+        if (!raw || raw === "") {
           providerData.logo_url = null;
-        } else if (typeof raw === "string" && raw.startsWith("data:image/")) {
-          // providers.logo_url is VARCHAR(255); base64 doesn't fit. Store file locally and save URL path.
-          const match = raw.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
-          if (!match) {
-            throw new Error("Invalid base64 image");
-          }
-          const mime = match[1];
-          const b64 = match[2];
-          const ext =
-            mime.includes("png") ? ".png" : mime.includes("jpeg") || mime.includes("jpg") ? ".jpg" : ".img";
-          const uploadsDir = path.join(process.cwd(), "uploads");
-          await fs.promises.mkdir(uploadsDir, { recursive: true });
-          const filename = `lab-logo-${randomUUID()}${ext}`;
-          const diskPath = path.join(uploadsDir, filename);
-          await fs.promises.writeFile(diskPath, Buffer.from(b64, "base64"));
-          providerData.logo_url = `/uploads/${encodeURIComponent(filename)}`;
+        } else if (isBase64Image(raw)) {
+          providerData.logo_url = await uploadImageToCloudinary(raw, 'providers/laboratories');
+          console.log('✅ [LABORATORIES] Imagen subida a Cloudinary:', providerData.logo_url);
         } else {
           providerData.logo_url = raw;
+        }
+        // También guardar en image_url de la sucursal
+        if (providerData.logo_url) {
+          branchData.image_url = providerData.logo_url;
         }
       }
       if (Object.keys(providerData).length > 0) {

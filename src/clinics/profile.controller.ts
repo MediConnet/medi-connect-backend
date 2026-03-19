@@ -6,6 +6,7 @@ import { logger } from '../shared/logger';
 import { getPrismaClient } from '../shared/prisma';
 import { errorResponse, internalErrorResponse, notFoundResponse, successResponse } from '../shared/response';
 import { parseBody, updateClinicProfileSchema } from '../shared/validators';
+import { uploadImageToCloudinary, isBase64Image } from '../shared/cloudinary';
 
 // Helper para convertir número de día a nombre
 function dayNumberToName(day: number): string {
@@ -474,11 +475,17 @@ export async function uploadLogo(event: APIGatewayProxyEventV2): Promise<APIGate
       return errorResponse('Logo URL is required', 400);
     }
 
-    // Validar que sea una URL válida o base64
-    const isBase64 = logoUrl.startsWith('data:image/');
-    const isUrl = logoUrl.startsWith('http://') || logoUrl.startsWith('https://');
-
-    if (!isBase64 && !isUrl) {
+    // Subir a Cloudinary si es base64, o usar URL directamente
+    let finalLogoUrl = logoUrl;
+    if (isBase64Image(logoUrl)) {
+      try {
+        finalLogoUrl = await uploadImageToCloudinary(logoUrl, 'clinics');
+        console.log('✅ [CLINICS] Logo subido a Cloudinary:', finalLogoUrl);
+      } catch (imgErr: any) {
+        console.error('❌ [CLINICS] Error subiendo logo a Cloudinary:', imgErr.message);
+        return errorResponse('Error al subir el logo. Intenta de nuevo.', 500);
+      }
+    } else if (!logoUrl.startsWith('http://') && !logoUrl.startsWith('https://')) {
       return errorResponse('Logo must be a valid URL or base64 image', 400);
     }
 
@@ -495,14 +502,14 @@ export async function uploadLogo(event: APIGatewayProxyEventV2): Promise<APIGate
     await prisma.clinics.update({
       where: { id: clinic.id },
       data: {
-        logo_url: logoUrl,
+        logo_url: finalLogoUrl,
         updated_at: new Date(),
       },
     });
 
     console.log('✅ [CLINICS] Logo actualizado exitosamente');
     return successResponse({
-      logoUrl: logoUrl,
+      logoUrl: finalLogoUrl,
       message: 'Logo actualizado correctamente',
     });
   } catch (error: any) {

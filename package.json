@@ -54,6 +54,7 @@
     "@types/pg": "8.16.0",
     "bcrypt": "6.0.0",
     "busboy": "1.6.0",
+    "cloudinary": "2.9.0",
     "cors": "2.8.6",
     "date-fns": "4.1.0",
     "dotenv": "16.6.1",
