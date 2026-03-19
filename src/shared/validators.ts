@@ -538,11 +538,11 @@ export const updateClinicProfileSchema = z.object({
       (val) => (val === "" || val === undefined ? undefined : val),
       z
         .union([
+          z.null(),
           z.coerce
             .number()
             .min(-90, "Latitude must be between -90 and 90")
             .max(90, "Latitude must be between -90 and 90"),
-          z.null(),
         ])
         .optional(),
     )
@@ -552,11 +552,11 @@ export const updateClinicProfileSchema = z.object({
       (val) => (val === "" || val === undefined ? undefined : val),
       z
         .union([
+          z.null(),
           z.coerce
             .number()
             .min(-180, "Longitude must be between -180 and 180")
             .max(180, "Longitude must be between -180 and 180"),
-          z.null(),
         ])
         .optional(),
     )
