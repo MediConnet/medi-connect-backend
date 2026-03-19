@@ -196,7 +196,6 @@ model clinic_payment_distributions {
 
 model doctor_bank_accounts {
   id                    String   @id @db.Uuid
-  user_id               String   @unique @db.Uuid
   bank_name             String   @db.VarChar(255)
   account_number        String   @db.VarChar(255)
   account_type          String   @db.VarChar(50)
@@ -204,6 +203,7 @@ model doctor_bank_accounts {
   created_at            DateTime @default(now()) @db.Timestamp(6)
   updated_at            DateTime @default(now()) @db.Timestamp(6)
   identification_number String?  @db.VarChar(13)
+  user_id               String   @unique @db.Uuid
   users                 users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([user_id])
@@ -251,7 +251,6 @@ model provider_branches {
   address_text       String?
   latitude           Float?
   longitude          Float?
-  google_maps_url    String?              @db.VarChar(500)
   phone_contact      String?              @db.VarChar(20)
   email_contact      String?              @db.VarChar(255)
   image_url          String?              @db.VarChar(255)
@@ -264,6 +263,7 @@ model provider_branches {
   payment_methods    String[]
   ambulance_types    String[]             @default([])
   coverage_area      String?              @db.VarChar(255)
+  google_maps_url    String?              @db.VarChar(500)
   appointments       appointments[]
   blockedSlots       blocked_slots[]
   featured_branches  featured_branches[]
@@ -335,11 +335,11 @@ model providers {
   logo_url              String?                 @db.VarChar(255)
   description           String?
   verification_status   String?                 @db.VarChar(255)
-  rejection_reason      String?
   commission_percentage Decimal?                @db.Decimal
   years_of_experience   Int?                    @default(0)
   chain_id              String?                 @db.Uuid
   documents             Json?                   @default("[]") @db.Json
+  rejection_reason      String?
   appointments          appointments[]
   consultation_prices   consultation_prices[]
   medical_history       medical_history[]
@@ -400,21 +400,21 @@ model specialties {
 }
 
 model users {
-  id                  String            @id @db.Uuid
-  email               String            @db.VarChar(255)
-  password_hash       String            @db.VarChar(255)
-  role                enum_roles        @default(patient)
-  profile_picture_url String?           @db.VarChar(255)
-  is_active           Boolean?          @default(true)
-  created_at          DateTime?         @default(now()) @db.Timestamp(6)
-  push_token          String?           @db.VarChar(255)
-  clinic_doctors      clinic_doctors[]
-  clinics             clinics?
+  id                   String                @id @db.Uuid
+  email                String                @db.VarChar(255)
+  password_hash        String                @db.VarChar(255)
+  role                 enum_roles            @default(patient)
+  profile_picture_url  String?               @db.VarChar(255)
+  is_active            Boolean?              @default(true)
+  created_at           DateTime?             @default(now()) @db.Timestamp(6)
+  push_token           String?               @db.VarChar(255)
+  clinic_doctors       clinic_doctors[]
+  clinics              clinics?
   doctor_bank_accounts doctor_bank_accounts?
-  password_resets     password_resets[]
-  patients            patients[]
-  providers           providers[]
-  sessions            sessions[]
+  password_resets      password_resets[]
+  patients             patients[]
+  providers            providers[]
+  sessions             sessions[]
 }
 
 model clinics {
@@ -431,9 +431,9 @@ model clinics {
   updated_at           DateTime?              @default(now()) @db.Timestamp(6)
   latitude             Decimal?               @db.Decimal(10, 8)
   longitude            Decimal?               @db.Decimal(11, 8)
-  google_maps_url      String?                @db.VarChar(500)
   consultation_prices  Json?                  @default("[]") @db.Json
   bank_account         Json?                  @db.Json
+  google_maps_url      String?                @db.VarChar(500)
   appointments         appointments[]
   clinic_doctors       clinic_doctors[]
   clinic_notifications clinic_notifications[]
@@ -593,26 +593,26 @@ model consultation_prices {
 }
 
 model admin_settings {
-  id                            Int       @id @default(1)
-  commission_doctor             Decimal   @default(15.00) @db.Decimal(5, 2)
-  commission_clinic             Decimal   @default(10.00) @db.Decimal(5, 2)
-  commission_laboratory         Decimal   @default(12.00) @db.Decimal(5, 2)
-  commission_pharmacy           Decimal   @default(8.00) @db.Decimal(5, 2)
-  commission_supplies           Decimal   @default(10.00) @db.Decimal(5, 2)
-  commission_ambulance          Decimal   @default(15.00) @db.Decimal(5, 2)
-  notify_new_requests           Boolean   @default(true)
-  notify_email_summary          Boolean   @default(true)
-  auto_approve_services         Boolean   @default(false)
-  maintenance_mode              Boolean   @default(false)
-  only_admin_can_publish_ads    Boolean   @default(true)
-  require_ad_approval           Boolean   @default(true)
-  max_ads_per_provider          Int       @default(1)
-  ad_approval_required          Boolean   @default(true)
-  service_approval_required     Boolean   @default(true)
-  allow_service_self_activation Boolean   @default(false)
-  allow_ad_self_publishing      Boolean   @default(false)
-  updated_at                    DateTime  @default(now()) @db.Timestamp(6)
-  created_at                    DateTime  @default(now()) @db.Timestamp(6)
+  id                            Int      @id @default(1)
+  commission_doctor             Decimal  @default(15.00) @db.Decimal(5, 2)
+  commission_clinic             Decimal  @default(10.00) @db.Decimal(5, 2)
+  commission_laboratory         Decimal  @default(12.00) @db.Decimal(5, 2)
+  commission_pharmacy           Decimal  @default(8.00) @db.Decimal(5, 2)
+  commission_supplies           Decimal  @default(10.00) @db.Decimal(5, 2)
+  commission_ambulance          Decimal  @default(15.00) @db.Decimal(5, 2)
+  notify_new_requests           Boolean  @default(true)
+  notify_email_summary          Boolean  @default(true)
+  auto_approve_services         Boolean  @default(false)
+  maintenance_mode              Boolean  @default(false)
+  only_admin_can_publish_ads    Boolean  @default(true)
+  require_ad_approval           Boolean  @default(true)
+  max_ads_per_provider          Int      @default(1)
+  ad_approval_required          Boolean  @default(true)
+  service_approval_required     Boolean  @default(true)
+  allow_service_self_activation Boolean  @default(false)
+  allow_ad_self_publishing      Boolean  @default(false)
+  updated_at                    DateTime @default(now()) @db.Timestamp(6)
+  created_at                    DateTime @default(now()) @db.Timestamp(6)
 }
 
 enum enum_appt_status {

@@ -74,18 +74,29 @@ async function getPharmacyBrandsFallback(
         users: { is_active: true },
         provider_branches: { some: { is_active: true } },
       },
-      select: { id: true, commercial_name: true, logo_url: true },
+      select: {
+        id: true,
+        commercial_name: true,
+        logo_url: true,
+        provider_branches: {
+          where: { is_main: true, is_active: true },
+          take: 1,
+          select: { image_url: true },
+        },
+      },
       orderBy: { commercial_name: "asc" },
     });
 
     const uniqueBrandsMap = new Map();
     pharmacies.forEach((pharmacy: any) => {
       const name = pharmacy.commercial_name || "";
+      const mainBranch = pharmacy.provider_branches?.[0];
+
       if (name && !uniqueBrandsMap.has(name)) {
         uniqueBrandsMap.set(name, {
           id: pharmacy.id,
           nombre: name,
-          logo: pharmacy.logo_url || "",
+          logo: mainBranch?.image_url || pharmacy.logo_url || "",
           color: "#002F87",
         });
       }
@@ -221,7 +232,7 @@ export async function getPharmacyBranches(
         disponible24h: branch.is_24h || false,
         hasDelivery: branch.has_delivery || false,
         email: branch.email_contact || "",
-        imagen: branch.image_url || branch.providers?.logo_url || "",
+        imagen: branch.image_url || branch.providers?.logo_url || "", // <-- Ya estaba correcto
         latitud: branch.latitude ? Number(branch.latitude) : null,
         longitud: branch.longitude ? Number(branch.longitude) : null,
         horarios: branch.provider_schedules,
@@ -311,7 +322,7 @@ export async function getPharmacyBranchById(
       disponible24h: branch.is_24h || false,
       hasDelivery: branch.has_delivery || false,
       email: branch.email_contact || "",
-      imagen: branch.image_url || branch.providers?.logo_url || "",
+      imagen: branch.image_url || branch.providers?.logo_url || "", // <-- Ya estaba correcto
       latitud: branch.latitude ? Number(branch.latitude) : null,
       longitud: branch.longitude ? Number(branch.longitude) : null,
       horarios: branch.provider_schedules,
@@ -372,7 +383,7 @@ export async function getAllPharmacies(
       return {
         id: pharmacy.id,
         nombre: pharmacy.commercial_name || "",
-        logo: pharmacy.logo_url || "",
+        logo: mainBranch?.image_url || pharmacy.logo_url || "",
         ciudad: mainBranch?.cities?.name || "",
         sucursales: 1,
       };
