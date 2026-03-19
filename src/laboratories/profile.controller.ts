@@ -189,26 +189,29 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
       const providerData: Record<string, unknown> = {};
       if (body.full_name !== undefined) providerData.commercial_name = body.full_name;
       if (body.description !== undefined) providerData.description = body.description;
+
+      // Procesar imagen — subir a Cloudinary si es base64
+      let resolvedImageUrl: string | null | undefined;
       if (body.logo_url !== undefined || body.imageUrl !== undefined) {
         const raw = body.imageUrl || body.logo_url;
         if (!raw || raw === "") {
-          providerData.logo_url = null;
+          resolvedImageUrl = null;
         } else if (isBase64Image(raw)) {
-          providerData.logo_url = await uploadImageToCloudinary(raw, 'providers/laboratories');
-          console.log('✅ [LABORATORIES] Imagen subida a Cloudinary:', providerData.logo_url);
+          resolvedImageUrl = await uploadImageToCloudinary(raw, 'providers/laboratories');
+          console.log('✅ [LABORATORIES] Imagen subida a Cloudinary:', resolvedImageUrl);
         } else {
-          providerData.logo_url = raw;
+          resolvedImageUrl = raw;
         }
-        // También guardar en image_url de la sucursal
-        if (providerData.logo_url) {
-          branchData.image_url = providerData.logo_url;
-        }
+        providerData.logo_url = resolvedImageUrl;
       }
+
       if (Object.keys(providerData).length > 0) {
         await tx.providers.update({ where: { id: provider.id }, data: providerData });
       }
 
       const branchData: Record<string, unknown> = {};
+      // Si se subió imagen, guardarla también en image_url de la sucursal
+      if (resolvedImageUrl !== undefined) branchData.image_url = resolvedImageUrl;
       if (body.address !== undefined) branchData.address_text = body.address;
       if (body.phone !== undefined) branchData.phone_contact = body.phone;
       if (body.whatsapp !== undefined) branchData.phone_contact = body.whatsapp;
