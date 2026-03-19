@@ -98,7 +98,9 @@ function mapDoctorData(doctor: any) {
       ...tarifasPorEspecialidad,
     },
 
-    formasPago: mainBranch?.payment_methods || [],
+    formasPago: (mainBranch?.payment_methods && mainBranch.payment_methods.length > 0)
+      ? mainBranch.payment_methods
+      : ["efectivo", "tarjeta"],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };

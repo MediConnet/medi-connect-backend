@@ -243,7 +243,23 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
   const prisma = getPrismaClient();
 
   try {
-    console.log('📤 [CLINICS] PUT /api/clinics/profile - Body recibido:', event.body?.substring(0, 500));
+    console.log('📤 [CLINICS] PUT /api/clinics/profile - Body recibido (primeros 1000 chars):', event.body?.substring(0, 1000));
+    console.log('📤 [CLINICS] Content-Type:', event.headers['content-type'] || event.headers['Content-Type']);
+    console.log('📤 [CLINICS] Body length:', event.body?.length);
+    
+    let parsedRaw: any;
+    try {
+      parsedRaw = JSON.parse(event.body || '{}');
+      console.log('📤 [CLINICS] Campos recibidos:', Object.keys(parsedRaw));
+      // Log de cada campo para detectar cuál falla
+      for (const [key, val] of Object.entries(parsedRaw)) {
+        const valStr = typeof val === 'string' ? `"${(val as string).substring(0, 100)}"` : JSON.stringify(val)?.substring(0, 100);
+        console.log(`  - ${key}: ${valStr}`);
+      }
+    } catch (jsonErr: any) {
+      console.error('❌ [CLINICS] JSON parse error:', jsonErr.message);
+    }
+    
     const body = parseBody(event.body, updateClinicProfileSchema);
     console.log('✅ [CLINICS] Body validado:', JSON.stringify(body, null, 2));
 
