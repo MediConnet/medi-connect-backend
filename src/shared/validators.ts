@@ -566,7 +566,7 @@ export const updateClinicProfileSchema = z.object({
       (val) => (val === "" || val === undefined ? undefined : val),
       z
         .union([
-          z.string().url("Google Maps URL must be a valid URL"),
+          z.string().url("Google Maps URL must be a valid URL").max(500, "URL too long (max 500 chars)"),
           z.null(),
         ])
         .optional(),
