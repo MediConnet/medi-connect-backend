@@ -98,6 +98,7 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
     full_name: profile.commercial_name || user?.email,
     email: user?.email,
     profile_picture_url: user?.profile_picture_url || profile.logo_url,
+    imageUrl: mainBranch?.image_url || profile.logo_url || null,
     
     specialty: specialtyName,
     specialties_list: specialtiesWithFees.map(s => s.name),
@@ -283,7 +284,8 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
             longitude: body.longitude !== undefined ? body.longitude : undefined,
             google_maps_url: body.google_maps_url !== undefined ? (body.google_maps_url === "" ? null : body.google_maps_url) : undefined,
             phone_contact: body.whatsapp || body.phone, 
-            payment_methods: body.payment_methods,
+            // Solo actualizar payment_methods si se envía con valores (evitar sobreescribir con array vacío)
+            payment_methods: (body.payment_methods && body.payment_methods.length > 0) ? body.payment_methods : undefined,
             is_active: body.is_published,
             image_url: uploadedImageUrl, // Cloudinary URL
         };
@@ -437,6 +439,7 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
       full_name: updatedProfile?.commercial_name || updatedUser?.email,
       email: updatedUser?.email, 
       profile_picture_url: updatedUser?.profile_picture_url || updatedProfile?.logo_url,
+      imageUrl: updatedMainBranch?.image_url || updatedProfile?.logo_url || null,
       
       specialty: specialtyName,
       specialties_list: updatedSpecialtiesWithFees.map(s => s.name),

@@ -10,6 +10,7 @@ import {
   successResponse,
 } from "../shared/response";
 import { parseBody } from "../shared/validators";
+import { uploadImageToCloudinary, isBase64Image } from "../shared/cloudinary";
 
 const extractStoreId = (path: string): string | null => {
   const match = path.match(/\/api\/supplies\/([^\/]+)/);
@@ -209,6 +210,18 @@ export async function updateSuppliesProfile(
       authContext.user.email,
     );
 
+    // --- SUBIR IMAGEN A CLOUDINARY si es base64 ---
+    let finalLogoUrl: string | undefined | null = body.logoUrl;
+    if (body.logoUrl && isBase64Image(body.logoUrl)) {
+      try {
+        finalLogoUrl = await uploadImageToCloudinary(body.logoUrl, 'providers/supplies');
+        console.log('✅ [SUPPLIES] Imagen subida a Cloudinary:', finalLogoUrl);
+      } catch (imgErr: any) {
+        console.error('❌ [SUPPLIES] Error subiendo imagen a Cloudinary:', imgErr.message);
+        return errorResponse('Error al subir la imagen. Intenta de nuevo.', 500);
+      }
+    }
+
     const updatedProvider = await prisma.providers.update({
       where: { id: provider.id },
       data: {
@@ -219,10 +232,10 @@ export async function updateSuppliesProfile(
             ? body.description
             : provider.description,
         logo_url:
-          body.logoUrl !== undefined
-            ? body.logoUrl === ""
+          finalLogoUrl !== undefined
+            ? finalLogoUrl === ""
               ? null
-              : body.logoUrl
+              : finalLogoUrl
             : provider.logo_url,
       },
     });

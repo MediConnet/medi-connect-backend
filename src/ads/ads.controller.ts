@@ -4,6 +4,7 @@ import { enum_roles } from '../generated/prisma/client';
 import { AuthContext, requireRole } from '../shared/auth';
 import { getPrismaClient } from '../shared/prisma';
 import { errorResponse, internalErrorResponse, successResponse } from '../shared/response';
+import { uploadImageToCloudinary, isBase64Image } from '../shared/cloudinary';
 
 // Interface del formulario Frontend
 interface CreateAdBody {
@@ -130,6 +131,18 @@ export async function createAdRequest(event: APIGatewayProxyEventV2): Promise<AP
       return errorResponse('Faltan campos obligatorios.', 400);
     }
 
+    // --- SUBIR IMAGEN A CLOUDINARY si es base64 ---
+    let finalImageUrl: string | null = image_url || null;
+    if (image_url && isBase64Image(image_url)) {
+      try {
+        finalImageUrl = await uploadImageToCloudinary(image_url, 'ads');
+        console.log('✅ [ADS] Imagen subida a Cloudinary:', finalImageUrl);
+      } catch (imgErr: any) {
+        console.error('❌ [ADS] Error subiendo imagen a Cloudinary:', imgErr.message);
+        return errorResponse('Error al subir la imagen del anuncio. Intenta de nuevo.', 500);
+      }
+    }
+
     const slug = provider.service_categories?.slug || 'default';
     const dbAccentColor = provider.service_categories?.default_color_hex;
     const colors = getAdColors(slug, dbAccentColor);
@@ -143,7 +156,7 @@ export async function createAdRequest(event: APIGatewayProxyEventV2): Promise<AP
         title: discount_title,
         subtitle: description,
         action_text: button_text,
-        image_url: image_url || null,
+        image_url: finalImageUrl,
         start_date: new Date(start_date),
         end_date: end_date ? new Date(end_date) : null,
         is_active: true,       

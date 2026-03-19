@@ -86,12 +86,30 @@ export async function createAppointment(
       );
     }
 
-    const appointmentCost = specialtyRecord.fee
+    let appointmentCost = specialtyRecord.fee
       ? Number(specialtyRecord.fee)
       : 0;
-    console.log(
-      `💰 [DEBUG] Costo de cita capturado de la especialidad: ${appointmentCost}`,
-    );
+
+    // Si se envía consultationPriceId, usar el precio del servicio en lugar de la tarifa de especialidad
+    if (body.consultationPriceId) {
+      const consultationPrice = await prisma.consultation_prices.findUnique({
+        where: { id: body.consultationPriceId },
+      });
+      if (consultationPrice && consultationPrice.is_active) {
+        appointmentCost = Number(consultationPrice.price);
+        console.log(
+          `💰 [DEBUG] Usando precio de servicio (consultationPriceId=${body.consultationPriceId}): ${appointmentCost}`,
+        );
+      } else {
+        console.warn(
+          `⚠️ [DEBUG] consultationPriceId=${body.consultationPriceId} no encontrado o inactivo, usando tarifa de especialidad: ${appointmentCost}`,
+        );
+      }
+    } else {
+      console.log(
+        `💰 [DEBUG] Costo de cita capturado de la especialidad: ${appointmentCost}`,
+      );
+    }
 
     const scheduledFor = new Date(`${body.date}T${body.time}:00`);
 
