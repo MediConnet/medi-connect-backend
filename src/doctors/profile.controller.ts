@@ -98,6 +98,7 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
     full_name: profile.commercial_name || user?.email,
     email: user?.email,
     profile_picture_url: user?.profile_picture_url || profile.logo_url,
+    imageUrl: mainBranch?.image_url || profile.logo_url || null,
     
     specialty: specialtyName,
     specialties_list: specialtiesWithFees.map(s => s.name),
@@ -438,6 +439,7 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
       full_name: updatedProfile?.commercial_name || updatedUser?.email,
       email: updatedUser?.email, 
       profile_picture_url: updatedUser?.profile_picture_url || updatedProfile?.logo_url,
+      imageUrl: updatedMainBranch?.image_url || updatedProfile?.logo_url || null,
       
       specialty: specialtyName,
       specialties_list: updatedSpecialtiesWithFees.map(s => s.name),
