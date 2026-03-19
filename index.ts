@@ -5,6 +5,7 @@ import express from 'express';
 import { execSync } from 'child_process';
 import http from 'http';
 import { attachRealtimeToHttpServer } from './src/shared/realtime';
+import { startScheduler } from './src/jobs/scheduler';
 
 // Cargar variables de entorno
 dotenv.config();
@@ -549,6 +550,9 @@ httpServer.listen(PORT, async () => {
     console.error(`❌ Error al conectar a la base de datos:`, error.message);
     console.log(`⚠️  El servidor está corriendo pero la base de datos no está disponible`);
   }
+
+  // Iniciar cron jobs
+  startScheduler();
   
   console.log(`\n📋 Available endpoints:`);
   console.log(`   - POST   /api/auth/register`);
