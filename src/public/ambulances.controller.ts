@@ -62,6 +62,7 @@ function mapAmbulanceData(ambulance: any) {
 
     latitud: mainBranch?.latitude ? Number(mainBranch.latitude) : null,
     longitud: mainBranch?.longitude ? Number(mainBranch.longitude) : null,
+    google_maps_url: mainBranch?.google_maps_url || null,
     imagen:
       ambulance.logo_url ||
       mainBranch?.image_url ||

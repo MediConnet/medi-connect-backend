@@ -92,6 +92,7 @@ function mapDoctorData(doctor: any) {
       : 0,
     latitud: mainBranch?.latitude ? Number(mainBranch.latitude) : null,
     longitud: mainBranch?.longitude ? Number(mainBranch.longitude) : null,
+    google_maps_url: mainBranch?.google_maps_url || null,
 
     tarifas: {
       consulta: tarifaBase,

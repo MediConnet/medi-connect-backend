@@ -235,6 +235,7 @@ export async function getPharmacyBranches(
         imagen: branch.image_url || branch.providers?.logo_url || "", // <-- Ya estaba correcto
         latitud: branch.latitude ? Number(branch.latitude) : null,
         longitud: branch.longitude ? Number(branch.longitude) : null,
+        google_maps_url: branch.google_maps_url || null,
         horarios: branch.provider_schedules,
       };
     });
@@ -325,6 +326,7 @@ export async function getPharmacyBranchById(
       imagen: branch.image_url || branch.providers?.logo_url || "", // <-- Ya estaba correcto
       latitud: branch.latitude ? Number(branch.latitude) : null,
       longitud: branch.longitude ? Number(branch.longitude) : null,
+      google_maps_url: branch.google_maps_url || null,
       horarios: branch.provider_schedules,
     };
 

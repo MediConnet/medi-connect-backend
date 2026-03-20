@@ -461,6 +461,7 @@ export async function getSupplyStoreById(
       imageUrl: provider.logo_url,
       latitude: mainBranch?.latitude ? Number(mainBranch.latitude) : null,
       longitude: mainBranch?.longitude ? Number(mainBranch.longitude) : null,
+      google_maps_url: mainBranch?.google_maps_url || null,
       openingHours: openingHours,
       products: products,
     });

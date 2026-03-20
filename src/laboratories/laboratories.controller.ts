@@ -212,6 +212,7 @@ export async function getLaboratoryById(
       horarioAtencion: horario,
       latitud: mainBranch.latitude ? Number(mainBranch.latitude) : undefined,
       longitud: mainBranch.longitude ? Number(mainBranch.longitude) : undefined,
+      google_maps_url: mainBranch.google_maps_url || undefined,
 
       servicios: [],
       examenes: provider.provider_catalog.map((exam) => ({
