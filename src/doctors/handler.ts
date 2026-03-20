@@ -46,6 +46,7 @@ import { getPatients } from "./patients.controller";
 import { getDoctorPaymentById, getDoctorPayments } from "./payments.controller";
 import { getProfile, updateProfile } from "./profile.controller";
 import { getSpecialties } from "./specialties.controller";
+import { getDoctorReviews } from "./reviews.controller";
 
 export async function handler(
   event: APIGatewayProxyEventV2,
@@ -118,9 +119,9 @@ export async function handler(
       if (method === "GET") return await getPatients(event);
     }
 
-    // --- Reviews (Placeholder) ---
+    // --- Reviews ---
     if (path === "/api/doctors/reviews" && method === "GET") {
-      return successResponse({ reviews: [] });
+      return await getDoctorReviews(event);
     }
 
     // --- Payments ---
