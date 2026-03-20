@@ -41,7 +41,7 @@ export async function handler(
 
     // GET /api/public/ads o /api/ads/active - Anuncios activos públicos
     if ((path === '/api/public/ads' || path === '/api/ads/active') && method === 'GET') {
-      return await getActiveAds(event);
+      return await getPublicAds(event);
     }
 
     // DEBUG ENDPOINT - TEMPORAL
