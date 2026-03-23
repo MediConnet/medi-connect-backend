@@ -61,6 +61,7 @@
     "dotenv": "16.6.1",
     "expo-server-sdk": "5.0.0",
     "express": "5.2.1",
+    "google-auth-library": "10.6.2",
     "googleapis": "171.2.0",
     "node-cron": "4.2.1",
     "node-mailjet": "6.0.11",

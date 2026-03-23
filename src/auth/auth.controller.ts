@@ -8,6 +8,7 @@ import { APIGatewayProxyEventV2, APIGatewayProxyResult } from "aws-lambda";
 import * as bcrypt from "bcrypt";
 import * as crypto from "crypto";
 import { randomUUID } from "crypto";
+import { OAuth2Client } from "google-auth-library";
 import { enum_roles } from "../generated/prisma/client";
 import { requireAuth } from "../shared/auth";
 import { logger } from "../shared/logger";
@@ -41,6 +42,7 @@ const cognitoClient = new CognitoIdentityProviderClient({
 });
 const USER_POOL_ID = process.env.COGNITO_USER_POOL_ID || "";
 const CLIENT_ID = process.env.COGNITO_USER_POOL_CLIENT_ID || "";
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 // --- HELPERS ---
 
@@ -395,18 +397,18 @@ export async function register(
     validatePayloadSize(event, isMultipart ? 25 * 1024 * 1024 : 200 * 1024);
 
     // 🔍 DEBUG: Ver headers y body
-    console.log('🔍 [REGISTER] Content-Type:', contentType);
-    console.log('🔍 [REGISTER] Is Multipart:', isMultipart);
-    console.log('🔍 [REGISTER] Body length:', event.body?.length || 0);
-    console.log('🔍 [REGISTER] Is Base64:', (event as any).isBase64Encoded);
-    console.log('🔍 [REGISTER] Body preview:', event.body?.substring(0, 200));
+    console.log("🔍 [REGISTER] Content-Type:", contentType);
+    console.log("🔍 [REGISTER] Is Multipart:", isMultipart);
+    console.log("🔍 [REGISTER] Body length:", event.body?.length || 0);
+    console.log("🔍 [REGISTER] Is Base64:", (event as any).isBase64Encoded);
+    console.log("🔍 [REGISTER] Body preview:", event.body?.substring(0, 200));
 
     let body: any;
     let uploadedDocuments: any[] = [];
 
     if (isMultipart) {
-      console.log('🔍 [REGISTER] Intentando parsear multipart...');
-      
+      console.log("🔍 [REGISTER] Intentando parsear multipart...");
+
       try {
         const parsed = await parseMultipartBody({
           body: event.body || undefined,
@@ -414,28 +416,41 @@ export async function register(
           headers: event.headers as any,
           limits: { fileSize: 15 * 1024 * 1024, files: 20, fields: 200 },
         });
-        
-        console.log('🔍 [REGISTER] Parsing completado');
-        console.log('🔍 [REGISTER] Archivos encontrados:', parsed.files.length);
+
+        console.log("🔍 [REGISTER] Parsing completado");
+        console.log("🔍 [REGISTER] Archivos encontrados:", parsed.files.length);
 
         const f = parsed.fields;
-        
+
         // 🔍 DEBUG: Ver qué campos llegaron
-        console.log('🔍 [REGISTER] Campos parseados del FormData:', Object.keys(f));
-        console.log('📧 [REGISTER] Email recibido:', f["email"]);
-        console.log('🔑 [REGISTER] Password recibido:', f["password"] ? '***' : undefined);
-        
+        console.log(
+          "🔍 [REGISTER] Campos parseados del FormData:",
+          Object.keys(f),
+        );
+        console.log("📧 [REGISTER] Email recibido:", f["email"]);
+        console.log(
+          "🔑 [REGISTER] Password recibido:",
+          f["password"] ? "***" : undefined,
+        );
+
         // 🔧 FIX: Si el FormData está vacío, intentar parsear como JSON
         if (Object.keys(f).length === 0 && event.body) {
-          console.log('⚠️ [REGISTER] FormData vacío, intentando parsear como JSON...');
+          console.log(
+            "⚠️ [REGISTER] FormData vacío, intentando parsear como JSON...",
+          );
           try {
             const jsonBody = JSON.parse(event.body);
-            console.log('✅ [REGISTER] JSON parseado exitosamente');
+            console.log("✅ [REGISTER] JSON parseado exitosamente");
             body = registerSchema.parse(jsonBody);
             uploadedDocuments = [];
           } catch (jsonError) {
-            console.error('❌ [REGISTER] Tampoco se pudo parsear como JSON:', jsonError);
-            throw new Error('No se pudo parsear el body ni como FormData ni como JSON');
+            console.error(
+              "❌ [REGISTER] Tampoco se pudo parsear como JSON:",
+              jsonError,
+            );
+            throw new Error(
+              "No se pudo parsear el body ni como FormData ni como JSON",
+            );
           }
         } else {
           // FormData tiene campos, continuar normalmente
@@ -483,9 +498,12 @@ export async function register(
           });
         }
       } catch (multipartError: any) {
-        console.error('❌ [REGISTER] Error al parsear multipart:', multipartError.message);
+        console.error(
+          "❌ [REGISTER] Error al parsear multipart:",
+          multipartError.message,
+        );
         // Intentar como JSON como fallback
-        console.log('⚠️ [REGISTER] Intentando parsear como JSON (fallback)...');
+        console.log("⚠️ [REGISTER] Intentando parsear como JSON (fallback)...");
         body = parseBody(event.body, registerSchema);
         uploadedDocuments = [];
       }
@@ -1187,7 +1205,7 @@ export async function me(
         user_id: user.id,
         OR: [
           { verification_status: { in: ["APPROVED", "PENDING"] } },
-          { verification_status: null } // Tratar null como PENDING
+          { verification_status: null }, // Tratar null como PENDING
         ],
       },
       include: {
@@ -1403,7 +1421,7 @@ export async function forgotPassword(
     console.log(
       `📧 [FORGOT-PASSWORD] Iniciando envío de email de recuperación a: ${user.email}`,
     );
-    
+
     sendEmail({
       to: user.email,
       subject: "Recuperación de Contraseña - DOCALINK",
@@ -1596,120 +1614,104 @@ export async function socialLogin(
   event: APIGatewayProxyEventV2,
 ): Promise<APIGatewayProxyResult> {
   try {
-    console.log('🍎 [SOCIAL-LOGIN] Procesando social login');
-    const body = JSON.parse(event.body || '{}');
+    console.log("🌐 [SOCIAL-LOGIN] Procesando login social");
+    const body = JSON.parse(event.body || "{}");
     const { provider, identityToken, email, fullName } = body;
 
     if (!provider || !identityToken) {
-      return errorResponse('provider e identityToken son requeridos', 400);
+      return errorResponse("provider e identityToken son requeridos", 400);
     }
 
-    if (provider !== 'apple') {
-      return errorResponse('Proveedor no soportado', 400);
-    }
+    let socialId: string;
+    let socialEmail: string;
+    let socialName: string = fullName || "Usuario";
 
-    // Decodificar el identityToken de Apple (JWT) para extraer el sub (apple user id)
-    const tokenParts = identityToken.split('.');
-    if (tokenParts.length !== 3) {
-      return errorResponse('identityToken inválido', 400);
-    }
+    if (provider === "apple") {
+      const tokenParts = identityToken.split(".");
+      const decoded = Buffer.from(tokenParts[1], "base64").toString("utf8");
+      const applePayload = JSON.parse(decoded);
+      socialId = applePayload.sub;
+      socialEmail = email || applePayload.email;
+    } else if (provider === "google") {
+      try {
+        const ticket = await googleClient.verifyIdToken({
+          idToken: identityToken,
+          audience: process.env.GOOGLE_CLIENT_ID,
+        });
+        const payload = ticket.getPayload();
+        if (!payload) return errorResponse("Token de Google inválido", 400);
 
-    let applePayload: any;
-    try {
-      const decoded = Buffer.from(tokenParts[1], 'base64').toString('utf8');
-      applePayload = JSON.parse(decoded);
-    } catch {
-      return errorResponse('No se pudo decodificar el identityToken', 400);
-    }
-
-    const appleSub = applePayload.sub; // ID único del usuario en Apple
-    const appleEmail = email || applePayload.email;
-
-    if (!appleSub) {
-      return errorResponse('Token de Apple inválido: falta sub', 400);
+        socialId = payload.sub; // ID único de Google
+        socialEmail = payload.email!;
+        socialName = fullName || payload.name || "Usuario Google";
+      } catch (err) {
+        return errorResponse("Fallo al verificar token de Google", 400);
+      }
+    } else {
+      return errorResponse("Proveedor no soportado", 400);
     }
 
     const prisma = getPrismaClient();
 
-    // Buscar usuario existente por apple_id o por email
+    // Buscar usuario por su ID social correspondiente o email
     let user = await prisma.users.findFirst({
       where: {
         OR: [
-          { apple_id: appleSub },
-          ...(appleEmail ? [{ email: appleEmail }] : []),
+          provider === "apple"
+            ? { apple_id: socialId }
+            : { google_id: socialId },
+          { email: socialEmail },
         ],
       },
     });
 
     if (!user) {
-      // Crear nuevo usuario paciente
-      const newEmail = appleEmail || `apple_${appleSub}@noemail.docalink.com`;
+      // Crear nuevo usuario (Paciente por defecto)
       user = await prisma.users.create({
         data: {
           id: randomUUID(),
-          email: newEmail,
-          password_hash: '',
+          email: socialEmail,
+          password_hash: "",
           role: enum_roles.patient,
           is_active: true,
-          apple_id: appleSub,
+          [provider === "apple" ? "apple_id" : "google_id"]: socialId,
         },
       });
 
-      // Crear perfil de paciente
-      const patientName = fullName || 'Usuario';
       await prisma.patients.create({
         data: {
           id: randomUUID(),
           user_id: user.id,
-          full_name: patientName,
-          phone: null,
+          full_name: socialName,
         },
       });
-
-      console.log(`✅ [SOCIAL-LOGIN] Nuevo usuario Apple creado: ${user.id}`);
+      console.log(
+        `✅ [SOCIAL-LOGIN] Nuevo usuario ${provider} creado: ${user.id}`,
+      );
     } else {
-      // Si ya existe pero no tiene apple_id, vincularlo
-      if (!user.apple_id) {
+      const updateData: any = {};
+      if (provider === "apple" && !user.apple_id)
+        updateData.apple_id = socialId;
+      if (provider === "google" && !user.google_id)
+        updateData.google_id = socialId;
+
+      if (Object.keys(updateData).length > 0) {
         await prisma.users.update({
           where: { id: user.id },
-          data: { apple_id: appleSub },
+          data: updateData,
         });
       }
-
-      // Si tiene nombre y el paciente no lo tiene guardado, actualizarlo
-      if (fullName) {
-        const patient = await prisma.patients.findFirst({
-          where: { user_id: user.id },
-        });
-        if (patient && (!patient.full_name || patient.full_name === 'Usuario')) {
-          await prisma.patients.update({
-            where: { id: patient.id },
-            data: { full_name: fullName },
-          });
-        }
-      }
-
-      console.log(`✅ [SOCIAL-LOGIN] Usuario Apple existente: ${user.id}`);
+      console.log(
+        `✅ [SOCIAL-LOGIN] Usuario ${provider} existente: ${user.id}`,
+      );
     }
 
-    // Obtener info del paciente para la respuesta
-    const patient = await prisma.patients.findFirst({
-      where: { user_id: user.id },
-      select: { full_name: true },
-    });
-
-    const nameParts = (patient?.full_name || '').trim().split(/\s+/);
-    const firstName = nameParts[0] || '';
-    const lastName = nameParts.slice(1).join(' ') || '';
-
-    // Generar JWT
     const jwtToken = generateLocalJWT({
       sub: user.id,
       email: user.email,
       role: user.role,
     });
 
-    // Guardar sesión
     const expiresAt = new Date();
     expiresAt.setHours(expiresAt.getHours() + 1);
     await prisma.sessions.create({
@@ -1724,24 +1726,15 @@ export async function socialLogin(
 
     return successResponse({
       token: jwtToken,
-      accessToken: jwtToken,
-      refreshToken: jwtToken,
-      idToken: jwtToken,
-      expiresIn: 3600,
       user: {
         id: user.id,
-        userId: user.id,
         email: user.email,
         role: String(user.role).toLowerCase(),
-        firstName,
-        lastName,
-        nombre: patient?.full_name || firstName,
-        profilePictureUrl: user.profile_picture_url || null,
-        isNewUser: !user.apple_id,
+        name: socialName,
       },
     });
   } catch (error: any) {
-    console.error('❌ [SOCIAL-LOGIN] Error:', error.message);
-    return internalErrorResponse('Error en social login');
+    console.error("❌ [SOCIAL-LOGIN] Error:", error.message);
+    return internalErrorResponse("Error en social login");
   }
 }
