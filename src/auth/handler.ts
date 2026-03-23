@@ -69,6 +69,11 @@ export async function handler(
       return await authController.deactivateAccount(event);
     }
 
+    // 10. Social Login (Apple)
+    if (method === "POST" && path === "/api/auth/social-login") {
+      return await authController.socialLogin(event);
+    }
+
     console.log(`❌ [AUTH] ${method} ${path} - Ruta no encontrada`);
     return errorResponse("Not found", 404);
   } catch (error: any) {

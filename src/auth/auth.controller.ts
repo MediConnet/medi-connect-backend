@@ -1586,3 +1586,162 @@ export async function deactivateAccount(
     );
   }
 }
+
+/**
+ * POST /api/auth/social-login
+ * Login/Registro con Apple (o cualquier proveedor social futuro)
+ * Body: { provider: 'apple', identityToken, email?, fullName? }
+ */
+export async function socialLogin(
+  event: APIGatewayProxyEventV2,
+): Promise<APIGatewayProxyResult> {
+  try {
+    console.log('🍎 [SOCIAL-LOGIN] Procesando social login');
+    const body = JSON.parse(event.body || '{}');
+    const { provider, identityToken, email, fullName } = body;
+
+    if (!provider || !identityToken) {
+      return errorResponse('provider e identityToken son requeridos', 400);
+    }
+
+    if (provider !== 'apple') {
+      return errorResponse('Proveedor no soportado', 400);
+    }
+
+    // Decodificar el identityToken de Apple (JWT) para extraer el sub (apple user id)
+    const tokenParts = identityToken.split('.');
+    if (tokenParts.length !== 3) {
+      return errorResponse('identityToken inválido', 400);
+    }
+
+    let applePayload: any;
+    try {
+      const decoded = Buffer.from(tokenParts[1], 'base64').toString('utf8');
+      applePayload = JSON.parse(decoded);
+    } catch {
+      return errorResponse('No se pudo decodificar el identityToken', 400);
+    }
+
+    const appleSub = applePayload.sub; // ID único del usuario en Apple
+    const appleEmail = email || applePayload.email;
+
+    if (!appleSub) {
+      return errorResponse('Token de Apple inválido: falta sub', 400);
+    }
+
+    const prisma = getPrismaClient();
+
+    // Buscar usuario existente por apple_id o por email
+    let user = await prisma.users.findFirst({
+      where: {
+        OR: [
+          { apple_id: appleSub },
+          ...(appleEmail ? [{ email: appleEmail }] : []),
+        ],
+      },
+    });
+
+    if (!user) {
+      // Crear nuevo usuario paciente
+      const newEmail = appleEmail || `apple_${appleSub}@noemail.docalink.com`;
+      user = await prisma.users.create({
+        data: {
+          id: randomUUID(),
+          email: newEmail,
+          password_hash: '',
+          role: enum_roles.patient,
+          is_active: true,
+          apple_id: appleSub,
+        },
+      });
+
+      // Crear perfil de paciente
+      const patientName = fullName || 'Usuario';
+      await prisma.patients.create({
+        data: {
+          id: randomUUID(),
+          user_id: user.id,
+          full_name: patientName,
+          phone: null,
+        },
+      });
+
+      console.log(`✅ [SOCIAL-LOGIN] Nuevo usuario Apple creado: ${user.id}`);
+    } else {
+      // Si ya existe pero no tiene apple_id, vincularlo
+      if (!user.apple_id) {
+        await prisma.users.update({
+          where: { id: user.id },
+          data: { apple_id: appleSub },
+        });
+      }
+
+      // Si tiene nombre y el paciente no lo tiene guardado, actualizarlo
+      if (fullName) {
+        const patient = await prisma.patients.findFirst({
+          where: { user_id: user.id },
+        });
+        if (patient && (!patient.full_name || patient.full_name === 'Usuario')) {
+          await prisma.patients.update({
+            where: { id: patient.id },
+            data: { full_name: fullName },
+          });
+        }
+      }
+
+      console.log(`✅ [SOCIAL-LOGIN] Usuario Apple existente: ${user.id}`);
+    }
+
+    // Obtener info del paciente para la respuesta
+    const patient = await prisma.patients.findFirst({
+      where: { user_id: user.id },
+      select: { full_name: true },
+    });
+
+    const nameParts = (patient?.full_name || '').trim().split(/\s+/);
+    const firstName = nameParts[0] || '';
+    const lastName = nameParts.slice(1).join(' ') || '';
+
+    // Generar JWT
+    const jwtToken = generateLocalJWT({
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+    });
+
+    // Guardar sesión
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + 1);
+    await prisma.sessions.create({
+      data: {
+        id: randomUUID(),
+        user_id: user.id,
+        token: jwtToken,
+        device_info: getDeviceInfo(event),
+        expires_at: expiresAt,
+      },
+    });
+
+    return successResponse({
+      token: jwtToken,
+      accessToken: jwtToken,
+      refreshToken: jwtToken,
+      idToken: jwtToken,
+      expiresIn: 3600,
+      user: {
+        id: user.id,
+        userId: user.id,
+        email: user.email,
+        role: String(user.role).toLowerCase(),
+        firstName,
+        lastName,
+        nombre: patient?.full_name || firstName,
+        profilePictureUrl: user.profile_picture_url || null,
+        isNewUser: !user.apple_id,
+      },
+    });
+  } catch (error: any) {
+    console.error('❌ [SOCIAL-LOGIN] Error:', error.message);
+    return internalErrorResponse('Error en social login');
+  }
+}
