@@ -58,6 +58,7 @@ function generateLocalJWT(payload: {
   sub: string;
   email: string;
   role: string | null;
+  expiresInSeconds?: number;
 }): string {
   const header = { alg: "HS256", typ: "JWT" };
   const base64UrlEncode = (str: string): string =>
@@ -68,13 +69,14 @@ function generateLocalJWT(payload: {
       .replace(/=/g, "");
   const encodedHeader = base64UrlEncode(JSON.stringify(header));
   const now = Math.floor(Date.now() / 1000);
+  const expiresIn = payload.expiresInSeconds ?? 60 * 60 * 24 * 30; // 30 días por defecto
   const jwtPayload = {
     sub: payload.sub,
     userId: payload.sub,
     email: payload.email,
     role: payload.role,
     iat: now,
-    exp: now + 3600,
+    exp: now + expiresIn,
   };
   const encodedPayload = base64UrlEncode(JSON.stringify(jwtPayload));
   const secret = process.env.JWT_SECRET || "local-dev-secret-key";
@@ -1706,14 +1708,40 @@ export async function socialLogin(
       );
     }
 
+    // Obtener datos del paciente para retornar nombre/apellido
+    const patientData = await prisma.patients.findFirst({
+      where: { user_id: user.id },
+      select: { full_name: true, phone: true },
+    });
+
+    // Si el paciente existe pero no tiene nombre y ahora tenemos uno, actualizarlo
+    if (patientData && !patientData.full_name && socialName && socialName !== "Usuario") {
+      const patientRecord = await prisma.patients.findFirst({
+        where: { user_id: user.id },
+        select: { id: true },
+      });
+      if (patientRecord) {
+        await prisma.patients.update({
+          where: { id: patientRecord.id },
+          data: { full_name: socialName },
+        });
+      }
+    }
+
+    const displayName = socialName !== "Usuario" ? socialName : (patientData?.full_name || "");
+    const nameParts = displayName.trim().split(/\s+/);
+    const firstName = nameParts[0] || "";
+    const lastName = nameParts.slice(1).join(" ") || "";
+
     const jwtToken = generateLocalJWT({
       sub: user.id,
       email: user.email,
       role: user.role,
     });
 
+    // Token válido por 30 días para usuarios sociales
     const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + 1);
+    expiresAt.setDate(expiresAt.getDate() + 30);
     await prisma.sessions.create({
       data: {
         id: randomUUID(),
@@ -1726,11 +1754,15 @@ export async function socialLogin(
 
     return successResponse({
       token: jwtToken,
+      accessToken: jwtToken,
       user: {
         id: user.id,
         email: user.email,
         role: String(user.role).toLowerCase(),
-        name: socialName,
+        name: displayName,
+        firstName,
+        lastName,
+        phone: patientData?.phone || null,
       },
     });
   } catch (error: any) {

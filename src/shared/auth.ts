@@ -206,29 +206,29 @@ export async function getAuthContext(
 
   const prisma = getPrismaClient();
   
-  // Buscamos al usuario por email (que viene en el token)
-  // El email puede venir en diferentes campos según el proveedor de JWT
+  // Buscamos al usuario primero por ID (sub/userId) que es inmutable,
+  // luego por email como fallback
+  const userId = claims.userId || claims.sub;
   const userEmail = claims.email || 
                     claims['cognito:username'] || 
                     claims.username;
   
-  // Si no hay email, intentar buscar por userId o sub
   let user;
   try {
-    if (userEmail) {
-      console.log(`🔍 [AUTH] Buscando usuario por email/username: ${userEmail}`);
+    // Primero buscar por ID (más confiable, no cambia aunque el usuario actualice su email)
+    if (userId) {
+      console.log(`🔍 [AUTH] Buscando usuario por userId/sub: ${userId}`);
+      user = await prisma.users.findUnique({
+        where: { id: String(userId) },
+      });
+    }
+    
+    // Si no encontró por ID, intentar por email como fallback
+    if (!user && userEmail) {
+      console.log(`🔍 [AUTH] Buscando usuario por email: ${userEmail}`);
       user = await prisma.users.findFirst({
         where: { email: String(userEmail) },
       });
-    } else {
-      // Si no hay email, buscar por userId o sub (que debería ser el ID del usuario)
-      const userId = claims.userId || claims.sub;
-      if (userId) {
-        console.log(`🔍 [AUTH] Buscando usuario por userId/sub: ${userId}`);
-        user = await prisma.users.findUnique({
-          where: { id: String(userId) },
-        });
-      }
     }
   } catch (err: any) {
     // Evitar 500 por errores intermitentes/consulta: tratamos como no autenticado
@@ -238,14 +238,14 @@ export async function getAuthContext(
     return null;
   }
   
-  if (!userEmail && !claims.userId && !claims.sub) {
+  if (!userId && !userEmail) {
     console.log('❌ [AUTH] No hay email, userId ni sub en los claims');
     console.log('🔍 [AUTH] Claims disponibles:', Object.keys(claims).join(', '));
     return null;
   }
 
   if (!user) {
-    console.log(`❌ [AUTH] Usuario no encontrado: ${userEmail}`);
+    console.log(`❌ [AUTH] Usuario no encontrado. userId: ${userId}, email: ${userEmail}`);
     return null;
   }
 
