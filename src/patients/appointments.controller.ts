@@ -4,6 +4,7 @@ import { addMinutes } from "date-fns";
 import { AuthContext, requireAuth } from "../shared/auth";
 import { logger } from "../shared/logger";
 import { getPrismaClient } from "../shared/prisma";
+import { emitToUser } from "../shared/realtime";
 import {
   errorResponse,
   internalErrorResponse,
@@ -15,7 +16,6 @@ import {
   extractIdFromPath,
   parseBody,
 } from "../shared/validators";
-import { emitToUser } from "../shared/realtime";
 
 // Configuración de tiempos (en minutos)
 const PAYMENT_TIMEOUT_MINUTES = 15;
@@ -86,9 +86,7 @@ export async function createAppointment(
       );
     }
 
-    let appointmentCost = specialtyRecord.fee
-      ? Number(specialtyRecord.fee)
-      : 0;
+    let appointmentCost = specialtyRecord.fee ? Number(specialtyRecord.fee) : 0;
 
     // Si se envía consultationPriceId, usar el precio del servicio en lugar de la tarifa de especialidad
     if (body.consultationPriceId) {
@@ -111,7 +109,7 @@ export async function createAppointment(
       );
     }
 
-    const scheduledFor = new Date(`${body.date}T${body.time}:00`);
+    const scheduledFor = new Date(`${body.date}T${body.time}:00-05:00`);
 
     // Validar pasado
     if (scheduledFor < new Date()) {
