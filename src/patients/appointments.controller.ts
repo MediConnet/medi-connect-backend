@@ -39,6 +39,7 @@ export async function createAppointment(
     // 1. Validar Paciente
     const patient = await prisma.patients.findFirst({
       where: { user_id: authContext.user.id },
+      include: { users: { select: { email: true } } },
     });
 
     if (!patient) {
@@ -180,6 +181,29 @@ export async function createAppointment(
     console.log(
       `✅ [PATIENTS] Cita creada. Estado: ${initialStatus} | Costo: ${appointmentCost} | Especialidad: ${body.specialtyId}`,
     );
+
+    // Email de confirmación al paciente (asíncrono, no bloquea)
+    if (patient.users?.email && initialStatus !== "PENDING_PAYMENT") {
+      const { sendEmail } = await import("../shared/email-adapter");
+      const { generatePatientNewAppointmentEmail } = await import("../shared/email");
+      const providerName = (appointment as any).providers?.commercial_name || "Médico";
+      const specialtyName = (appointment as any).specialties?.name || "Especialidad";
+      const branchAddress = (appointment as any).provider_branches?.address_text || "Dirección no especificada";
+      sendEmail({
+        to: patient.users.email,
+        subject: "Tu cita ha sido confirmada - DOCALINK",
+        html: generatePatientNewAppointmentEmail({
+          patientName: patient.full_name || "Paciente",
+          doctorName: providerName,
+          doctorSpecialty: specialtyName,
+          clinicName: providerName,
+          clinicAddress: branchAddress,
+          date: body.date,
+          time: body.time,
+          reason: body.reason,
+        }),
+      }).catch((err: any) => console.error("❌ [APPOINTMENTS] Error enviando email confirmación:", err.message));
+    }
 
     // Realtime: appointment:created (to doctor, optionally clinic)
     if ((doctor as any).user_id) {
@@ -559,6 +583,10 @@ export async function cancelAppointment(
     // Obtener la cita
     const appointment = await prisma.appointments.findUnique({
       where: { id: appointmentId },
+      include: {
+        patients: { include: { users: { select: { email: true } } } },
+        providers: { select: { commercial_name: true } },
+      },
     });
 
     if (!appointment) {
@@ -594,6 +622,28 @@ export async function cancelAppointment(
     });
 
     console.log("✅ [PATIENTS] Cita y pago pendientes cancelados exitosamente");
+
+    // Email de cancelación al paciente (asíncrono)
+    const aptPatient = (appointment as any).patients;
+    if (aptPatient?.users?.email) {
+      const { sendEmail } = await import("../shared/email-adapter");
+      const { generatePatientCancellationEmail } = await import("../shared/email");
+      const scheduledDate = appointment.scheduled_for ? new Date(appointment.scheduled_for) : new Date();
+      const dateStr = scheduledDate.toLocaleDateString("es-EC", { year: "numeric", month: "long", day: "numeric" });
+      const timeStr = scheduledDate.toLocaleTimeString("es-EC", { hour: "2-digit", minute: "2-digit" });
+      sendEmail({
+        to: aptPatient.users.email,
+        subject: "Tu cita ha sido cancelada - DOCALINK",
+        html: generatePatientCancellationEmail({
+          patientName: aptPatient.full_name || "Paciente",
+          date: dateStr,
+          time: timeStr,
+          doctorName: (appointment as any).providers?.commercial_name || "Médico",
+          clinicName: (appointment as any).providers?.commercial_name || "Docalink",
+        }),
+      }).catch((err: any) => console.error("❌ [APPOINTMENTS] Error enviando email cancelación:", err.message));
+    }
+
     return successResponse({
       id: updatedAppointment.id,
       status: updatedAppointment.status,
