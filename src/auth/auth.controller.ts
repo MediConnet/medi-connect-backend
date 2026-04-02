@@ -674,6 +674,16 @@ export async function register(
             phone: body.phone || null,
           },
         });
+
+        // Enviar email de bienvenida al paciente (asíncrono)
+        const { sendEmail } = await import("../shared/email-adapter");
+        const { generateWelcomeEmail } = await import("../shared/email");
+        sendEmail({
+          to: user.email,
+          subject: "¡Bienvenido a DOCALINK! 🎉",
+          html: generateWelcomeEmail({ userName: fullName, userRole: "patient" }),
+        }).catch((err: any) => console.error("❌ [REGISTER] Error enviando email bienvenida paciente:", err.message));
+
       } else if (userRole === enum_roles.provider) {
         await createProviderProfile(prisma, user.id, {
           ...body,
@@ -743,6 +753,16 @@ export async function register(
           phone: body.phone || null,
         },
       });
+
+      // Enviar email de bienvenida al paciente (asíncrono)
+      const { sendEmail } = await import("../shared/email-adapter");
+      const { generateWelcomeEmail } = await import("../shared/email");
+      sendEmail({
+        to: user.email,
+        subject: "¡Bienvenido a DOCALINK! 🎉",
+        html: generateWelcomeEmail({ userName: fullName, userRole: "patient" }),
+      }).catch((err: any) => console.error("❌ [REGISTER] Error enviando email bienvenida paciente:", err.message));
+
     } else if (userRole === enum_roles.provider) {
       await createProviderProfile(prisma, user.id, {
         ...body,
