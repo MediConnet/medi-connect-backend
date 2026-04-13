@@ -213,6 +213,8 @@ export async function getPublicAds(event: APIGatewayProxyEventV2): Promise<APIGa
         accent_color_hex: true,
         target_screen: true,
         target_id: true,
+        start_date: true,
+        end_date: true,
         providers: {
           select: {
             logo_url: true,
@@ -238,6 +240,8 @@ export async function getPublicAds(event: APIGatewayProxyEventV2): Promise<APIGa
             actionText: ad.action_text,
             color: ad.bg_color_hex, 
             accent: ad.accent_color_hex,
+            startDate: ad.start_date ? new Date(ad.start_date).toISOString().split('T')[0] : null,
+            endDate: ad.end_date ? new Date(ad.end_date).toISOString().split('T')[0] : null,
             
             navigation: {
                 screen: screenName,

@@ -17,6 +17,10 @@ const createBranchSchema = z.object({
   whatsapp: z.string().optional(),
   hasHomeDelivery: z.boolean().optional(),
   isActive: z.boolean().optional(),
+  imageUrl: z.string().optional().nullable(),
+  latitude: z.union([z.number(), z.string()]).optional().nullable(),
+  longitude: z.union([z.number(), z.string()]).optional().nullable(),
+  google_maps_url: z.string().optional().nullable(),
 });
 
 const updateBranchSchema = z.object({
@@ -27,6 +31,10 @@ const updateBranchSchema = z.object({
   whatsapp: z.string().optional(),
   hasHomeDelivery: z.boolean().optional(),
   isActive: z.boolean().optional(),
+  imageUrl: z.string().optional().nullable(),
+  latitude: z.union([z.number(), z.string()]).optional().nullable(),
+  longitude: z.union([z.number(), z.string()]).optional().nullable(),
+  google_maps_url: z.string().optional().nullable(),
 });
 
 // GET /api/pharmacies/branches - Listar sucursales
@@ -140,13 +148,16 @@ export async function createBranch(event: APIGatewayProxyEventV2): Promise<APIGa
         phone_contact: body.phone || body.whatsapp || null,
         has_delivery: body.hasHomeDelivery ?? false,
         is_active: body.isActive ?? true,
-        is_main: false, // Las nuevas sucursales no son principales por defecto
+        is_main: false,
+        image_url: body.imageUrl || null,
+        latitude: body.latitude ? parseFloat(String(body.latitude)) : null,
+        longitude: body.longitude ? parseFloat(String(body.longitude)) : null,
+        google_maps_url: body.google_maps_url || null,
       },
     });
 
     console.log(`✅ [PHARMACIES] Sucursal creada exitosamente: ${newBranch.id}`);
 
-    // Retornar en el formato esperado
     return successResponse({
       id: newBranch.id,
       name: newBranch.name || '',
@@ -156,6 +167,10 @@ export async function createBranch(event: APIGatewayProxyEventV2): Promise<APIGa
       whatsapp: newBranch.phone_contact || '',
       hasHomeDelivery: newBranch.has_delivery ?? false,
       isActive: newBranch.is_active ?? false,
+      imageUrl: newBranch.image_url || null,
+      latitude: newBranch.latitude ? Number(newBranch.latitude) : null,
+      longitude: newBranch.longitude ? Number(newBranch.longitude) : null,
+      google_maps_url: newBranch.google_maps_url || null,
     });
   } catch (error: any) {
     console.error('❌ [PHARMACIES] Error al crear sucursal:', error.message);
@@ -228,6 +243,10 @@ export async function updateBranch(event: APIGatewayProxyEventV2): Promise<APIGa
     }
     if (body.hasHomeDelivery !== undefined) updateData.has_delivery = body.hasHomeDelivery;
     if (body.isActive !== undefined) updateData.is_active = body.isActive;
+    if (body.imageUrl !== undefined) updateData.image_url = body.imageUrl;
+    if (body.latitude !== undefined) updateData.latitude = body.latitude ? parseFloat(String(body.latitude)) : null;
+    if (body.longitude !== undefined) updateData.longitude = body.longitude ? parseFloat(String(body.longitude)) : null;
+    if (body.google_maps_url !== undefined) updateData.google_maps_url = body.google_maps_url;
 
     const updatedBranch = await prisma.provider_branches.update({
       where: { id: branchId },
