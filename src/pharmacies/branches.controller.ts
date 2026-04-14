@@ -6,6 +6,7 @@ import { logger } from '../shared/logger';
 import { getPrismaClient } from '../shared/prisma';
 import { errorResponse, internalErrorResponse, notFoundResponse, successResponse } from '../shared/response';
 import { parseBody, extractIdFromPath } from '../shared/validators';
+import { uploadImageToCloudinary, isBase64Image } from '../shared/cloudinary';
 import { z } from 'zod';
 
 // Schemas de validación
@@ -141,6 +142,17 @@ export async function createBranch(event: APIGatewayProxyEventV2): Promise<APIGa
       return notFoundResponse('Pharmacy provider not found');
     }
 
+    // Subir imagen a Cloudinary si es base64
+    let finalImageUrl: string | null = body.imageUrl || null;
+    if (finalImageUrl && isBase64Image(finalImageUrl)) {
+      try {
+        finalImageUrl = await uploadImageToCloudinary(finalImageUrl, 'pharmacy-branches');
+      } catch (imgErr: any) {
+        console.error('❌ [PHARMACIES] Error subiendo imagen a Cloudinary:', imgErr.message);
+        finalImageUrl = null;
+      }
+    }
+
     // Crear nueva sucursal
     const newBranch = await prisma.provider_branches.create({
       data: {
@@ -153,7 +165,7 @@ export async function createBranch(event: APIGatewayProxyEventV2): Promise<APIGa
         has_delivery: body.hasHomeDelivery ?? false,
         is_active: body.isActive ?? true,
         is_main: false,
-        image_url: body.imageUrl || null,
+        image_url: finalImageUrl,
         latitude: body.latitude ? parseFloat(String(body.latitude)) : null,
         longitude: body.longitude ? parseFloat(String(body.longitude)) : null,
         google_maps_url: body.google_maps_url || null,
@@ -247,7 +259,18 @@ export async function updateBranch(event: APIGatewayProxyEventV2): Promise<APIGa
     }
     if (body.hasHomeDelivery !== undefined) updateData.has_delivery = body.hasHomeDelivery;
     if (body.isActive !== undefined) updateData.is_active = body.isActive;
-    if (body.imageUrl !== undefined) updateData.image_url = body.imageUrl;
+    if (body.imageUrl !== undefined) {
+      let finalImageUrl: string | null = body.imageUrl || null;
+      if (finalImageUrl && isBase64Image(finalImageUrl)) {
+        try {
+          finalImageUrl = await uploadImageToCloudinary(finalImageUrl, 'pharmacy-branches');
+        } catch (imgErr: any) {
+          console.error('❌ [PHARMACIES] Error subiendo imagen a Cloudinary:', imgErr.message);
+          finalImageUrl = existingBranch.image_url || null;
+        }
+      }
+      updateData.image_url = finalImageUrl;
+    }
     if (body.latitude !== undefined) updateData.latitude = body.latitude ? parseFloat(String(body.latitude)) : null;
     if (body.longitude !== undefined) updateData.longitude = body.longitude ? parseFloat(String(body.longitude)) : null;
     if (body.google_maps_url !== undefined) updateData.google_maps_url = body.google_maps_url;
