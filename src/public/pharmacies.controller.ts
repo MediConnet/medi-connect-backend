@@ -216,6 +216,9 @@ export async function getPharmacyBranches(
       const smartSchedule = formatSmartSchedule(
         branch.provider_schedules || [],
       );
+      const horarioAtencion = smartSchedule !== "Horario no disponible"
+        ? smartSchedule
+        : (branch.opening_hours_text || "Horario no disponible");
 
       return {
         id: branch.id,
@@ -227,7 +230,7 @@ export async function getPharmacyBranches(
         ciudad: branch.cities?.name || "",
         codigoPostal: "",
         telefono: branch.phone_contact || "",
-        horarioAtencion: smartSchedule,
+        horarioAtencion,
         calificacion: branch.rating_cache ? Number(branch.rating_cache) : 0,
         disponible24h: branch.is_24h || false,
         hasDelivery: branch.has_delivery || false,
@@ -307,6 +310,9 @@ export async function getPharmacyBranchById(
     }
 
     const smartSchedule = formatSmartSchedule(branch.provider_schedules || []);
+    const horarioAtencion = smartSchedule !== "Horario no disponible"
+      ? smartSchedule
+      : (branch.opening_hours_text || "Horario no disponible");
 
     const formattedBranch = {
       id: branch.id,
@@ -318,7 +324,7 @@ export async function getPharmacyBranchById(
       ciudad: branch.cities?.name || "",
       codigoPostal: "",
       telefono: branch.phone_contact || "",
-      horarioAtencion: smartSchedule,
+      horarioAtencion,
       calificacion: branch.rating_cache ? Number(branch.rating_cache) : 0,
       disponible24h: branch.is_24h || false,
       hasDelivery: branch.has_delivery || false,

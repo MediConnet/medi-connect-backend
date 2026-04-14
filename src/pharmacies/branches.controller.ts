@@ -298,6 +298,10 @@ export async function updateBranch(event: APIGatewayProxyEventV2): Promise<APIGa
       whatsapp: updatedBranch.phone_contact || '',
       hasHomeDelivery: updatedBranch.has_delivery ?? false,
       isActive: updatedBranch.is_active ?? false,
+      imageUrl: updatedBranch.image_url || null,
+      latitude: updatedBranch.latitude ? Number(updatedBranch.latitude) : null,
+      longitude: updatedBranch.longitude ? Number(updatedBranch.longitude) : null,
+      google_maps_url: updatedBranch.google_maps_url || null,
     });
   } catch (error: any) {
     console.error('❌ [PHARMACIES] Error al actualizar sucursal:', error.message);
