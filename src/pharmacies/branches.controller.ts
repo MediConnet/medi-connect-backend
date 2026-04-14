@@ -75,10 +75,10 @@ export async function getBranches(event: APIGatewayProxyEventV2): Promise<APIGat
       where: {
         provider_id: provider.id,
       },
-      orderBy: {
-        is_main: 'desc', // Principal primero
-        name: 'asc',
-      },
+      orderBy: [
+        { is_main: 'desc' },
+        { name: 'asc' },
+      ],
     });
 
     console.log(`✅ [PHARMACIES] Sucursales obtenidas exitosamente (${branches.length} sucursales)`);
