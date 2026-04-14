@@ -34,3 +34,11 @@ export async function uploadImageToCloudinary(
 export function isBase64Image(value: string | null | undefined): boolean {
   return typeof value === "string" && value.startsWith("data:image/");
 }
+
+/**
+ * Retorna true si el valor es un blob URL temporal (no persistible).
+ * Los blob URLs solo existen en el navegador que los creó y no deben guardarse en DB.
+ */
+export function isBlobUrl(value: string | null | undefined): boolean {
+  return typeof value === "string" && value.startsWith("blob:");
+}

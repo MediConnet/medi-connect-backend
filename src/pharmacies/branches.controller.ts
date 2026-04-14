@@ -6,7 +6,7 @@ import { logger } from '../shared/logger';
 import { getPrismaClient } from '../shared/prisma';
 import { errorResponse, internalErrorResponse, notFoundResponse, successResponse } from '../shared/response';
 import { parseBody, extractIdFromPath } from '../shared/validators';
-import { uploadImageToCloudinary, isBase64Image } from '../shared/cloudinary';
+import { uploadImageToCloudinary, isBase64Image, isBlobUrl } from '../shared/cloudinary';
 import { z } from 'zod';
 
 // Schemas de validación
@@ -144,7 +144,10 @@ export async function createBranch(event: APIGatewayProxyEventV2): Promise<APIGa
 
     // Subir imagen a Cloudinary si es base64
     let finalImageUrl: string | null = body.imageUrl || null;
-    if (finalImageUrl && isBase64Image(finalImageUrl)) {
+    if (finalImageUrl && isBlobUrl(finalImageUrl)) {
+      console.warn('⚠️ [PHARMACIES] Se recibió un blob URL como imagen — ignorando');
+      finalImageUrl = null;
+    } else if (finalImageUrl && isBase64Image(finalImageUrl)) {
       try {
         finalImageUrl = await uploadImageToCloudinary(finalImageUrl, 'pharmacy-branches');
       } catch (imgErr: any) {
@@ -261,7 +264,10 @@ export async function updateBranch(event: APIGatewayProxyEventV2): Promise<APIGa
     if (body.isActive !== undefined) updateData.is_active = body.isActive;
     if (body.imageUrl !== undefined) {
       let finalImageUrl: string | null = body.imageUrl || null;
-      if (finalImageUrl && isBase64Image(finalImageUrl)) {
+      if (finalImageUrl && isBlobUrl(finalImageUrl)) {
+        console.warn('⚠️ [PHARMACIES] Se recibió un blob URL como imagen — ignorando, manteniendo imagen existente');
+        finalImageUrl = existingBranch.image_url || null;
+      } else if (finalImageUrl && isBase64Image(finalImageUrl)) {
         try {
           finalImageUrl = await uploadImageToCloudinary(finalImageUrl, 'pharmacy-branches');
         } catch (imgErr: any) {

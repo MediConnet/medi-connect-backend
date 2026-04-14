@@ -210,8 +210,8 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
         console.error('❌ [DOCTORS] Error subiendo imagen a Cloudinary:', imgErr.message);
         return errorResponse('Error al subir la imagen. Intenta de nuevo.', 500);
       }
-    } else if (body.imageUrl && !isBase64Image(body.imageUrl)) {
-      // Ya es una URL (no base64), usarla directamente
+    } else if (body.imageUrl && !isBase64Image(body.imageUrl) && !body.imageUrl.startsWith('blob:')) {
+      // Ya es una URL válida (no base64, no blob), usarla directamente
       uploadedImageUrl = body.imageUrl;
     }
 

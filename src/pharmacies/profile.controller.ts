@@ -169,7 +169,8 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
         console.error('❌ [PHARMACIES] Error subiendo imagen a Cloudinary:', imgErr.message);
         return errorResponse('Error al subir la imagen. Intenta de nuevo.', 500);
       }
-    } else if (body.imageUrl && !isBase64Image(body.imageUrl)) {
+    } else if (body.imageUrl && !isBase64Image(body.imageUrl) && !body.imageUrl.startsWith('blob:')) {
+      // Solo usar la URL si es una URL válida (no un blob URL temporal)
       uploadedImageUrl = body.imageUrl;
     }
 
