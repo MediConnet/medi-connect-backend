@@ -90,9 +90,13 @@ export async function getBranches(event: APIGatewayProxyEventV2): Promise<APIGat
       address: branch.address_text || '',
       openingHours: branch.opening_hours_text || '',
       phone: branch.phone_contact || '',
-      whatsapp: branch.phone_contact || '', // Usar phone_contact como whatsapp también
+      whatsapp: branch.phone_contact || '',
       hasHomeDelivery: branch.has_delivery ?? false,
       isActive: branch.is_active ?? false,
+      imageUrl: branch.image_url || null,
+      latitude: branch.latitude ? Number(branch.latitude) : null,
+      longitude: branch.longitude ? Number(branch.longitude) : null,
+      google_maps_url: branch.google_maps_url || null,
     }));
 
     return successResponse(formattedBranches);
