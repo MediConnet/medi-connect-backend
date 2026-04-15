@@ -124,7 +124,6 @@ export async function updateAdminAd(event: APIGatewayProxyEventV2): Promise<APIG
   try {
     const existing = await prisma.provider_ads.findUnique({ where: { id } });
     if (!existing) return errorResponse('Anuncio no encontrado', 404);
-    if (existing.provider_id !== null) return errorResponse('No puedes editar anuncios de proveedores', 403);
 
     const body = JSON.parse(event.body || '{}');
     const {
@@ -180,7 +179,6 @@ export async function deleteAdminAd(event: APIGatewayProxyEventV2): Promise<APIG
   try {
     const existing = await prisma.provider_ads.findUnique({ where: { id } });
     if (!existing) return errorResponse('Anuncio no encontrado', 404);
-    if (existing.provider_id !== null) return errorResponse('No puedes eliminar anuncios de proveedores', 403);
 
     await prisma.provider_ads.delete({ where: { id } });
     return successResponse({ message: 'Anuncio eliminado' });
