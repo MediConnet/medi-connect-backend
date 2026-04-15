@@ -7,6 +7,7 @@ import { getPrismaClient } from '../shared/prisma';
 import { errorResponse, internalErrorResponse, notFoundResponse, successResponse } from '../shared/response';
 import { parseBody } from '../shared/validators';
 import { createPharmacyChain, deletePharmacyChain, getPharmacyChains, updatePharmacyChain } from './pharmacy-chains.controller';
+import { getAdminAds, createAdminAd, updateAdminAd, deleteAdminAd, toggleAdminAd } from './ads.controller';
 import { 
   getDoctorPayments, 
   getClinicPayments, 
@@ -262,6 +263,32 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       const result = await deleteUser(event);
       console.log(`✅ [ADMIN] DELETE /api/admin/users/:id - Completado con status ${result.statusCode}`);
       return result;
+    }
+
+    // --- Rutas de Anuncios Admin ---
+    // GET /api/admin/ads
+    if (method === 'GET' && path === '/api/admin/ads') {
+      return await getAdminAds(event);
+    }
+
+    // POST /api/admin/ads
+    if (method === 'POST' && path === '/api/admin/ads') {
+      return await createAdminAd(event);
+    }
+
+    // PATCH /api/admin/ads/:id/toggle
+    if (method === 'PATCH' && path.match(/^\/api\/admin\/ads\/[^/]+\/toggle$/)) {
+      return await toggleAdminAd(event);
+    }
+
+    // PUT /api/admin/ads/:id
+    if (method === 'PUT' && path.match(/^\/api\/admin\/ads\/[^/]+$/)) {
+      return await updateAdminAd(event);
+    }
+
+    // DELETE /api/admin/ads/:id
+    if (method === 'DELETE' && path.match(/^\/api\/admin\/ads\/[^/]+$/)) {
+      return await deleteAdminAd(event);
     }
 
     console.log(`❌ [ADMIN] ${method} ${path} - Ruta no encontrada (404)`);
