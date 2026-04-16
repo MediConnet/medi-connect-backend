@@ -1228,6 +1228,7 @@ async function main() {
   });
 
   const clinicDoctors: clinic_doctors[] = [];
+  const clinicDoctorNames: string[] = []; // Para usar en notificaciones
   for (let i = 0; i < doctorsToAssociate.length; i++) {
     const doctor = doctorsToAssociate[i];
     if (!doctor.users) continue;
@@ -1242,17 +1243,13 @@ async function main() {
         id: randomUUID(),
         clinic_id: clinic.id,
         user_id: doctor.users.id,
-        email: doctor.users.email,
-        name: doctor.commercial_name,
-        specialty: 'Medicina General',
         office_number: `10${i + 1}`,
-        phone: '0991111111',
-        whatsapp: '0991111111',
         is_active: true,
-        is_invited: false, // Ya aceptaron la invitación
+        is_invited: false,
       }
     );
     clinicDoctors.push(clinicDoctor);
+    clinicDoctorNames.push(doctor.commercial_name ?? 'Doctor');
     console.log(`  ✅ Médico asociado: ${doctor.commercial_name}`);
   }
 
@@ -1404,11 +1401,11 @@ async function main() {
       {
         type: 'cita',
         title: 'Nueva cita agendada',
-        body: `Dr. ${clinicDoctors[0].name} - ${existingPatients[0].full_name} - ${new Date().toLocaleDateString('es-EC')} 09:00`,
+        body: `Dr. ${clinicDoctorNames[0]} - ${existingPatients[0].full_name} - ${new Date().toLocaleDateString('es-EC')} 09:00`,
         data: {
           appointment_id: randomUUID(),
           doctor_id: clinicDoctors[0].id,
-          doctor_name: clinicDoctors[0].name,
+          doctor_name: clinicDoctorNames[0],
           patient_name: existingPatients[0].full_name,
           date: new Date().toISOString().split('T')[0],
           time: '09:00',
@@ -1417,11 +1414,11 @@ async function main() {
       {
         type: 'cita_cancelada',
         title: 'Cita cancelada',
-        body: `Dr. ${clinicDoctors[0].name} - ${existingPatients[0].full_name} - ${new Date().toLocaleDateString('es-EC')} 10:00`,
+        body: `Dr. ${clinicDoctorNames[0]} - ${existingPatients[0].full_name} - ${new Date().toLocaleDateString('es-EC')} 10:00`,
         data: {
           appointment_id: randomUUID(),
           doctor_id: clinicDoctors[0].id,
-          doctor_name: clinicDoctors[0].name,
+          doctor_name: clinicDoctorNames[0],
           patient_name: existingPatients[0].full_name,
           date: new Date().toISOString().split('T')[0],
           time: '10:00',
