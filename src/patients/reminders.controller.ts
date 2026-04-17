@@ -14,8 +14,6 @@ import { extractIdFromPath, parseBody } from "../shared/validators";
 
 // --- HELPERS PARA FECHAS ---
 const timeStringToDate = (timeStr: string): Date => {
-  // Usar fecha base fija en UTC para evitar conversiones de zona horaria
-  // 1970-01-01 + la hora como UTC puro
   const [hours, minutes] = timeStr.split(":").map(Number);
   return new Date(Date.UTC(1970, 0, 1, hours, minutes, 0, 0));
 };
@@ -26,7 +24,7 @@ const createReminderSchema = z.object({
   date: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format"),
-  time: z.string().regex(/^\d{2}:\d{2}$/, "Time must be in HH:MM format"),
+  time: z.string().regex(/^\d{1,2}:\d{2}$/, "Time must be in HH:MM format"),
   type: z.nativeEnum(ReminderType).optional().default(ReminderType.GENERAL),
   note: z.string().optional(),
   active: z.boolean().optional().default(true),
@@ -41,7 +39,7 @@ const updateReminderSchema = z.object({
     .optional(),
   time: z
     .string()
-    .regex(/^\d{2}:\d{2}$/)
+    .regex(/^\d{1,2}:\d{2}$/)
     .optional(),
   type: z.nativeEnum(ReminderType).optional(),
   note: z.string().optional(),
