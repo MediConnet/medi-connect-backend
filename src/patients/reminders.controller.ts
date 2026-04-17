@@ -14,10 +14,10 @@ import { extractIdFromPath, parseBody } from "../shared/validators";
 
 // --- HELPERS PARA FECHAS ---
 const timeStringToDate = (timeStr: string): Date => {
+  // Usar fecha base fija en UTC para evitar conversiones de zona horaria
+  // 1970-01-01 + la hora como UTC puro
   const [hours, minutes] = timeStr.split(":").map(Number);
-  const date = new Date();
-  date.setHours(hours, minutes, 0, 0);
-  return date;
+  return new Date(Date.UTC(1970, 0, 1, hours, minutes, 0, 0));
 };
 
 // --- SCHEMAS DE VALIDACIÓN ---
