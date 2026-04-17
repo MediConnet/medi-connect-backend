@@ -768,14 +768,9 @@ export const createProviderReviewSchema = z.object({
 // Appointment validators
 export const createAppointmentSchema = z.object({
   doctorId: z.string().uuid("Doctor ID must be a valid UUID"),
-
   specialtyId: z.string().uuid("Specialty ID must be a valid UUID"),
-
-  clinicId: z
-    .string()
-    .uuid("Clinic ID must be a valid UUID")
-    .optional()
-    .nullable(),
+  clinicId: z.string().uuid("Clinic ID must be a valid UUID").optional().nullable(),
+  phone: z.string().optional(),
   date: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format"),

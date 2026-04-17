@@ -182,6 +182,14 @@ export async function createAppointment(
       `✅ [PATIENTS] Cita creada. Estado: ${initialStatus} | Costo: ${appointmentCost} | Especialidad: ${body.specialtyId}`,
     );
 
+    // Guardar teléfono en perfil del paciente si lo envió y no lo tenía
+    if (body.phone && !patient.phone) {
+      await prisma.patients.update({
+        where: { id: patient.id },
+        data: { phone: body.phone },
+      }).catch(() => {}); // no bloquear si falla
+    }
+
     // Email de confirmación al paciente (asíncrono, no bloquea)
     if (patient.users?.email && initialStatus !== "PENDING_PAYMENT") {
       const { sendEmail } = await import("../shared/email-adapter");
