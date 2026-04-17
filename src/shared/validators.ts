@@ -5,6 +5,13 @@ import { enum_appt_status } from "../generated/prisma/client";
 const emptyStringToUndefined = (val: unknown) =>
   val === "" || val === null ? undefined : val;
 
+// Convierte string a número para coordenadas (lat/lng vienen como string desde inputs)
+const toCoordinate = (val: unknown) => {
+  if (val === "" || val === undefined || val === null) return undefined;
+  const num = Number(val);
+  return isNaN(num) ? undefined : num;
+};
+
 const digitsOnlyOrUndefined = (val: unknown) => {
   if (val === "" || val === null || val === undefined) return undefined;
   if (typeof val !== "string") return val;
@@ -135,20 +142,8 @@ export const updateDoctorProfileSchema = z.object({
   bio: z.string().optional(),
   full_name: z.string().min(3, "El nombre es muy corto").optional(),
   address: z.string().optional(),
-  latitude: z.preprocess(
-    (val) => (val === "" || val === undefined ? undefined : val),
-    z.union([
-      z.number().min(-90, "Latitude must be between -90 and 90").max(90, "Latitude must be between -90 and 90"),
-      z.null(),
-    ]).optional(),
-  ),
-  longitude: z.preprocess(
-    (val) => (val === "" || val === undefined ? undefined : val),
-    z.union([
-      z.number().min(-180, "Longitude must be between -180 and 180").max(180, "Longitude must be between -180 and 180"),
-      z.null(),
-    ]).optional(),
-  ),
+  latitude: z.preprocess(toCoordinate, z.union([z.number().min(-90).max(90), z.null()]).optional()),
+  longitude: z.preprocess(toCoordinate, z.union([z.number().min(-180).max(180), z.null()]).optional()),
   google_maps_url: z.preprocess(
     (val) => (val === "" || val === undefined ? undefined : val),
     z.union([
@@ -283,20 +278,8 @@ export const updatePharmacyProfileSchema = z.object({
   bio: z.string().optional(),
   description: z.string().optional(),
   address: z.string().optional(),
-  latitude: z.preprocess(
-    (val) => (val === "" || val === undefined ? undefined : val),
-    z.union([
-      z.number().min(-90, "Latitude must be between -90 and 90").max(90, "Latitude must be between -90 and 90"),
-      z.null(),
-    ]).optional(),
-  ),
-  longitude: z.preprocess(
-    (val) => (val === "" || val === undefined ? undefined : val),
-    z.union([
-      z.number().min(-180, "Longitude must be between -180 and 180").max(180, "Longitude must be between -180 and 180"),
-      z.null(),
-    ]).optional(),
-  ),
+  latitude: z.preprocess(toCoordinate, z.union([z.number().min(-90).max(90), z.null()]).optional()),
+  longitude: z.preprocess(toCoordinate, z.union([z.number().min(-180).max(180), z.null()]).optional()),
   google_maps_url: z.preprocess(
     (val) => (val === "" || val === undefined ? undefined : val),
     z.union([
@@ -318,20 +301,8 @@ export const updateLaboratoryProfileSchema = z.object({
   full_name: z.string().min(2, "El nombre es muy corto").optional(),
   description: z.string().optional(),
   address: z.string().optional(),
-  latitude: z.preprocess(
-    (val) => (val === "" || val === undefined ? undefined : val),
-    z.union([
-      z.number().min(-90).max(90),
-      z.null(),
-    ]).optional(),
-  ),
-  longitude: z.preprocess(
-    (val) => (val === "" || val === undefined ? undefined : val),
-    z.union([
-      z.number().min(-180).max(180),
-      z.null(),
-    ]).optional(),
-  ),
+  latitude: z.preprocess(toCoordinate, z.union([z.number().min(-90).max(90), z.null()]).optional()),
+  longitude: z.preprocess(toCoordinate, z.union([z.number().min(-180).max(180), z.null()]).optional()),
   google_maps_url: z.preprocess(
     (val) => (val === "" || val === undefined ? undefined : val),
     z.union([z.string().url(), z.null()]).optional(),

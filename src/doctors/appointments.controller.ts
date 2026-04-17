@@ -58,6 +58,7 @@ export async function getAppointments(event: APIGatewayProxyEventV2): Promise<AP
               phone: true,
               users: {
                 select: {
+                  email: true,
                   profile_picture_url: true,
                 },
               },
@@ -112,6 +113,7 @@ export async function getAppointments(event: APIGatewayProxyEventV2): Promise<AP
           id: appt.patients.id,
           full_name: appt.patients.full_name,
           phone: appt.patients.phone,
+          email: appt.patients.users?.email || null,
           profile_picture_url: appt.patients.users?.profile_picture_url || null,
         } : null,
 

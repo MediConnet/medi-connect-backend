@@ -355,7 +355,12 @@ export async function getDoctorById(
 
     const formattedDoctor = mapDoctorData(doctor);
 
-    return successResponse(formattedDoctor, 200, event);
+    const response = successResponse(formattedDoctor, 200, event);
+    if (response.headers) {
+      response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate';
+      response.headers['Pragma'] = 'no-cache';
+    }
+    return response;
   } catch (error: any) {
     console.error(
       "❌ [PUBLIC DOCTORS] Error al obtener médico:",
