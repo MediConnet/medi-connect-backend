@@ -42,6 +42,8 @@
   "license": "ISC",
   "dependencies": {
     "@aws-sdk/client-cognito-identity-provider": "^3.490.0",
+    "@neondatabase/serverless": "1.1.0",
+    "@prisma/adapter-neon": "7.3.0",
     "@prisma/adapter-pg": "7.3.0",
     "@prisma/client": "7.3.0",
     "@types/aws-lambda": "^8.10.130",
@@ -71,6 +73,7 @@
     "prisma": "7.3.0",
     "resend": "6.9.1",
     "socket.io": "^4.8.1",
+    "ws": "8.20.0",
     "zod": "^3.22.4"
   },
   "devDependencies": {
