@@ -10,7 +10,7 @@ let prisma: PrismaClient | null = null;
 export function getPrismaClient(): PrismaClient {
   if (!prisma) {
     const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-    const adapter = new PrismaNeon(pool);
+    const adapter = new PrismaNeon(pool as any);
     prisma = new PrismaClient({
       adapter,
       log: process.env.STAGE === 'dev' ? ['query', 'error', 'warn'] : ['error'],
