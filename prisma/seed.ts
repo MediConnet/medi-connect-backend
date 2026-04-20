@@ -1,8 +1,6 @@
-import { PrismaPg } from '@prisma/adapter-pg';
 import * as bcrypt from 'bcrypt';
 import { randomUUID } from 'crypto';
 import * as dotenv from 'dotenv';
-import { Pool } from 'pg';
 import {
   appointments,
   cities,
@@ -21,19 +19,9 @@ import {
 // Cargar variables de entorno
 dotenv.config();
 
-// Crear un pool de PostgreSQL para usar como adapter
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-});
-
-// Crear el adapter de Prisma para PostgreSQL
-const adapter = new PrismaPg(pool);
-
-// Usar el cliente generado con un adapter de PostgreSQL
 const prisma = new PrismaClient({
   log: process.env.STAGE === 'dev' ? ['query', 'error', 'warn'] : ['error'],
-  adapter,
-} as any);
+});
 
 // Helper para convertir día de la semana
 function dayToNumber(day: string): number {
