@@ -829,7 +829,7 @@ export async function login(
 
       // Use $queryRaw to avoid ColumnNotFound bug with adapter-pg findFirst
       const users = await prisma.$queryRaw<any[]>`
-        SELECT id, email, password_hash, role, is_active, push_token, google_id, apple_id
+        SELECT id, email, password_hash, role, is_active
         FROM users WHERE email = ${body.email} LIMIT 1
       `;
       const user = users[0] || null;
