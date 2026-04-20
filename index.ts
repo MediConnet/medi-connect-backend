@@ -7,8 +7,12 @@ import http from 'http';
 import { attachRealtimeToHttpServer } from './src/shared/realtime';
 import { startScheduler } from './src/jobs/scheduler';
 
-// Cargar variables de entorno
-dotenv.config();
+// Cargar variables de entorno (no sobreescribir variables ya definidas en el entorno)
+dotenv.config({ override: false });
+
+// Diagnóstico de variables críticas al arrancar
+console.log('🔧 [ENV] DATABASE_URL presente:', !!process.env.DATABASE_URL);
+console.log('🔧 [ENV] DATABASE_URL prefix:', process.env.DATABASE_URL?.substring(0, 30) || 'NO DEFINIDA');
 
 // Control de logs de debugging (activar con DEBUG_LOGS=true en producción)
 const DEBUG_MODE = process.env.DEBUG_LOGS === 'true' || process.env.NODE_ENV === 'development';
