@@ -1,3 +1,10 @@
-// Prisma 5 does not use prisma.config.ts
-// Configuration is handled via prisma/schema.prisma and environment variables
-export {};
+import "dotenv/config";
+import { defineConfig } from "prisma/config";
+
+export default defineConfig({
+  schema: "prisma/schema.prisma",
+  migrations: {
+    path: "prisma/migrations",
+    seed: 'npx ts-node prisma/seed.ts',
+  },
+});

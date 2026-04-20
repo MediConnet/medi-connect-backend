@@ -42,7 +42,8 @@
   "license": "ISC",
   "dependencies": {
     "@aws-sdk/client-cognito-identity-provider": "^3.490.0",
-    "@prisma/client": "5.22.0",
+    "@prisma/adapter-pg": "7.3.0",
+    "@prisma/client": "7.3.0",
     "@types/aws-lambda": "^8.10.130",
     "@types/bcrypt": "6.0.0",
     "@types/busboy": "1.5.4",
@@ -67,7 +68,7 @@
     "nodemailer": "7.0.13",
     "pg": "8.17.2",
     "postmark": "4.0.5",
-    "prisma": "5.22.0",
+    "prisma": "7.3.0",
     "resend": "6.9.1",
     "socket.io": "^4.8.1",
     "zod": "^3.22.4"
