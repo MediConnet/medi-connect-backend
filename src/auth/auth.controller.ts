@@ -827,7 +827,7 @@ export async function login(
       console.log("🔧 [LOGIN] Modo desarrollo local");
       const prisma = getPrismaClient();
 
-      const user = await prisma.users.findUnique({
+      const user = await prisma.users.findFirst({
         where: { email: body.email },
       });
 
