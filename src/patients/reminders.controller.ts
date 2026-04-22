@@ -18,6 +18,21 @@ const timeStringToDate = (timeStr: string): Date => {
   return new Date(Date.UTC(1970, 0, 1, hours, minutes, 0, 0));
 };
 
+// Formatea un campo Time de Prisma a "HH:mm" usando UTC para evitar conversión de zona horaria
+const formatTimeUTC = (time: Date | null | undefined): string | null => {
+  if (!time) return null;
+  const d = new Date(time);
+  const h = d.getUTCHours().toString().padStart(2, '0');
+  const m = d.getUTCMinutes().toString().padStart(2, '0');
+  return `${h}:${m}`;
+};
+
+// Normaliza un reminder antes de devolverlo al cliente
+const normalizeReminder = (r: any) => ({
+  ...r,
+  time: formatTimeUTC(r.time),
+});
+
 // --- SCHEMAS DE VALIDACIÓN ---
 const createReminderSchema = z.object({
   title: z.string().min(1, "Title is required"),
@@ -102,7 +117,7 @@ export async function getReminders(
       orderBy: [{ start_date: "asc" }, { time: "asc" }],
     });
 
-    return successResponse(reminders, 200, event);
+    return successResponse(reminders.map(normalizeReminder), 200, event);
   } catch (error: any) {
     console.error(
       "❌ [REMINDERS] Error al listar recordatorios:",
@@ -170,7 +185,7 @@ export async function createReminder(
       },
     });
 
-    return successResponse(reminder, 201, event);
+    return successResponse(normalizeReminder(reminder), 201, event);
   } catch (error: any) {
     if (error instanceof z.ZodError) {
       return errorResponse("Validation error", 400, error.errors, event);
@@ -252,7 +267,7 @@ export async function updateReminder(
       where: { id: reminderId },
     });
 
-    return successResponse(updatedReminder, 200, event);
+    return successResponse(normalizeReminder(updatedReminder), 200, event);
   } catch (error: any) {
     if (error instanceof z.ZodError) {
       return errorResponse("Validation error", 400, error.errors, event);
@@ -407,7 +422,7 @@ export async function toggleReminder(
       },
     });
 
-    return successResponse(updatedReminder, 200, event);
+    return successResponse(normalizeReminder(updatedReminder), 200, event);
   } catch (error: any) {
     console.error(
       "❌ [REMINDERS] Error al toggle recordatorio:",
