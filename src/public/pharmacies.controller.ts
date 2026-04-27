@@ -9,6 +9,35 @@ import {
 } from "../shared/response";
 import { extractIdFromPath } from "../shared/validators";
 
+/**
+ * Alineado con el panel farmacia (vista previa): si el proveedor pertenece a una cadena,
+ * la descripción de marca viene de pharmacy_chains. La sucursal puede tener texto legacy
+ * en provider_branches.description que no debe tapar el eslogan de la cadena.
+ */
+function resolvePublicPharmacyDescription(
+  branchDescription: string | null | undefined,
+  providerDescription: string | null | undefined,
+  chainDescription: string | null | undefined,
+  chainId: string | null | undefined,
+): string {
+  const fromChain = (chainDescription ?? "").trim();
+  if (chainId && fromChain) {
+    return fromChain;
+  }
+  const fromBranch = (branchDescription ?? "").trim();
+  const fromProvider = (providerDescription ?? "").trim();
+  return fromBranch || fromProvider || "";
+}
+
+const providerSelectForPublicBranch = {
+  id: true,
+  commercial_name: true,
+  logo_url: true,
+  description: true,
+  chain_id: true,
+  pharmacy_chains: { select: { description: true } },
+} as const;
+
 // Helper para obtener la hora actual de Ecuador (UTC-5) para los filtros
 const getEcuadorTime = () => {
   const now = new Date();
@@ -201,7 +230,7 @@ export async function getPharmacyBranches(
         include: {
           cities: { select: { id: true, name: true } },
           providers: {
-            select: { id: true, commercial_name: true, logo_url: true, description: true },
+            select: providerSelectForPublicBranch,
           },
           provider_schedules: true,
         },
@@ -224,7 +253,12 @@ export async function getPharmacyBranches(
         id: branch.id,
         brandId: branch.provider_id,
         nombre: branch.name || branch.providers?.commercial_name || "Farmacia",
-        descripcion: branch.description || branch.providers?.description || "",
+        descripcion: resolvePublicPharmacyDescription(
+          branch.description,
+          branch.providers?.description,
+          branch.providers?.pharmacy_chains?.description,
+          branch.providers?.chain_id,
+        ),
         categorias: [],
         direccion: branch.address_text || "",
         ciudad: branch.cities?.name || "",
@@ -292,10 +326,7 @@ export async function getPharmacyBranchById(
         cities: { select: { id: true, name: true, state: true } },
         providers: {
           select: {
-            id: true,
-            commercial_name: true,
-            logo_url: true,
-            description: true,
+            ...providerSelectForPublicBranch,
             service_categories: { select: { slug: true } },
           },
         },
@@ -319,7 +350,12 @@ export async function getPharmacyBranchById(
       id: branch.id,
       brandId: branch.provider_id,
       nombre: branch.name || branch.providers?.commercial_name || "",
-      descripcion: branch.description || branch.providers?.description || "",
+      descripcion: resolvePublicPharmacyDescription(
+        branch.description,
+        branch.providers?.description,
+        branch.providers?.pharmacy_chains?.description,
+        branch.providers?.chain_id,
+      ),
       categorias: [],
       direccion: branch.address_text || "",
       ciudad: branch.cities?.name || "",
