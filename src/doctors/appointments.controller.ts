@@ -64,6 +64,16 @@ export async function getAppointments(event: APIGatewayProxyEventV2): Promise<AP
               },
             },
           },
+          provider_branches: {
+            select: {
+              id: true,
+              name: true,
+              address_text: true,
+              google_maps_url: true,
+              latitude: true,
+              longitude: true,
+            },
+          },
           payments: {
             select: {
               id: true,
@@ -116,6 +126,17 @@ export async function getAppointments(event: APIGatewayProxyEventV2): Promise<AP
           email: appt.patients.users?.email || null,
           profile_picture_url: appt.patients.users?.profile_picture_url || null,
         } : null,
+        provider_branch: appt.provider_branches
+          ? {
+              id: appt.provider_branches.id,
+              name: appt.provider_branches.name,
+              address: appt.provider_branches.address_text || null,
+              google_maps_url: appt.provider_branches.google_maps_url || null,
+              latitude: appt.provider_branches.latitude ?? null,
+              longitude: appt.provider_branches.longitude ?? null,
+            }
+          : null,
+        notes: appt.reception_notes || null,
 
         payment_details: paymentDetails,
         

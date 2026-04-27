@@ -163,6 +163,7 @@ export async function createAppointment(
         scheduled_for: scheduledFor,
         status: initialStatus,
         reason: body.reason,
+        reception_notes: body.notes || null,
         payment_method: paymentMethod,
         is_paid: false,
         cost: appointmentCost,
@@ -182,11 +183,19 @@ export async function createAppointment(
       `✅ [PATIENTS] Cita creada. Estado: ${initialStatus} | Costo: ${appointmentCost} | Especialidad: ${body.specialtyId}`,
     );
 
-    // Guardar teléfono en perfil del paciente si lo envió y no lo tenía
-    if (body.phone && !patient.phone) {
+    // Actualizar datos base del paciente desde el formulario de cita cuando aplique.
+    // Esto asegura que el doctor vea nombre/teléfono consistentes en el detalle.
+    const patientProfilePatch: any = {};
+    if (body.phone && body.phone.trim()) {
+      patientProfilePatch.phone = body.phone.trim();
+    }
+    if (body.fullName && body.fullName.trim()) {
+      patientProfilePatch.full_name = body.fullName.trim();
+    }
+    if (Object.keys(patientProfilePatch).length > 0) {
       await prisma.patients.update({
         where: { id: patient.id },
-        data: { phone: body.phone },
+        data: patientProfilePatch,
       }).catch(() => {}); // no bloquear si falla
     }
 
@@ -245,6 +254,7 @@ export async function createAppointment(
         scheduledFor: appointment.scheduled_for,
         status: appointment.status,
         reason: appointment.reason,
+        notes: appointment.reception_notes || null,
         isPaid: appointment.is_paid || false,
         createdAt: creationDate,
         paymentRequired: isOnlinePayment,
@@ -405,6 +415,7 @@ export async function getAppointments(
           scheduledFor: apt.scheduled_for,
           status: apt.status,
           reason: apt.reason,
+          notes: apt.reception_notes || null,
           isPaid: apt.is_paid || false,
           cost: apt.cost,
           createdAt: creationDate,
@@ -519,6 +530,7 @@ export async function getAppointmentById(
       scheduledFor: appointment.scheduled_for,
       status: appointment.status,
       reason: appointment.reason,
+      notes: appointment.reception_notes || null,
       isPaid: appointment.is_paid || false,
       cost: appointment.cost,
       paymentMethod: appointment.payment_method,
