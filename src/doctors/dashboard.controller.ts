@@ -5,6 +5,9 @@ import { AuthContext, requireRole } from '../shared/auth';
 import { getPrismaClient } from '../shared/prisma';
 import { successResponse } from '../shared/response';
 
+const DIRECT_PAYMENT_SOURCES = ['admin', 'ADMIN', 'PAYPHONE', 'payphone'];
+const CHARGED_PAYMENT_STATUSES = ['PAID', 'paid', 'completed', 'COMPLETED'];
+
 export async function getDashboard(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   console.log('✅ [DOCTORS] GET /api/doctors/dashboard - Obteniendo dashboard');
   
@@ -217,10 +220,17 @@ export async function getDashboard(event: APIGatewayProxyEventV2): Promise<APIGa
     prisma.appointments.count({ where: { provider_id: provider.id } }),
     prisma.appointments.count({ where: { provider_id: provider.id, status: 'CONFIRMED' } }),
     prisma.appointments.count({ where: { provider_id: provider.id, status: 'COMPLETED' } }),
-    // Suma de pagos
+    // Suma contable de pagos cobrados (incluye PayPhone + admin)
     appointmentIds.length > 0
       ? prisma.payments.aggregate({
-          where: { appointment_id: { in: appointmentIds }, status: 'completed' },
+          where: {
+            appointment_id: { in: appointmentIds },
+            payment_source: { in: DIRECT_PAYMENT_SOURCES },
+            OR: [
+              { paid_at: { not: null } },
+              { status: { in: CHARGED_PAYMENT_STATUSES } },
+            ],
+          },
           _sum: { provider_amount: true },
         })
       : Promise.resolve({ _sum: { provider_amount: 0 } }),

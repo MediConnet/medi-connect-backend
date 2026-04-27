@@ -4,6 +4,15 @@ import { getPrismaClient } from '../shared/prisma';
 import { successResponse, errorResponse, internalErrorResponse } from '../shared/response';
 import { logger } from '../shared/logger';
 
+const CARD_METHODS = ['CARD', 'card'];
+const DIRECT_PAYMENT_SOURCES = ['admin', 'ADMIN', 'PAYPHONE', 'payphone'];
+const CHARGED_PAYMENT_STATUSES = ['PAID', 'paid', 'completed', 'COMPLETED'];
+
+function normalizePaymentStatus(status?: string | null, paidAt?: Date | null): 'pending' | 'paid' {
+  if (paidAt) return 'paid';
+  return status && CHARGED_PAYMENT_STATUSES.includes(status) ? 'paid' : 'pending';
+}
+
 /**
  * GET /api/admin/payments/doctors
  * Obtener pagos pendientes a médicos independientes
@@ -14,12 +23,15 @@ export async function getDoctorPayments(event: APIGatewayProxyEventV2): Promise<
   const prisma = getPrismaClient();
 
   try {
-    // Obtener todos los payments con source='admin' y status='pending'
+    // Vista contable: incluir pagos cobrados por tarjeta en admin + PayPhone.
     const payments = await prisma.payments.findMany({
       where: {
-        payment_source: 'admin',
-        payment_method: 'card', // Solo pagos con tarjeta
-        status: 'pending',
+        payment_source: { in: DIRECT_PAYMENT_SOURCES },
+        payment_method: { in: CARD_METHODS },
+        OR: [
+          { paid_at: { not: null } },
+          { status: { in: CHARGED_PAYMENT_STATUSES } },
+        ],
       },
       include: {
         appointments: {
@@ -57,7 +69,7 @@ export async function getDoctorPayments(event: APIGatewayProxyEventV2): Promise<
       amount: Number(payment.amount_total || 0),
       commission: Number(payment.platform_fee || 0),
       netAmount: Number(payment.provider_amount || 0),
-      status: payment.status || 'pending',
+      status: normalizePaymentStatus(payment.status, payment.paid_at),
       paymentMethod: payment.payment_method || 'card',
       createdAt: payment.created_at?.toISOString(),
       source: 'admin',
@@ -274,11 +286,14 @@ export async function getPaymentHistory(event: APIGatewayProxyEventV2): Promise<
   const prisma = getPrismaClient();
 
   try {
-    // Obtener pagos a médicos pagados
+    // Historial contable: incluir cobros directos admin + PayPhone.
     const doctorPayments = await prisma.payments.findMany({
       where: {
-        payment_source: 'admin',
-        status: 'paid',
+        payment_source: { in: DIRECT_PAYMENT_SOURCES },
+        OR: [
+          { paid_at: { not: null } },
+          { status: { in: CHARGED_PAYMENT_STATUSES } },
+        ],
       },
       include: {
         appointments: {
@@ -326,7 +341,7 @@ export async function getPaymentHistory(event: APIGatewayProxyEventV2): Promise<
       patientName: p.appointments?.patients?.users?.email || 'Paciente',
       amount: Number(p.provider_amount || 0),
       paymentDate: p.paid_at?.toISOString(),
-      status: p.status,
+      status: normalizePaymentStatus(p.status, p.paid_at),
     }));
 
     const mappedClinicPayments = clinicPayments.map((p) => ({

@@ -4,6 +4,14 @@ import { successResponse, errorResponse, internalErrorResponse, notFoundResponse
 import { logger } from '../shared/logger';
 import { getAuthContext } from '../shared/auth';
 
+const DIRECT_PAYMENT_SOURCES = ['admin', 'ADMIN', 'PAYPHONE', 'payphone'];
+const CHARGED_PAYMENT_STATUSES = ['PAID', 'paid', 'completed', 'COMPLETED'];
+
+function isChargedPayment(status?: string | null, paidAt?: Date | null): boolean {
+  if (paidAt) return true;
+  return !!status && CHARGED_PAYMENT_STATUSES.includes(status);
+}
+
 /**
  * GET /api/doctors/payments
  * Obtener pagos del médico (tanto de admin como de clínicas)
@@ -34,13 +42,16 @@ export async function getDoctorPayments(event: APIGatewayProxyEventV2): Promise<
     const statusFilter = queryParams.status; // 'pending' o 'paid'
     const sourceFilter = queryParams.source; // 'admin' o 'clinic'
 
-    // 1. Obtener pagos directos del admin (médico independiente)
+    // 1. Obtener pagos directos (admin + PayPhone) para vista contable del médico
     const payments = await prisma.payments.findMany({
       where: {
         appointments: {
           provider_id: doctor.id,
         },
-        payment_source: sourceFilter === 'clinic' ? undefined : 'admin',
+        payment_source:
+          sourceFilter === 'clinic'
+            ? undefined
+            : { in: DIRECT_PAYMENT_SOURCES },
       },
       include: {
         appointments: {
@@ -97,8 +108,8 @@ export async function getDoctorPayments(event: APIGatewayProxyEventV2): Promise<
 
       const amount = Number(payment.amount_total || 0);
       const commission = Number(payment.platform_fee || 0);
-      const netAmount = amount - commission;
-      const isPaid = payment.paid_at !== null;
+      const netAmount = Number(payment.provider_amount || amount - commission);
+      const isPaid = isChargedPayment(payment.status, payment.paid_at);
 
       return {
         id: payment.id,
@@ -231,8 +242,8 @@ export async function getDoctorPaymentById(event: APIGatewayProxyEventV2): Promi
 
       const amount = Number(payment.amount_total || 0);
       const commission = Number(payment.platform_fee || 0);
-      const netAmount = amount - commission;
-      const isPaid = payment.paid_at !== null;
+      const netAmount = Number(payment.provider_amount || amount - commission);
+      const isPaid = isChargedPayment(payment.status, payment.paid_at);
 
       const response = {
         id: payment.id,
