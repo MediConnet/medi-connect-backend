@@ -1679,16 +1679,10 @@ export async function socialLogin(
     const prisma = getPrismaClient();
 
     // Buscar usuario por su ID social correspondiente o email
-    let user = await prisma.users.findFirst({
-      where: {
-        OR: [
-          provider === "apple"
-            ? { apple_id: socialId }
-            : { google_id: socialId },
-          { email: socialEmail },
-        ],
-      },
-    });
+    const userRows = provider === "apple"
+      ? await prisma.$queryRaw<any[]>`SELECT id, email, role, is_active, apple_id, google_id FROM users WHERE apple_id = ${socialId} OR email = ${socialEmail} LIMIT 1`
+      : await prisma.$queryRaw<any[]>`SELECT id, email, role, is_active, apple_id, google_id FROM users WHERE google_id = ${socialId} OR email = ${socialEmail} LIMIT 1`;
+    let user = userRows[0] || null;
 
     if (!user) {
       // Crear nuevo usuario (Paciente por defecto)
@@ -1732,23 +1726,15 @@ export async function socialLogin(
     }
 
     // Obtener datos del paciente para retornar nombre/apellido
-    const patientData = await prisma.patients.findFirst({
-      where: { user_id: user.id },
-      select: { full_name: true, phone: true },
-    });
+    const patientRows = await prisma.$queryRaw<any[]>`SELECT id, full_name, phone FROM patients WHERE user_id = ${user.id} LIMIT 1`;
+    const patientData = patientRows[0] || null;
 
     // Si el paciente existe pero no tiene nombre y ahora tenemos uno, actualizarlo
     if (patientData && !patientData.full_name && socialName && socialName !== "Usuario") {
-      const patientRecord = await prisma.patients.findFirst({
-        where: { user_id: user.id },
-        select: { id: true },
+      await prisma.patients.update({
+        where: { id: patientData.id },
+        data: { full_name: socialName },
       });
-      if (patientRecord) {
-        await prisma.patients.update({
-          where: { id: patientRecord.id },
-          data: { full_name: socialName },
-        });
-      }
     }
 
     const displayName = socialName !== "Usuario" ? socialName : (patientData?.full_name || "");

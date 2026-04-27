@@ -45,9 +45,9 @@ export async function createDiagnosis(event: APIGatewayProxyEventV2): Promise<AP
       return errorResponse('Cita no encontrada o no autorizada', 404);
     }
 
-    const existingHistory = await prisma.medical_history.findFirst({
-        where: { appointment_id: appointmentId }
-    });
+    const existingHistory = await prisma.$queryRaw<any[]>`
+      SELECT id FROM medical_history WHERE appointment_id = ${appointmentId} LIMIT 1
+    `.then(rows => rows[0] || null);
 
     const specialtySnapshot = provider.provider_specialties.length > 0 
       ? provider.provider_specialties[0].specialties.name 

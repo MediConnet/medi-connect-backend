@@ -432,6 +432,9 @@ export async function getAppointments(
                 city: aptWithRelations.provider_branches.cities?.name,
                 phone: aptWithRelations.provider_branches.phone_contact,
                 email: aptWithRelations.provider_branches.email_contact,
+                google_maps_url: aptWithRelations.provider_branches.google_maps_url || null,
+                latitude: aptWithRelations.provider_branches.latitude ? Number(aptWithRelations.provider_branches.latitude) : null,
+                longitude: aptWithRelations.provider_branches.longitude ? Number(aptWithRelations.provider_branches.longitude) : null,
               }
             : null,
         };
@@ -543,6 +546,9 @@ export async function getAppointmentById(
             city: branch.cities?.name,
             phone: branch.phone_contact,
             email: branch.email_contact || null,
+            google_maps_url: branch.google_maps_url || null,
+            latitude: branch.latitude ? Number(branch.latitude) : null,
+            longitude: branch.longitude ? Number(branch.longitude) : null,
           }
         : null,
     });
