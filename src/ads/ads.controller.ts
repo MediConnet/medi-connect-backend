@@ -242,6 +242,7 @@ export async function getPublicAds(event: APIGatewayProxyEventV2): Promise<APIGa
             accent: ad.accent_color_hex,
             startDate: ad.start_date ? new Date(ad.start_date).toISOString().split('T')[0] : null,
             endDate: ad.end_date ? new Date(ad.end_date).toISOString().split('T')[0] : null,
+            isAdminAd: !ad.providers,
             
             navigation: {
                 screen: screenName,
