@@ -122,6 +122,11 @@ export async function checkReminders() {
                 [push_token],
                 notifTitle,
                 notifBody,
+                { 
+                  type: "recordatorio", // Identificador para activar la alarma de 30s en el app
+                  targetScreen: "Reminders", 
+                  reminderId: id 
+                }
               );
               console.log(
                 `      📲 Push enviado a ${push_token.substring(0, 15)}...`,
