@@ -17,10 +17,18 @@ const assets = [
   { name: 'restablecer-contraseña.png', path: path.join(__dirname, '..', 'public', 'images', 'restablecer-contraseña.png') },
   { name: 'contraseña-actualizada.png', path: path.join(__dirname, '..', 'public', 'images', 'contraseña-actualizada.png') },
   { name: 'soporte-contacto.png', path: path.join(__dirname, '..', 'public', 'images', 'soporte-contacto.png') },
+  { name: 'ambulancia.png', path: path.join(__dirname, '..', 'public', 'images', 'ambulancia.png') },
+  { name: 'cita-agendada.png', path: path.join(__dirname, '..', 'public', 'images', 'cita-agendada.png') },
+  { name: 'cuenta-creada.png', path: path.join(__dirname, '..', 'public', 'images', 'cuenta-creada.png') },
+  { name: 'farmacia.png', path: path.join(__dirname, '..', 'public', 'images', 'farmacia.png') },
+  { name: 'medico.png', path: path.join(__dirname, '..', 'public', 'images', 'medico.png') },
+  { name: 'notificaciones.png', path: path.join(__dirname, '..', 'public', 'images', 'notificaciones.png') },
+  { name: 'pago-consultorio.png', path: path.join(__dirname, '..', 'public', 'images', 'pago-consultorio.png') },
+  { name: 'solicitud-aceptada.png', path: path.join(__dirname, '..', 'public', 'images', 'solicitud-aceptada.png') },
 ];
 
 async function uploadAssets() {
-  console.log('🚀 Iniciando subida de NUEVOS assets (sin fondo) a Cloudinary...');
+  console.log('🚀 Subiendo TODA la galería de assets a Cloudinary...');
   
   const results: Record<string, string> = {};
 
@@ -43,7 +51,7 @@ async function uploadAssets() {
     }
   }
 
-  console.log('\n📋 NUEVAS URLs Generadas:');
+  console.log('\n📋 URLs Generadas:');
   console.log(JSON.stringify(results, null, 2));
 }
 

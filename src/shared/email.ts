@@ -24,7 +24,7 @@ function initializeEmailService(): Resend | null {
 
   // API Key de Resend desde variables de entorno (soporta ambos nombres por compatibilidad)
   const resendApiToken = process.env.RESEND_API_KEY || process.env.RESEND_API_TOKEN || 're_SSG1TwXf_7c58f9HHEiPPaHbAverY4DKb';
-  
+
   // Email desde el que se enviarán los correos (debe estar verificado en Resend)
   const fromEmail = process.env.RESEND_FROM_EMAIL || process.env.SMTP_FROM || 'noreply@docalink.com';
 
@@ -91,8 +91,16 @@ function getImageBase64(imageName: string): string {
     'splash.png': 'https://res.cloudinary.com/dws7ywsvy/image/upload/v1778814193/docalink/emails/docalink_email_new_docalink-logo.png',
     'docalink-logo.png': 'https://res.cloudinary.com/dws7ywsvy/image/upload/v1778814193/docalink/emails/docalink_email_new_docalink-logo.png',
     'restablecer-contraseña.png': 'https://res.cloudinary.com/dws7ywsvy/image/upload/v1778814194/docalink/emails/docalink_email_new_restablecer-contrase%C3%B1a.png',
-    'contraseña-actualizada.png': 'https://res.cloudinary.com/dws7ywsvy/image/upload/v1778814195/docalink/emails/docalink_email_new_contrase%C3%B1a-actualizada.png',
-    'soporte-contacto.png': 'https://res.cloudinary.com/dws7ywsvy/image/upload/v1778814196/docalink/emails/docalink_email_new_soporte-contacto.png'
+    'contraseña-actualizada.png': 'https://res.cloudinary.com/dws7ywsvy/image/upload/v1778817412/docalink/emails/docalink_email_new_contrase%C3%B1a-actualizada.png',
+    'soporte-contacto.png': 'https://res.cloudinary.com/dws7ywsvy/image/upload/v1778814196/docalink/emails/docalink_email_new_soporte-contacto.png',
+    'ambulancia.png': 'https://res.cloudinary.com/dws7ywsvy/image/upload/v1778818291/docalink/emails/docalink_email_new_ambulancia.png',
+    'cita-agendada.png': 'https://res.cloudinary.com/dws7ywsvy/image/upload/v1778818292/docalink/emails/docalink_email_new_cita-agendada.png',
+    'cuenta-creada.png': 'https://res.cloudinary.com/dws7ywsvy/image/upload/v1778818294/docalink/emails/docalink_email_new_cuenta-creada.png',
+    'farmacia.png': 'https://res.cloudinary.com/dws7ywsvy/image/upload/v1778818295/docalink/emails/docalink_email_new_farmacia.png',
+    'medico.png': 'https://res.cloudinary.com/dws7ywsvy/image/upload/v1778818296/docalink/emails/docalink_email_new_medico.png',
+    'notificaciones.png': 'https://res.cloudinary.com/dws7ywsvy/image/upload/v1778818298/docalink/emails/docalink_email_new_notificaciones.png',
+    'pago-consultorio.png': 'https://res.cloudinary.com/dws7ywsvy/image/upload/v1778818299/docalink/emails/docalink_email_new_pago-consultorio.png',
+    'solicitud-aceptada.png': 'https://res.cloudinary.com/dws7ywsvy/image/upload/v1778818300/docalink/emails/docalink_email_new_solicitud-aceptada.png'
   };
 
   if (CLOUDINARY_URLS[imageName]) {
@@ -123,7 +131,7 @@ function generateEmailTemplateBase(options: {
   const primaryColor = options.headerColor || '#004aad';
   const footerColor = options.footerColor || primaryColor;
   const logoDataUri = getLogoBase64();
-  
+
   return `
 <!DOCTYPE html>
 <html>
@@ -252,20 +260,55 @@ export function generateDoctorNewAppointmentEmail(data: {
   clinicAddress: string;
 }): string {
   const content = `
-    <h2 class="title">Nueva Cita Agendada</h2>
-    <p>Hola Dr./Dra. <strong>${data.doctorName}</strong>,</p>
-    <p>Tienes una nueva cita agendada en la plataforma:</p>
-    <div class="details-box">
-      <div class="detail-row"><span class="detail-label">📅 Fecha:</span> <span class="detail-value">${data.date}</span></div>
-      <div class="detail-row"><span class="detail-label">🕐 Hora:</span> <span class="detail-value">${data.time}</span></div>
-      <div class="detail-row"><span class="detail-label">👤 Paciente:</span> <span class="detail-value">${data.patientName}</span></div>
-      ${data.reason ? `<div class="detail-row"><span class="detail-label">📋 Motivo:</span> <span class="detail-value">${data.reason}</span></div>` : ''}
-      <div class="detail-row"><span class="detail-label">🏥 Clínica:</span> <span class="detail-value">${data.clinicName}</span></div>
-      <div class="detail-row"><span class="detail-label">📍 Dirección:</span> <span class="detail-value">${data.clinicAddress}</span></div>
+    <!-- Hero Section con fondo celeste -->
+    <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #e0f2fe; padding: 15px 40px;">
+      <tr>
+        <td width="60%" align="left">
+          <h2 class="title" style="color: #004aad; margin: 0 0 5px 0;">Nueva Cita Agendada</h2>
+          <p class="subtitle" style="color: #004aad; opacity: 0.8; font-size: 14px; margin: 0;">Tienes un nuevo paciente en espera.</p>
+        </td>
+        <td width="40%" align="right">
+          <div class="illustration">
+            <img src="${getImageBase64('cita-agendada.png')}" width="140" alt="Cita" />
+          </div>
+        </td>
+      </tr>
+    </table>
+
+    <div style="padding: 40px;">
+      <p>Hola Dr./Dra. <strong>${data.doctorName}</strong> 👋,</p>
+      <p>Se ha registrado una nueva cita médica en tu agenda:</p>
+      
+      <center>
+        <table width="100%" border="0" cellspacing="0" cellpadding="0" class="details-box" style="background-color: #f8fafc; border: 1px solid #e2e8f0; margin: 25px 0; max-width: 450px;">
+          <tr>
+            <td style="padding: 20px;">
+              <p style="color: #004aad; font-weight: 700; margin: 0 0 15px 0; font-size: 14px;">Detalles de la cita</p>
+              <table width="100%" border="0" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td width="30" style="padding-bottom: 10px;"><img src="https://cdn-icons-png.flaticon.com/512/2838/2838779.png" width="18" style="filter: brightness(0.5);" /></td>
+                  <td style="padding-bottom: 10px; font-size: 13px; color: #64748b;">Fecha:</td>
+                  <td align="right" style="padding-bottom: 10px; font-size: 13px; color: #1e293b; font-weight: 600;">${data.date}</td>
+                </tr>
+                <tr>
+                  <td width="30" style="padding-bottom: 10px;"><img src="https://cdn-icons-png.flaticon.com/512/2088/2088617.png" width="18" style="filter: brightness(0.5);" /></td>
+                  <td style="padding-bottom: 10px; font-size: 13px; color: #64748b;">Hora:</td>
+                  <td align="right" style="padding-bottom: 10px; font-size: 13px; color: #1e293b; font-weight: 600;">${data.time}</td>
+                </tr>
+                <tr>
+                  <td width="30"><img src="https://cdn-icons-png.flaticon.com/512/1077/1077114.png" width="18" style="filter: brightness(0.5);" /></td>
+                  <td style="font-size: 13px; color: #64748b;">Paciente:</td>
+                  <td align="right" style="font-size: 13px; color: #1e293b; font-weight: 600;">${data.patientName}</td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </center>
+      <p>Puedes revisar los detalles completos y el historial clínico del paciente desde tu panel de control.</p>
     </div>
-    <p>Por favor, revisa tu agenda en el panel de control.</p>
   `;
-  
+
   return generateEmailTemplateBase({
     title: 'Nueva Cita Agendada',
     content,
@@ -284,16 +327,52 @@ export function generateClinicNewAppointmentEmail(data: {
   reason?: string;
 }): string {
   const content = `
-    <h2 class="title">Nueva Cita Agendada</h2>
-    <p>Se ha registrado una nueva cita en tu clínica:</p>
-    <div class="details-box">
-      <div class="detail-row"><span class="detail-label">👨‍⚕️ Médico:</span> <span class="detail-value">${data.doctorName} (${data.doctorSpecialty})</span></div>
-      <div class="detail-row"><span class="detail-label">👤 Paciente:</span> <span class="detail-value">${data.patientName}</span></div>
-      <div class="detail-row"><span class="detail-label">📅 Fecha:</span> <span class="detail-value">${data.date}</span></div>
-      <div class="detail-row"><span class="detail-label">🕐 Hora:</span> <span class="detail-value">${data.time}</span></div>
+    <!-- Hero Section con fondo celeste -->
+    <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #e0f2fe; padding: 15px 40px;">
+      <tr>
+        <td width="60%" align="left">
+          <h2 class="title" style="color: #004aad; margin: 0 0 5px 0;">Cita Registrada</h2>
+          <p class="subtitle" style="color: #004aad; opacity: 0.8; font-size: 14px; margin: 0;">Nueva actividad en tu clínica.</p>
+        </td>
+        <td width="40%" align="right">
+          <div class="illustration">
+            <img src="${getImageBase64('cita-agendada.png')}" width="140" alt="Clínica" />
+          </div>
+        </td>
+      </tr>
+    </table>
+
+    <div style="padding: 40px;">
+      <p>Se ha registrado una nueva cita médica en las instalaciones:</p>
+      
+      <center>
+        <table width="100%" border="0" cellspacing="0" cellpadding="0" class="details-box" style="background-color: #f8fafc; border: 1px solid #e2e8f0; margin: 25px 0; max-width: 450px;">
+          <tr>
+            <td style="padding: 20px;">
+              <table width="100%" border="0" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td width="30" style="padding-bottom: 10px;"><img src="https://cdn-icons-png.flaticon.com/512/3304/3304567.png" width="18" style="filter: brightness(0.5);" /></td>
+                  <td style="padding-bottom: 10px; font-size: 13px; color: #64748b;">Médico:</td>
+                  <td align="right" style="padding-bottom: 10px; font-size: 13px; color: #1e293b; font-weight: 600;">${data.doctorName}</td>
+                </tr>
+                <tr>
+                  <td width="30" style="padding-bottom: 10px;"><img src="https://cdn-icons-png.flaticon.com/512/1077/1077114.png" width="18" style="filter: brightness(0.5);" /></td>
+                  <td style="padding-bottom: 10px; font-size: 13px; color: #64748b;">Paciente:</td>
+                  <td align="right" style="padding-bottom: 10px; font-size: 13px; color: #1e293b; font-weight: 600;">${data.patientName}</td>
+                </tr>
+                <tr>
+                  <td width="30"><img src="https://cdn-icons-png.flaticon.com/512/2838/2838779.png" width="18" style="filter: brightness(0.5);" /></td>
+                  <td style="font-size: 13px; color: #64748b;">Fecha:</td>
+                  <td align="right" style="font-size: 13px; color: #1e293b; font-weight: 600;">${data.date} a las ${data.time}</td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </center>
     </div>
   `;
-  
+
   return generateEmailTemplateBase({
     title: 'Nueva Cita Agendada',
     content,
@@ -314,21 +393,58 @@ export function generatePatientNewAppointmentEmail(data: {
   reason?: string;
 }): string {
   const content = `
-    <h2 class="title" style="color: #108369;">¡Cita Confirmada!</h2>
-    <p>Hola <strong>${data.patientName}</strong>,</p>
-    <p>Tu cita médica ha sido confirmada exitosamente:</p>
-    <div class="details-box">
-      <div class="detail-row"><span class="detail-label">👨‍⚕️ Médico:</span> <span class="detail-value">Dr./Dra. ${data.doctorName}</span></div>
-      <div class="detail-row"><span class="detail-label">📅 Fecha:</span> <span class="detail-value">${data.date}</span></div>
-      <div class="detail-row"><span class="detail-label">🕐 Hora:</span> <span class="detail-value">${data.time}</span></div>
-      <div class="detail-row"><span class="detail-label">📍 Lugar:</span> <span class="detail-value">${data.clinicName}</span></div>
+    <!-- Hero Section con fondo verde -->
+    <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f0fdf4; padding: 15px 40px;">
+      <tr>
+        <td width="60%" align="left">
+          <h2 class="title" style="color: #108369; margin: 0 0 5px 0;">¡Cita Confirmada!</h2>
+          <p class="subtitle" style="color: #108369; opacity: 0.8; font-size: 14px; margin: 0;">Tu salud es nuestra prioridad.</p>
+        </td>
+        <td width="40%" align="right">
+          <div class="illustration">
+            <img src="${getImageBase64('solicitud-aceptada.png')}" width="140" alt="Confirmada" />
+          </div>
+        </td>
+      </tr>
+    </table>
+
+    <div style="padding: 40px;">
+      <p>Hola <strong>${data.patientName}</strong> 👋,</p>
+      <p>Tu cita médica ha sido confirmada exitosamente. Aquí tienes los detalles para tu visita:</p>
+      
+      <center>
+        <table width="100%" border="0" cellspacing="0" cellpadding="0" class="details-box" style="background-color: #f0fdf4; border: 1px solid #dcfce7; margin: 25px 0; max-width: 450px;">
+          <tr>
+            <td style="padding: 20px;">
+              <table width="100%" border="0" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td width="30" style="padding-bottom: 10px;"><img src="https://cdn-icons-png.flaticon.com/512/3304/3304567.png" width="18" style="filter: hue-rotate(100deg);" /></td>
+                  <td style="padding-bottom: 10px; font-size: 13px; color: #64748b;">Especialista:</td>
+                  <td align="right" style="padding-bottom: 10px; font-size: 13px; color: #1e293b; font-weight: 600;">Dr./Dra. ${data.doctorName}</td>
+                </tr>
+                <tr>
+                  <td width="30" style="padding-bottom: 10px;"><img src="https://cdn-icons-png.flaticon.com/512/2838/2838779.png" width="18" style="filter: hue-rotate(100deg);" /></td>
+                  <td style="padding-bottom: 10px; font-size: 13px; color: #64748b;">Fecha:</td>
+                  <td align="right" style="padding-bottom: 10px; font-size: 13px; color: #1e293b; font-weight: 600;">${data.date} a las ${data.time}</td>
+                </tr>
+                <tr>
+                  <td width="30"><img src="https://cdn-icons-png.flaticon.com/512/684/684908.png" width="18" style="filter: hue-rotate(100deg);" /></td>
+                  <td style="font-size: 13px; color: #64748b;">Lugar:</td>
+                  <td align="right" style="font-size: 13px; color: #1e293b; font-weight: 600;">${data.clinicName}</td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </center>
+      <p style="text-align: center; font-weight: 600; color: #108369;">Recuerda asistir 10 minutos antes de tu cita.</p>
     </div>
-    <p style="text-align: center; font-weight: 600;">Recuerda asistir 10 minutos antes.</p>
   `;
-  
+
   return generateEmailTemplateBase({
     title: 'Cita Confirmada',
     headerColor: '#108369',
+    footerColor: '#108369',
     content,
   });
 }
@@ -345,20 +461,57 @@ export function generatePatientReminderEmail(data: {
   time: string;
 }): string {
   const content = `
-    <h2 class="title" style="color: #f59e0b;">Recordatorio de Cita</h2>
-    <p>Hola <strong>${data.patientName}</strong>,</p>
-    <p>Te recordamos que tienes una cita programada para el día de mañana:</p>
-    <div class="details-box">
-      <div class="detail-row"><span class="detail-label">👨‍⚕️ Médico:</span> <span class="detail-value">${data.doctorName}</span></div>
-      <div class="detail-row"><span class="detail-label">📅 Fecha:</span> <span class="detail-value">${data.date}</span></div>
-      <div class="detail-row"><span class="detail-label">🕐 Hora:</span> <span class="detail-value">${data.time}</span></div>
-      <div class="detail-row"><span class="detail-label">📍 Dirección:</span> <span class="detail-value">${data.clinicAddress}</span></div>
+    <!-- Hero Section con fondo naranja -->
+    <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #fff7ed; padding: 15px 40px;">
+      <tr>
+        <td width="60%" align="left">
+          <h2 class="title" style="color: #c2410c; margin: 0 0 5px 0;">Recordatorio de Cita</h2>
+          <p class="subtitle" style="color: #c2410c; opacity: 0.8; font-size: 14px; margin: 0;">¡Mañana tenemos una cita!</p>
+        </td>
+        <td width="40%" align="right">
+          <div class="illustration">
+            <img src="${getImageBase64('notificaciones.png')}" width="140" alt="Recordatorio" />
+          </div>
+        </td>
+      </tr>
+    </table>
+
+    <div style="padding: 40px;">
+      <p>Hola <strong>${data.patientName}</strong> 👋,</p>
+      <p>Te recordamos que tienes una cita programada para el día de mañana:</p>
+      
+      <center>
+        <table width="100%" border="0" cellspacing="0" cellpadding="0" class="details-box" style="background-color: #fffcf9; border: 1px solid #fed7aa; margin: 25px 0; max-width: 450px;">
+          <tr>
+            <td style="padding: 20px;">
+              <table width="100%" border="0" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td width="30" style="padding-bottom: 10px;"><img src="https://cdn-icons-png.flaticon.com/512/3304/3304567.png" width="18" style="filter: sepia(1) saturate(5) hue-rotate(340deg);" /></td>
+                  <td style="padding-bottom: 10px; font-size: 13px; color: #64748b;">Médico:</td>
+                  <td align="right" style="padding-bottom: 10px; font-size: 13px; color: #1e293b; font-weight: 600;">${data.doctorName}</td>
+                </tr>
+                <tr>
+                  <td width="30" style="padding-bottom: 10px;"><img src="https://cdn-icons-png.flaticon.com/512/2838/2838779.png" width="18" style="filter: sepia(1) saturate(5) hue-rotate(340deg);" /></td>
+                  <td style="padding-bottom: 10px; font-size: 13px; color: #64748b;">Fecha/Hora:</td>
+                  <td align="right" style="padding-bottom: 10px; font-size: 13px; color: #1e293b; font-weight: 600;">${data.date} a las ${data.time}</td>
+                </tr>
+                <tr>
+                  <td width="30"><img src="https://cdn-icons-png.flaticon.com/512/684/684908.png" width="18" style="filter: sepia(1) saturate(5) hue-rotate(340deg);" /></td>
+                  <td style="font-size: 13px; color: #64748b;">Dirección:</td>
+                  <td align="right" style="font-size: 13px; color: #1e293b; font-weight: 600;">${data.clinicAddress}</td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </center>
     </div>
   `;
-  
+
   return generateEmailTemplateBase({
     title: 'Recordatorio de Cita',
     headerColor: '#f59e0b',
+    footerColor: '#f59e0b',
     content,
   });
 }
@@ -373,19 +526,52 @@ export function generateDoctorCancellationEmail(data: {
   time: string;
 }): string {
   const content = `
-    <h2 class="title" style="color: #ef4444;">Cita Cancelada</h2>
-    <p>Hola Dr./Dra. <strong>${data.doctorName}</strong>,</p>
-    <p>Se ha cancelado la siguiente cita programada:</p>
-    <div class="details-box">
-      <div class="detail-row"><span class="detail-label">👤 Paciente:</span> <span class="detail-value">${data.patientName}</span></div>
-      <div class="detail-row"><span class="detail-label">📅 Fecha:</span> <span class="detail-value">${data.date}</span></div>
-      <div class="detail-row"><span class="detail-label">🕐 Hora:</span> <span class="detail-value">${data.time}</span></div>
+    <!-- Hero Section con fondo rojo -->
+    <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #fef2f2; padding: 15px 40px;">
+      <tr>
+        <td width="60%" align="left">
+          <h2 class="title" style="color: #b91c1c; margin: 0 0 5px 0;">Cita Cancelada</h2>
+          <p class="subtitle" style="color: #b91c1c; opacity: 0.8; font-size: 14px; margin: 0;">Un paciente ha cancelado su cita.</p>
+        </td>
+        <td width="40%" align="right">
+          <div class="illustration">
+            <img src="${getImageBase64('ambulancia.png')}" width="140" alt="Cancelación" />
+          </div>
+        </td>
+      </tr>
+    </table>
+
+    <div style="padding: 40px;">
+      <p>Hola Dr./Dra. <strong>${data.doctorName}</strong> 👋,</p>
+      <p>Te informamos que la siguiente cita ha sido cancelada:</p>
+      
+      <center>
+        <table width="100%" border="0" cellspacing="0" cellpadding="0" class="details-box" style="background-color: #fff5f5; border: 1px solid #fecaca; margin: 25px 0; max-width: 450px;">
+          <tr>
+            <td style="padding: 20px;">
+              <table width="100%" border="0" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td width="30" style="padding-bottom: 10px;"><img src="https://cdn-icons-png.flaticon.com/512/1077/1077114.png" width="18" style="filter: hue-rotate(340deg) saturate(3);" /></td>
+                  <td style="padding-bottom: 10px; font-size: 13px; color: #64748b;">Paciente:</td>
+                  <td align="right" style="padding-bottom: 10px; font-size: 13px; color: #1e293b; font-weight: 600;">${data.patientName}</td>
+                </tr>
+                <tr>
+                  <td width="30"><img src="https://cdn-icons-png.flaticon.com/512/2838/2838779.png" width="18" style="filter: hue-rotate(340deg) saturate(3);" /></td>
+                  <td style="font-size: 13px; color: #64748b;">Fecha/Hora:</td>
+                  <td align="right" style="font-size: 13px; color: #1e293b; font-weight: 600;">${data.date} a las ${data.time}</td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </center>
     </div>
   `;
-  
+
   return generateEmailTemplateBase({
     title: 'Cita Cancelada',
     headerColor: '#ef4444',
+    footerColor: '#ef4444',
     content,
   });
 }
@@ -401,19 +587,53 @@ export function generatePatientCancellationEmail(data: {
   clinicName: string;
 }): string {
   const content = `
-    <h2 class="title" style="color: #ef4444;">Tu cita ha sido cancelada</h2>
-    <p>Hola <strong>${data.patientName}</strong>,</p>
-    <p>Lamentamos informarte que tu cita ha sido cancelada.</p>
-    <div class="details-box">
-      <div class="detail-row"><span class="detail-label">👨‍⚕️ Médico:</span> <span class="detail-value">${data.doctorName}</span></div>
-      <div class="detail-row"><span class="detail-label">📅 Fecha:</span> <span class="detail-value">${data.date}</span></div>
-      <div class="detail-row"><span class="detail-label">🕐 Hora:</span> <span class="detail-value">${data.time}</span></div>
+    <!-- Hero Section con fondo rojo -->
+    <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #fef2f2; padding: 15px 40px;">
+      <tr>
+        <td width="60%" align="left">
+          <h2 class="title" style="color: #b91c1c; margin: 0 0 5px 0;">Cita Cancelada</h2>
+          <p class="subtitle" style="color: #b91c1c; opacity: 0.8; font-size: 14px; margin: 0;">Hubo un cambio en tu cita médica.</p>
+        </td>
+        <td width="40%" align="right">
+          <div class="illustration">
+            <img src="${getImageBase64('ambulancia.png')}" width="140" alt="Cancelación" />
+          </div>
+        </td>
+      </tr>
+    </table>
+
+    <div style="padding: 40px;">
+      <p>Hola <strong>${data.patientName}</strong> 👋,</p>
+      <p>Lamentamos informarte que tu cita ha sido cancelada:</p>
+      
+      <center>
+        <table width="100%" border="0" cellspacing="0" cellpadding="0" class="details-box" style="background-color: #fff5f5; border: 1px solid #fecaca; margin: 25px 0; max-width: 450px;">
+          <tr>
+            <td style="padding: 20px;">
+              <table width="100%" border="0" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td width="30" style="padding-bottom: 10px;"><img src="https://cdn-icons-png.flaticon.com/512/3304/3304567.png" width="18" style="filter: hue-rotate(340deg) saturate(3);" /></td>
+                  <td style="padding-bottom: 10px; font-size: 13px; color: #64748b;">Médico:</td>
+                  <td align="right" style="padding-bottom: 10px; font-size: 13px; color: #1e293b; font-weight: 600;">Dr./Dra. ${data.doctorName}</td>
+                </tr>
+                <tr>
+                  <td width="30"><img src="https://cdn-icons-png.flaticon.com/512/2838/2838779.png" width="18" style="filter: hue-rotate(340deg) saturate(3);" /></td>
+                  <td style="font-size: 13px; color: #64748b;">Fecha/Hora:</td>
+                  <td align="right" style="font-size: 13px; color: #1e293b; font-weight: 600;">${data.date} a las ${data.time}</td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </center>
+      <p>Puedes volver a agendar una cita cuando lo desees desde la aplicación.</p>
     </div>
   `;
-  
+
   return generateEmailTemplateBase({
     title: 'Cita Cancelada',
     headerColor: '#ef4444',
+    footerColor: '#ef4444',
     content,
   });
 }
@@ -427,7 +647,7 @@ export function generatePasswordResetEmail(data: {
 }): string {
   const frontendUrl = process.env.FRONTEND_URL || 'https://docalink.com';
   const resetLink = `${frontendUrl}/reset-password?token=${data.resetToken}`;
-  
+
   const content = `
     <!-- Hero Section con fondo celeste -->
     <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #e0f2fe; padding: 15px 40px;">
@@ -456,7 +676,7 @@ export function generatePasswordResetEmail(data: {
       <p class="footer-note" style="text-align: center;">Este enlace expirará en 60 minutos por seguridad.</p>
     </div>
   `;
-  
+
   return generateEmailTemplateBase({
     title: 'Recuperar Contraseña',
     content,
@@ -475,7 +695,7 @@ export function generatePasswordUpdatedEmail(data: {
 }): string {
   const content = `
     <!-- Hero Section con fondo verde -->
-    <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f0fdf4; padding: 10px 40px;">
+    <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f0fdf4; padding: 15px 40px;">
       <tr>
         <td width="60%" align="left">
           <h2 class="title" style="color: #108369; margin: 0 0 5px 0;">¡Tu contraseña ha sido actualizada con éxito!</h2>
@@ -531,7 +751,7 @@ export function generatePasswordUpdatedEmail(data: {
       </center>
     </div>
   `;
-  
+
   return generateEmailTemplateBase({
     title: 'Contraseña Actualizada',
     headerColor: '#108369',
@@ -548,15 +768,36 @@ export function generateDoctorInvitationEmail(data: {
   invitationLink: string;
 }): string {
   const content = `
-    <h2 class="title">Invitación a DocaLink</h2>
-    <p>Has sido invitado a unirte a <strong>${data.clinicName}</strong>.</p>
-    <div class="button-container">
-      <a href="${data.invitationLink}" class="button">Aceptar Invitación</a>
+    <!-- Hero Section con fondo celeste -->
+    <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #e0f2fe; padding: 15px 40px;">
+      <tr>
+        <td width="60%" align="left">
+          <h2 class="title" style="color: #004aad; margin: 0 0 5px 0;">Invitación a DocaLink</h2>
+          <p class="subtitle" style="color: #004aad; opacity: 0.8; font-size: 14px; margin: 0;">Únete a una red de salud inteligente.</p>
+        </td>
+        <td width="40%" align="right">
+          <div class="illustration">
+            <img src="${getImageBase64('medico.png')}" width="140" alt="Invitación" />
+          </div>
+        </td>
+      </tr>
+    </table>
+
+    <div style="padding: 40px;">
+      <p>Hola 👋,</p>
+      <p>Has sido invitado a formar parte del equipo médico de <strong>${data.clinicName}</strong> en nuestra plataforma.</p>
+      <p>Al unirte, podrás gestionar tus citas, expedientes clínicos y pacientes de manera digital y eficiente.</p>
+      
+      <div align="center" style="margin: 35px 0;">
+        <a href="${data.invitationLink}" style="display: inline-block; background-color: #004aad; color: #ffffff !important; padding: 16px 35px; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 16px;">Aceptar invitación</a>
+      </div>
     </div>
   `;
-  
+
   return generateEmailTemplateBase({
-    title: 'Invitación',
+    title: 'Invitación a DocaLink',
+    headerColor: '#004aad',
+    footerColor: '#004aad',
     content,
   });
 }
@@ -566,14 +807,36 @@ export function generateWelcomeEmail(data: {
   userRole: string;
 }): string {
   const content = `
-    <h2 class="title">¡Bienvenido a DocaLink! 🎉</h2>
-    <p>Hola <strong>${data.userName}</strong>, estamos felices de tenerte con nosotros.</p>
-    <p>Tu cuenta como <strong>${data.userRole}</strong> ha sido creada exitosamente.</p>
-    <p>Ya puedes acceder a todos nuestros servicios desde la plataforma.</p>
+    <!-- Hero Section con fondo verde -->
+    <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f0fdf4; padding: 15px 40px;">
+      <tr>
+        <td width="60%" align="left">
+          <h2 class="title" style="color: #108369; margin: 0 0 5px 0;">¡Bienvenido a DocaLink! 🎉</h2>
+          <p class="subtitle" style="color: #108369; opacity: 0.8; font-size: 14px; margin: 0;">Tu salud, ahora más cerca de ti.</p>
+        </td>
+        <td width="40%" align="right">
+          <div class="illustration">
+            <img src="${getImageBase64('cuenta-creada.png')}" width="140" alt="Bienvenido" />
+          </div>
+        </td>
+      </tr>
+    </table>
+
+    <div style="padding: 40px;">
+      <p>Hola <strong>${data.userName}</strong> 👋,</p>
+      <p>¡Estamos muy felices de tenerte con nosotros! Tu cuenta como <strong>${data.userRole}</strong> ha sido creada exitosamente.</p>
+      <p>Ya puedes acceder a todos nuestros servicios desde la plataforma y empezar a gestionar tu salud de manera digital.</p>
+      
+      <div align="center" style="margin: 35px 0;">
+        <a href="https://docalink.com" style="display: inline-block; background-color: #108369; color: #ffffff !important; padding: 16px 35px; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 16px;">Comenzar ahora</a>
+      </div>
+    </div>
   `;
-  
+
   return generateEmailTemplateBase({
     title: 'Bienvenido',
+    headerColor: '#108369',
+    footerColor: '#108369',
     content,
   });
 }
