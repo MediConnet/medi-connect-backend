@@ -1091,7 +1091,7 @@ async function approveRequest(event: APIGatewayProxyEventV2): Promise<APIGateway
   // Enviar email de bienvenida (asíncrono, no bloquea la respuesta)
   if (provider.users?.email) {
     const { sendEmail } = await import("../shared/email-adapter");
-    const { generateWelcomeEmail } = await import("../shared/email");
+    const { generateRequestAcceptedEmail } = await import("../shared/email");
 
     // Guardar email en variable para evitar problemas de null check en callbacks
     const userEmail = provider.users.email;
@@ -1106,7 +1106,7 @@ async function approveRequest(event: APIGatewayProxyEventV2): Promise<APIGateway
       provider.service_categories?.name?.toLowerCase() ||
       "provider";
 
-    const emailHtml = generateWelcomeEmail({
+    const emailHtml = generateRequestAcceptedEmail({
       userName,
       userRole,
     });

@@ -841,3 +841,41 @@ export function generateWelcomeEmail(data: {
   });
 }
 
+export function generateRequestAcceptedEmail(data: {
+  userName: string;
+  userRole: string;
+}): string {
+  const content = `
+    <!-- Hero Section con fondo celeste -->
+    <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #e0f2fe; padding: 15px 40px;">
+      <tr>
+        <td width="60%" align="left">
+          <h2 class="title" style="color: #004aad; margin: 0 0 5px 0;">¡Solicitud Aceptada!</h2>
+          <p class="subtitle" style="color: #004aad; opacity: 0.8; font-size: 14px; margin: 0;">Tu cuenta ha sido verificada con éxito.</p>
+        </td>
+        <td width="40%" align="right">
+          <div class="illustration">
+            <img src="${getImageBase64('solicitud-aceptada.png')}" width="140" alt="Aceptada" />
+          </div>
+        </td>
+      </tr>
+    </table>
+
+    <div style="padding: 40px;">
+      <p>Hola <strong>${data.userName}</strong> 👋,</p>
+      <p>Nos complace informarte que tu solicitud para unirte a <strong>DocaLink</strong> como <strong>${data.userRole}</strong> ha sido revisada y aceptada por nuestro equipo administrativo.</p>
+      <p>Ya puedes acceder a tu panel de control para completar tu perfil, configurar tus servicios y empezar a recibir pacientes.</p>
+      
+      <div align="center" style="margin: 35px 0;">
+        <a href="https://docalink.com" style="display: inline-block; background-color: #004aad; color: #ffffff !important; padding: 16px 35px; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 16px;">Ir al Panel de Control</a>
+      </div>
+    </div>
+  `;
+
+  return generateEmailTemplateBase({
+    title: 'Solicitud Aceptada',
+    headerColor: '#004aad',
+    footerColor: '#004aad',
+    content,
+  });
+}
