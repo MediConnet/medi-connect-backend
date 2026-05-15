@@ -141,26 +141,37 @@ function generateEmailTemplateBase(options: {
             
             <!-- Header -->
             <tr>
-              <td align="center" style="padding: 30px 20px; border-bottom: 1px solid #f1f5f9;">
-                <img src="${logoDataUri}" alt="DocaLink" width="180" style="display: block;" />
+              <td align="center" style="padding: 20px; border-bottom: 1px solid #f1f5f9;">
+                <table border="0" cellspacing="0" cellpadding="0">
+                  <tr>
+                    <td align="left" style="padding-right: 15px;">
+                      <img src="${logoDataUri}" alt="DocaLink" width="60" style="display: block;" />
+                    </td>
+                    <td align="left" style="font-family: Arial, sans-serif;">
+                      <span style="font-size: 32px; font-weight: 800; color: ${primaryColor}; display: block; line-height: 1;">DocaLink</span>
+                      <span style="font-size: 14px; color: ${primaryColor}; opacity: 0.8;">Conecta tu salud</span>
+                    </td>
+                  </tr>
+                </table>
               </td>
             </tr>
 
             <!-- Contenido Principal -->
             <tr>
-              <td style="padding: 40px 30px; font-family: Arial, sans-serif; color: #334155;">
+              <td style="padding: 0; font-family: Arial, sans-serif; color: #334155;">
                 <style>
-                  .title { color: ${primaryColor}; font-size: 28px; font-weight: 800; margin: 0 0 10px 0; text-align: center; }
-                  .subtitle { color: #64748b; font-size: 16px; margin: 0 0 30px 0; text-align: center; }
-                  .illustration { text-align: center; margin-bottom: 30px; }
-                  .illustration img { max-width: 250px; height: auto; }
-                  .button-container { text-align: center; margin: 35px 0; }
-                  .button { display: inline-block; background-color: ${primaryColor}; color: #ffffff !important; padding: 16px 35px; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 16px; }
-                  .details-box { background-color: #f8fafc; border-radius: 12px; padding: 20px; margin: 25px 0; border: 1px solid #e2e8f0; }
+                  .title { color: ${primaryColor}; font-size: 24px; font-weight: 800; margin: 0 0 10px 0; text-align: left; }
+                  .subtitle { color: #64748b; font-size: 14px; margin: 0; text-align: left; }
+                  .illustration { text-align: right; }
+                  .illustration img { max-width: 160px; height: auto; }
+                  .button-container { padding: 35px 30px; text-align: left; }
+                  .button-link { color: #004aad; font-weight: 700; font-size: 16px; text-decoration: underline; }
+                  .details-box { background-color: #f8fafc; border-radius: 12px; padding: 20px; margin: 25px 30px; border: 1px solid #e2e8f0; }
                   .detail-row { margin-bottom: 10px; font-size: 13px; clear: both; }
                   .detail-label { color: #64748b; font-weight: 500; float: left; }
                   .detail-value { color: #1e293b; font-weight: 600; float: right; }
-                  .footer-note { text-align: center; color: #94a3b8; font-size: 13px; margin-top: 20px; }
+                  .footer-note { text-align: left; color: #94a3b8; font-size: 13px; margin-top: 20px; }
+                  .inner-padding { padding: 40px 30px; }
                 </style>
                 ${options.content}
               </td>
@@ -417,22 +428,32 @@ export function generatePasswordResetEmail(data: {
   const resetLink = `${frontendUrl}/reset-password?token=${data.resetToken}`;
   
   const content = `
-    <h2 class="title">Recupera tu contraseña</h2>
-    <p class="subtitle">Solicitamos restablecer tu contraseña en DocaLink.</p>
-    
-    <div class="illustration">
-      <img src="${getImageBase64('restablecer-contraseña.png')}" width="200" alt="Recuperar" />
-    </div>
+    <!-- Hero Section con fondo celeste -->
+    <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #e0f2fe; padding: 40px 30px;">
+      <tr>
+        <td width="60%" align="left">
+          <h2 class="title">Recupera tu contraseña</h2>
+          <p class="subtitle">Solicitamos restablecer tu contraseña en DocaLink.</p>
+        </td>
+        <td width="40%" align="right">
+          <div class="illustration">
+            <img src="${getImageBase64('restablecer-contraseña.png')}" width="160" alt="Recuperar" />
+          </div>
+        </td>
+      </tr>
+    </table>
 
-    <p>Hola, <strong>${data.userName}</strong> 👋</p>
-    <p>Recibimos una solicitud para restablecer la contraseña de tu cuenta en DocaLink.</p>
-    <p>Para continuar, haz clic en el siguiente botón:</p>
-    
-    <div class="button-container">
-      <a href="${resetLink}" class="button">🔒 Restablecer mi contraseña</a>
-    </div>
+    <div class="inner-padding">
+      <p>Hola, <strong>${data.userName}</strong> 👋</p>
+      <p>Recibimos una solicitud para restablecer la contraseña de tu cuenta en DocaLink.</p>
+      <p>Para continuar, haz clic en el siguiente botón:</p>
+      
+      <div align="center" style="margin: 35px 0;">
+        <a href="${resetLink}" style="display: inline-block; background-color: #004aad; color: #ffffff !important; padding: 16px 35px; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 16px;">Restablecer mi contraseña</a>
+      </div>
 
-    <p class="footer-note">Este enlace expirará en 60 minutos por seguridad.</p>
+      <p class="footer-note" style="text-align: center;">Este enlace expirará en 60 minutos por seguridad.</p>
+    </div>
   `;
   
   return generateEmailTemplateBase({
@@ -452,22 +473,32 @@ export function generatePasswordUpdatedEmail(data: {
   device?: string;
 }): string {
   const content = `
-    <h2 class="title" style="color: #108369;">¡Tu contraseña ha sido actualizada con éxito!</h2>
-    <p class="subtitle">Tu cuenta en DocaLink está segura.</p>
-    
-    <div class="illustration">
-      <img src="${getImageBase64('contraseña-actualizada.png')}" width="200" alt="Seguro" />
-    </div>
+    <!-- Hero Section con fondo verde -->
+    <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f0fdf4; padding: 40px 30px;">
+      <tr>
+        <td width="60%" align="left">
+          <h2 class="title" style="color: #108369;">¡Tu contraseña ha sido actualizada con éxito!</h2>
+          <p class="subtitle">Tu cuenta en DocaLink está segura.</p>
+        </td>
+        <td width="40%" align="right">
+          <div class="illustration">
+            <img src="${getImageBase64('contraseña-actualizada.png')}" width="160" alt="Seguro" />
+          </div>
+        </td>
+      </tr>
+    </table>
 
-    <p>Hola, <strong>${data.userName}</strong> 👋</p>
-    <p>Te informamos que tu contraseña fue actualizada correctamente. Si no realizaste este cambio, te recomendamos contactar a nuestro soporte de inmediato.</p>
-    
-    <div class="details-box">
-      <p class="details-title">Detalles del cambio</p>
-      <div class="detail-row"><span class="detail-label">📅 Fecha:</span> <span class="detail-value">${data.date || new Date().toLocaleDateString()}</span></div>
-      <div class="detail-row"><span class="detail-label">🕐 Hora:</span> <span class="detail-value">${data.time || new Date().toLocaleTimeString()}</span></div>
-      <div class="detail-row"><span class="detail-label">📍 Ubicación aproximada:</span> <span class="detail-value">${data.location || 'No disponible'}</span></div>
-      <div class="detail-row"><span class="detail-label">💻 Dispositivo:</span> <span class="detail-value">${data.device || 'Navegador web'}</span></div>
+    <div class="inner-padding">
+      <p>Hola, <strong>${data.userName}</strong> 👋</p>
+      <p>Te informamos que tu contraseña fue actualizada correctamente. Si no realizaste este cambio, te recomendamos contactar a nuestro soporte de inmediato.</p>
+      
+      <div class="details-box">
+        <p class="details-title">Detalles del cambio</p>
+        <div class="detail-row"><span class="detail-label">📅 Fecha:</span> <span class="detail-value">${data.date || 'Hoy'}</span></div>
+        <div class="detail-row"><span class="detail-label">🕐 Hora:</span> <span class="detail-value">${data.time || 'Recientemente'}</span></div>
+        <div class="detail-row"><span class="detail-label">📍 Ubicación:</span> <span class="detail-value">${data.location || 'No disponible'}</span></div>
+        <div class="detail-row"><span class="detail-label">💻 Dispositivo:</span> <span class="detail-value" style="font-size: 11px;">${data.device || 'Navegador web'}</span></div>
+      </div>
     </div>
   `;
   
