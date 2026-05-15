@@ -83,39 +83,23 @@ export async function sendEmail(options: EmailOptions): Promise<boolean> {
 }
 
 /**
- * Obtiene una imagen en base64 para usar en emails
- * Busca primero en el directorio local del backend y luego en los assets de la app móvil
+ * Obtiene la URL de una imagen para usar en emails
+ * Se usan URLs de Cloudinary para asegurar la carga en clientes como Gmail
  */
 function getImageBase64(imageName: string): string {
-  try {
-    // 1. Intentar en el directorio público del backend
-    const backendPath = path.join(process.cwd(), 'public', 'images', imageName);
-    
-    // 2. Intentar en los assets de la app móvil (asumiendo estructura de carpetas compartida)
-    const appAssetsPath = path.join(process.cwd(), '..', 'medi-conecct-app', 'assets', imageName);
-    
-    let targetPath = '';
-    
-    if (fs.existsSync(backendPath)) {
-      targetPath = backendPath;
-    } else if (fs.existsSync(appAssetsPath)) {
-      targetPath = appAssetsPath;
-    }
+  const CLOUDINARY_URLS: Record<string, string> = {
+    'splash.png': 'https://res.cloudinary.com/dws7ywsvy/image/upload/v1778813439/docalink/emails/docalink_email_splash.png',
+    'restablecer-contraseña.jfif': 'https://res.cloudinary.com/dws7ywsvy/image/upload/v1778813440/docalink/emails/docalink_email_restablecer-contrase%C3%B1a.jpg',
+    'contraseña-actualizada.jfif': 'https://res.cloudinary.com/dws7ywsvy/image/upload/v1778813440/docalink/emails/docalink_email_contrase%C3%B1a-actualizada.jpg',
+    'soporte-contacto.jfif': 'https://res.cloudinary.com/dws7ywsvy/image/upload/v1778813441/docalink/emails/docalink_email_soporte-contacto.jpg'
+  };
 
-    if (targetPath) {
-      const imageBuffer = fs.readFileSync(targetPath);
-      const base64Image = imageBuffer.toString('base64');
-      const ext = path.extname(targetPath).substring(1).replace('jfif', 'jpeg');
-      return `data:image/${ext};base64,${base64Image}`;
-    } else {
-      console.warn(`⚠️ [EMAIL] Imagen no encontrada: ${imageName}`);
-      // Fallback a una URL genérica si no existe localmente
-      return `https://docalink.com/assets/${imageName}`;
-    }
-  } catch (error: any) {
-    console.error(`❌ [EMAIL] Error al leer imagen ${imageName}:`, error.message);
-    return '';
+  if (CLOUDINARY_URLS[imageName]) {
+    return CLOUDINARY_URLS[imageName];
   }
+
+  // Fallback para otras imágenes
+  return `https://docalink.com/assets/${imageName}`;
 }
 
 /**
@@ -145,102 +129,98 @@ function generateEmailTemplateBase(options: {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <style>
-    body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; line-height: 1.6; color: #334155; margin: 0; padding: 0; background-color: #f8fafc; }
-    .main-container { max-width: 600px; margin: 20px auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
-    .header { padding: 30px 20px; text-align: center; background-color: #ffffff; border-bottom: 1px solid #f1f5f9; }
-    .header img { max-width: 180px; height: auto; }
-    .content { padding: 40px 30px; }
-    .title { color: ${primaryColor}; font-size: 28px; font-weight: 800; margin: 0 0 10px 0; text-align: center; }
-    .subtitle { color: #64748b; font-size: 16px; margin: 0 0 30px 0; text-align: center; }
-    .illustration { text-align: center; margin-bottom: 30px; }
-    .illustration img { max-width: 200px; height: auto; }
-    .button-container { text-align: center; margin: 35px 0; }
-    .button { display: inline-block; background-color: ${primaryColor}; color: #ffffff !important; padding: 16px 35px; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 16px; box-shadow: 0 4px 6px rgba(0, 74, 173, 0.2); }
-    .footer-note { text-align: center; color: #94a3b8; font-size: 13px; margin-top: 20px; }
-    
-    /* Sección de Ayuda */
-    .help-section { display: flex; justify-content: space-between; padding: 30px; border-top: 1px solid #f1f5f9; background-color: #ffffff; }
-    .help-item { flex: 1; text-align: center; padding: 0 10px; }
-    .help-icon { font-size: 24px; margin-bottom: 10px; display: block; }
-    .help-text { font-size: 13px; color: #64748b; margin: 0; }
-    .help-link { color: ${primaryColor}; font-weight: 600; text-decoration: none; font-size: 13px; }
-    
-    /* Redes Sociales */
-    .social-section { text-align: center; padding: 20px; background-color: #ffffff; border-top: 1px solid #f1f5f9; }
-    .social-title { font-size: 14px; font-weight: 700; color: #1e293b; margin-bottom: 15px; }
-    .social-icons { margin-bottom: 10px; }
-    .social-icon { display: inline-block; margin: 0 8px; width: 32px; height: 32px; }
-    
-    /* Footer Final */
-    .final-footer { background-color: ${footerColor}; color: #ffffff; padding: 25px 30px; }
-    .footer-content { display: flex; justify-content: space-between; align-items: center; }
-    .footer-logo { max-width: 120px; filter: brightness(0) invert(1); }
-    .footer-info { font-size: 11px; opacity: 0.9; text-align: right; }
-    
-    /* Caja de Detalles */
-    .details-box { background-color: #f8fafc; border-radius: 12px; padding: 20px; margin: 25px 0; border: 1px solid #e2e8f0; }
-    .details-title { font-weight: 700; color: #108369; font-size: 14px; margin-bottom: 15px; }
-    .detail-row { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 13px; }
-    .detail-label { color: #64748b; font-weight: 500; }
-    .detail-value { color: #1e293b; font-weight: 600; }
-
-    @media only screen and (max-width: 480px) {
-      .help-section { flex-direction: column; }
-      .help-item { margin-bottom: 20px; }
-      .footer-content { flex-direction: column; text-align: center; }
-      .footer-info { text-align: center; margin-top: 15px; }
-    }
-  </style>
 </head>
-<body>
-  <div class="main-container">
-    <div class="header">
-      <img src="${logoDataUri}" alt="DocaLink" />
-    </div>
-    
-    <div class="content">
-      ${options.content}
-    </div>
+<body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: Arial, sans-serif;">
+  <center>
+    <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f8fafc; padding: 20px 0;">
+      <tr>
+        <td align="center">
+          <!-- Contenedor Principal -->
+          <table width="600" border="0" cellspacing="0" cellpadding="0" style="background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+            
+            <!-- Header -->
+            <tr>
+              <td align="center" style="padding: 30px 20px; border-bottom: 1px solid #f1f5f9;">
+                <img src="${logoDataUri}" alt="DocaLink" width="180" style="display: block;" />
+              </td>
+            </tr>
 
-    <div class="help-section">
-      <div class="help-item">
-        <img src="${getImageBase64('soporte-contacto.jfif')}" width="50" style="margin-bottom: 10px; border-radius: 50%;" /><br>
-        <p class="help-text"><strong>¿Necesitas ayuda?</strong><br>Estamos aquí para ti.</p>
-      </div>
-      <div class="help-item">
-        <span class="help-icon">✉️</span>
-        <p class="help-text">Escríbenos a<br><a href="mailto:docalink1@gmail.com" class="help-link">docalink1@gmail.com</a></p>
-      </div>
-    </div>
+            <!-- Contenido Principal -->
+            <tr>
+              <td style="padding: 40px 30px; font-family: Arial, sans-serif; color: #334155;">
+                <style>
+                  .title { color: ${primaryColor}; font-size: 28px; font-weight: 800; margin: 0 0 10px 0; text-align: center; }
+                  .subtitle { color: #64748b; font-size: 16px; margin: 0 0 30px 0; text-align: center; }
+                  .illustration { text-align: center; margin-bottom: 30px; }
+                  .illustration img { max-width: 250px; height: auto; }
+                  .button-container { text-align: center; margin: 35px 0; }
+                  .button { display: inline-block; background-color: ${primaryColor}; color: #ffffff !important; padding: 16px 35px; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 16px; }
+                  .details-box { background-color: #f8fafc; border-radius: 12px; padding: 20px; margin: 25px 0; border: 1px solid #e2e8f0; }
+                  .detail-row { margin-bottom: 10px; font-size: 13px; clear: both; }
+                  .detail-label { color: #64748b; font-weight: 500; float: left; }
+                  .detail-value { color: #1e293b; font-weight: 600; float: right; }
+                  .footer-note { text-align: center; color: #94a3b8; font-size: 13px; margin-top: 20px; }
+                </style>
+                ${options.content}
+              </td>
+            </tr>
 
-    <div class="social-section">
-      <p class="social-title">Síguenos en nuestras redes sociales</p>
-      <div class="social-icons">
-        <!-- Íconos simplificados (en producción usarían imágenes reales) -->
-        <a href="#"><img src="https://cdn-icons-png.flaticon.com/512/124/124010.png" width="24" style="margin: 0 5px;" /></a>
-        <a href="#"><img src="https://cdn-icons-png.flaticon.com/512/174/174855.png" width="24" style="margin: 0 5px;" /></a>
-        <a href="#"><img src="https://cdn-icons-png.flaticon.com/512/3046/3046121.png" width="24" style="margin: 0 5px;" /></a>
-        <a href="#"><img src="https://cdn-icons-png.flaticon.com/512/1384/1384060.png" width="24" style="margin: 0 5px;" /></a>
-      </div>
-    </div>
+            <!-- Sección de Ayuda -->
+            <tr>
+              <td align="center" style="border-top: 1px solid #f1f5f9; background-color: #ffffff; padding: 30px 20px;">
+                <table width="100%" border="0" cellspacing="0" cellpadding="0">
+                  <tr>
+                    <td width="50%" align="center" style="border-right: 1px solid #f1f5f9; padding-right: 10px;">
+                      <img src="${getImageBase64('soporte-contacto.jfif')}" width="50" height="50" style="border-radius: 50%; display: block; margin-bottom: 10px;" />
+                      <p style="margin: 0; font-size: 13px; color: #64748b; font-family: Arial, sans-serif;"><strong>¿Necesitas ayuda?</strong><br>Estamos aquí para ti.</p>
+                    </td>
+                    <td width="50%" align="center" style="padding-left: 10px;">
+                      <span style="font-size: 24px; display: block; margin-bottom: 10px;">✉️</span>
+                      <p style="margin: 0; font-size: 13px; color: #64748b; font-family: Arial, sans-serif;">Escríbenos a<br><a href="mailto:docalink1@gmail.com" style="color: ${primaryColor}; font-weight: 600; text-decoration: none;">docalink1@gmail.com</a></p>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
 
-    <div class="final-footer">
-      <table width="100%" border="0" cellspacing="0" cellpadding="0">
-        <tr>
-          <td align="left" style="color: white; font-size: 14px; font-weight: bold;">
-            DocaLink<br><span style="font-size: 10px; font-weight: normal; opacity: 0.8;">Conecta tu salud</span>
-          </td>
-          <td align="center" style="color: white; font-size: 10px; opacity: 0.8;">
-            Tu salud, conectada<br>en un solo lugar.
-          </td>
-          <td align="right" style="color: white; font-size: 10px; opacity: 0.8;">
-            Soporte:<br>docalink1@gmail.com
-          </td>
-        </tr>
-      </table>
-    </div>
-  </div>
+            <!-- Redes Sociales -->
+            <tr>
+              <td align="center" style="border-top: 1px solid #f1f5f9; padding: 25px 20px;">
+                <p style="font-size: 14px; font-weight: 700; color: #1e293b; margin: 0 0 15px 0; font-family: Arial, sans-serif;">Síguenos en nuestras redes sociales</p>
+                <table border="0" cellspacing="0" cellpadding="0">
+                  <tr>
+                    <td style="padding: 0 8px;"><a href="#"><img src="https://cdn-icons-png.flaticon.com/512/124/124010.png" width="28" height="28" alt="FB" /></a></td>
+                    <td style="padding: 0 8px;"><a href="#"><img src="https://cdn-icons-png.flaticon.com/512/174/174855.png" width="28" height="28" alt="IG" /></a></td>
+                    <td style="padding: 0 8px;"><a href="#"><img src="https://cdn-icons-png.flaticon.com/512/3046/3046121.png" width="28" height="28" alt="TK" /></a></td>
+                    <td style="padding: 0 8px;"><a href="#"><img src="https://cdn-icons-png.flaticon.com/512/1384/1384060.png" width="28" height="28" alt="YT" /></a></td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <!-- Footer Azul/Verde -->
+            <tr>
+              <td style="background-color: ${footerColor}; padding: 25px 30px; color: #ffffff;">
+                <table width="100%" border="0" cellspacing="0" cellpadding="0">
+                  <tr>
+                    <td align="left" style="font-family: Arial, sans-serif; font-size: 14px; font-weight: bold;">
+                      DocaLink<br><span style="font-size: 10px; font-weight: normal; opacity: 0.8;">Conecta tu salud</span>
+                    </td>
+                    <td align="center" style="font-family: Arial, sans-serif; font-size: 10px; opacity: 0.8;">
+                      Tu salud, conectada<br>en un solo lugar.
+                    </td>
+                    <td align="right" style="font-family: Arial, sans-serif; font-size: 10px; opacity: 0.8;">
+                      Soporte:<br>docalink1@gmail.com
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </center>
 </body>
 </html>
   `;
