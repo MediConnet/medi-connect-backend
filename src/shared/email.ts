@@ -171,7 +171,7 @@ function generateEmailTemplateBase(options: {
                   .detail-label { color: #64748b; font-weight: 500; float: left; }
                   .detail-value { color: #1e293b; font-weight: 600; float: right; }
                   .footer-note { text-align: left; color: #94a3b8; font-size: 13px; margin-top: 20px; }
-                  .inner-padding { padding: 40px 30px; }
+                  .inner-padding { padding: 40px 40px; }
                 </style>
                 ${options.content}
               </td>
@@ -429,11 +429,11 @@ export function generatePasswordResetEmail(data: {
   
   const content = `
     <!-- Hero Section con fondo celeste -->
-    <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #e0f2fe; padding: 40px 30px;">
+    <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #e0f2fe; padding: 15px 40px;">
       <tr>
         <td width="60%" align="left">
-          <h2 class="title">Recupera tu contraseña</h2>
-          <p class="subtitle">Solicitamos restablecer tu contraseña en DocaLink.</p>
+          <h2 class="title" style="color: #004aad; margin: 0 0 5px 0;">Recupera tu contraseña</h2>
+          <p class="subtitle" style="color: #004aad; opacity: 0.8; font-size: 14px; margin: 0;">Solicitamos restablecer tu contraseña en DocaLink.</p>
         </td>
         <td width="40%" align="right">
           <div class="illustration">
@@ -474,11 +474,11 @@ export function generatePasswordUpdatedEmail(data: {
 }): string {
   const content = `
     <!-- Hero Section con fondo verde -->
-    <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f0fdf4; padding: 40px 30px;">
+    <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f0fdf4; padding: 15px 40px;">
       <tr>
         <td width="60%" align="left">
-          <h2 class="title" style="color: #108369;">¡Tu contraseña ha sido actualizada con éxito!</h2>
-          <p class="subtitle">Tu cuenta en DocaLink está segura.</p>
+          <h2 class="title" style="color: #108369; margin: 0 0 5px 0;">¡Tu contraseña ha sido actualizada con éxito!</h2>
+          <p class="subtitle" style="color: #108369; opacity: 0.8; font-size: 14px; margin: 0;">Tu cuenta en DocaLink está segura.</p>
         </td>
         <td width="40%" align="right">
           <div class="illustration">
@@ -492,8 +492,8 @@ export function generatePasswordUpdatedEmail(data: {
       <p>Hola, <strong>${data.userName}</strong> 👋</p>
       <p>Te informamos que tu contraseña fue actualizada correctamente. Si no realizaste este cambio, te recomendamos contactar a nuestro soporte de inmediato.</p>
       
-      <div class="details-box">
-        <p class="details-title">Detalles del cambio</p>
+      <div class="details-box" style="background-color: #f0fdf4; border: 1px solid #dcfce7; margin: 25px 0;">
+        <p class="details-title" style="color: #108369; font-weight: 700; margin-bottom: 15px; text-align: left;">Detalles del cambio</p>
         <div class="detail-row"><span class="detail-label">📅 Fecha:</span> <span class="detail-value">${data.date || 'Hoy'}</span></div>
         <div class="detail-row"><span class="detail-label">🕐 Hora:</span> <span class="detail-value">${data.time || 'Recientemente'}</span></div>
         <div class="detail-row"><span class="detail-label">📍 Ubicación:</span> <span class="detail-value">${data.location || 'No disponible'}</span></div>
