@@ -158,7 +158,7 @@ function generateEmailTemplateBase(options: {
 
             <!-- Contenido Principal -->
             <tr>
-              <td style="padding: 0; font-family: Arial, sans-serif; color: #334155;">
+              <td style="font-family: Arial, sans-serif; color: #334155;">
                 <style>
                   .title { color: ${primaryColor}; font-size: 24px; font-weight: 800; margin: 0 0 10px 0; text-align: left; }
                   .subtitle { color: #64748b; font-size: 14px; margin: 0; text-align: left; }
@@ -166,14 +166,15 @@ function generateEmailTemplateBase(options: {
                   .illustration img { max-width: 160px; height: auto; }
                   .button-container { padding: 35px 30px; text-align: left; }
                   .button-link { color: #004aad; font-weight: 700; font-size: 16px; text-decoration: underline; }
-                  .details-box { background-color: #f8fafc; border-radius: 12px; padding: 20px; margin: 25px 30px; border: 1px solid #e2e8f0; }
-                  .detail-row { margin-bottom: 10px; font-size: 13px; clear: both; }
-                  .detail-label { color: #64748b; font-weight: 500; float: left; }
-                  .detail-value { color: #1e293b; font-weight: 600; float: right; }
-                  .footer-note { text-align: left; color: #94a3b8; font-size: 13px; margin-top: 20px; }
-                  .inner-padding { padding: 40px 40px; }
+                  .details-box { background-color: #f8fafc; border-radius: 12px; padding: 20px; border: 1px solid #e2e8f0; }
+                  .detail-row { margin-bottom: 10px; font-size: 13px; }
+                  .detail-label { color: #64748b; font-weight: 500; }
+                  .detail-value { color: #1e293b; font-weight: 600; text-align: right; }
+                  .footer-note { color: #94a3b8; font-size: 13px; margin-top: 20px; }
                 </style>
-                ${options.content}
+                <div style="padding: 0;">
+                  ${options.content}
+                </div>
               </td>
             </tr>
 
@@ -443,7 +444,7 @@ export function generatePasswordResetEmail(data: {
       </tr>
     </table>
 
-    <div class="inner-padding">
+    <div style="padding: 40px;">
       <p>Hola, <strong>${data.userName}</strong> 👋</p>
       <p>Recibimos una solicitud para restablecer la contraseña de tu cuenta en DocaLink.</p>
       <p>Para continuar, haz clic en el siguiente botón:</p>
@@ -474,7 +475,7 @@ export function generatePasswordUpdatedEmail(data: {
 }): string {
   const content = `
     <!-- Hero Section con fondo verde -->
-    <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f0fdf4; padding: 15px 40px;">
+    <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f0fdf4; padding: 10px 40px;">
       <tr>
         <td width="60%" align="left">
           <h2 class="title" style="color: #108369; margin: 0 0 5px 0;">¡Tu contraseña ha sido actualizada con éxito!</h2>
@@ -488,17 +489,46 @@ export function generatePasswordUpdatedEmail(data: {
       </tr>
     </table>
 
-    <div class="inner-padding">
+    <div style="padding: 40px;">
       <p>Hola, <strong>${data.userName}</strong> 👋</p>
       <p>Te informamos que tu contraseña fue actualizada correctamente. Si no realizaste este cambio, te recomendamos contactar a nuestro soporte de inmediato.</p>
       
-      <div class="details-box" style="background-color: #f0fdf4; border: 1px solid #dcfce7; margin: 25px 0;">
-        <p class="details-title" style="color: #108369; font-weight: 700; margin-bottom: 15px; text-align: left;">Detalles del cambio</p>
-        <div class="detail-row"><span class="detail-label">📅 Fecha:</span> <span class="detail-value">${data.date || 'Hoy'}</span></div>
-        <div class="detail-row"><span class="detail-label">🕐 Hora:</span> <span class="detail-value">${data.time || 'Recientemente'}</span></div>
-        <div class="detail-row"><span class="detail-label">📍 Ubicación:</span> <span class="detail-value">${data.location || 'No disponible'}</span></div>
-        <div class="detail-row"><span class="detail-label">💻 Dispositivo:</span> <span class="detail-value" style="font-size: 11px;">${data.device || 'Navegador web'}</span></div>
-      </div>
+      <center>
+        <table width="100%" border="0" cellspacing="0" cellpadding="0" class="details-box" style="background-color: #f0fdf4; border: 1px solid #dcfce7; margin: 25px 0; max-width: 450px;">
+          <tr>
+            <td style="padding: 20px;">
+              <p style="color: #108369; font-weight: 700; margin: 0 0 15px 0; font-size: 14px;">Detalles del cambio</p>
+              
+              <table width="100%" border="0" cellspacing="0" cellpadding="0">
+                <!-- Fila Fecha -->
+                <tr>
+                  <td width="30" style="padding-bottom: 10px;"><img src="https://cdn-icons-png.flaticon.com/512/2838/2838779.png" width="18" style="filter: hue-rotate(100deg);" /></td>
+                  <td style="padding-bottom: 10px; font-size: 13px; color: #64748b;">Fecha:</td>
+                  <td align="right" style="padding-bottom: 10px; font-size: 13px; color: #1e293b; font-weight: 600;">${data.date || 'Hoy'}</td>
+                </tr>
+                <!-- Fila Hora -->
+                <tr>
+                  <td width="30" style="padding-bottom: 10px;"><img src="https://cdn-icons-png.flaticon.com/512/2088/2088617.png" width="18" style="filter: hue-rotate(100deg);" /></td>
+                  <td style="padding-bottom: 10px; font-size: 13px; color: #64748b;">Hora:</td>
+                  <td align="right" style="padding-bottom: 10px; font-size: 13px; color: #1e293b; font-weight: 600;">${data.time || 'Recientemente'}</td>
+                </tr>
+                <!-- Fila Ubicación -->
+                <tr>
+                  <td width="30" style="padding-bottom: 10px;"><img src="https://cdn-icons-png.flaticon.com/512/684/684908.png" width="18" style="filter: hue-rotate(100deg);" /></td>
+                  <td style="padding-bottom: 10px; font-size: 13px; color: #64748b;">Ubicación:</td>
+                  <td align="right" style="padding-bottom: 10px; font-size: 13px; color: #1e293b; font-weight: 600;">${data.location || 'No disponible'}</td>
+                </tr>
+                <!-- Fila Dispositivo -->
+                <tr>
+                  <td width="30"><img src="https://cdn-icons-png.flaticon.com/512/3039/3039399.png" width="18" style="filter: hue-rotate(100deg);" /></td>
+                  <td style="font-size: 13px; color: #64748b;">Dispositivo:</td>
+                  <td align="right" style="font-size: 11px; color: #1e293b; font-weight: 600; max-width: 150px;">${data.device || 'Navegador web'}</td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </center>
     </div>
   `;
   
