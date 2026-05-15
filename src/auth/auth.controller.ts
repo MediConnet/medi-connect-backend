@@ -1379,7 +1379,10 @@ export async function forgotPassword(
       console.log(
         `⚠️ [FORGOT-PASSWORD] Intento con email no registrado: ${body.email}`,
       );
-      return successResponse(standardResponse);
+      return errorResponse(
+        "El correo ingresado no está registrado en nuestra plataforma. Por favor, verifica los datos e intenta nuevamente.",
+        404,
+      );
     }
 
     const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
@@ -1569,6 +1572,45 @@ export async function resetPassword(
     console.log(
       `✅ [RESET-PASSWORD] Contraseña actualizada exitosamente para: ${user.email}`,
     );
+
+    // Enviar email de confirmación (asíncrono)
+    try {
+      const { sendEmail } = await import("../shared/email-adapter");
+      const { generatePasswordUpdatedEmail } = await import("../shared/email");
+
+      let userName = "Usuario";
+      if (user.role === enum_roles.patient) {
+        const patient = await prisma.patients.findFirst({
+          where: { user_id: user.id },
+          select: { full_name: true },
+        });
+        if (patient?.full_name) userName = patient.full_name;
+      } else if (user.role === enum_roles.provider) {
+        const provider = await prisma.providers.findFirst({
+          where: { user_id: user.id },
+          select: { commercial_name: true },
+        });
+        if (provider?.commercial_name) userName = provider.commercial_name;
+      }
+
+      const now = new Date();
+      const date = now.toLocaleDateString('es-EC', { day: 'numeric', month: 'long', year: 'numeric' });
+      const time = now.toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit', hour12: true });
+      const device = getDeviceInfo(event);
+
+      sendEmail({
+        to: user.email,
+        subject: "Tu contraseña ha sido actualizada - DOCALINK",
+        html: generatePasswordUpdatedEmail({ 
+          userName,
+          date,
+          time,
+          device
+        }),
+      });
+    } catch (emailError) {
+      console.error("⚠️ [RESET-PASSWORD] No se pudo enviar el correo de confirmación:", emailError);
+    }
 
     return successResponse({
       success: true,

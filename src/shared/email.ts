@@ -83,58 +83,60 @@ export async function sendEmail(options: EmailOptions): Promise<boolean> {
 }
 
 /**
- * Obtiene el logo de DOCALINK en base64 para usar en emails
- * Esto garantiza que la imagen siempre se muestre sin depender de URLs externas
+ * Obtiene una imagen en base64 para usar en emails
+ * Busca primero en el directorio local del backend y luego en los assets de la app móvil
  */
-function getLogoBase64(): string {
+function getImageBase64(imageName: string): string {
   try {
-    const logoPath = path.join(process.cwd(), 'public', 'images', 'docalink-logo.png');
+    // 1. Intentar en el directorio público del backend
+    const backendPath = path.join(process.cwd(), 'public', 'images', imageName);
     
-    // Verificar si el archivo existe
-    if (fs.existsSync(logoPath)) {
-      const imageBuffer = fs.readFileSync(logoPath);
+    // 2. Intentar en los assets de la app móvil (asumiendo estructura de carpetas compartida)
+    const appAssetsPath = path.join(process.cwd(), '..', 'medi-conecct-app', 'assets', imageName);
+    
+    let targetPath = '';
+    
+    if (fs.existsSync(backendPath)) {
+      targetPath = backendPath;
+    } else if (fs.existsSync(appAssetsPath)) {
+      targetPath = appAssetsPath;
+    }
+
+    if (targetPath) {
+      const imageBuffer = fs.readFileSync(targetPath);
       const base64Image = imageBuffer.toString('base64');
-      return `data:image/png;base64,${base64Image}`;
+      const ext = path.extname(targetPath).substring(1).replace('jfif', 'jpeg');
+      return `data:image/${ext};base64,${base64Image}`;
     } else {
-      console.warn(`⚠️ [EMAIL] Logo no encontrado en: ${logoPath}`);
-      // Fallback: retornar URL si no se encuentra el archivo
-      const baseUrl = process.env.FILE_BASE_URL || 
-                      process.env.FRONTEND_URL?.replace('/api', '') || 
-                      `http://localhost:${process.env.PORT || 3000}`;
-      return `${baseUrl}/public/images/docalink-logo.png`;
+      console.warn(`⚠️ [EMAIL] Imagen no encontrada: ${imageName}`);
+      // Fallback a una URL genérica si no existe localmente
+      return `https://docalink.com/assets/${imageName}`;
     }
   } catch (error: any) {
-    console.error(`❌ [EMAIL] Error al leer logo:`, error.message);
-    // Fallback a URL
-    const baseUrl = process.env.FILE_BASE_URL || 
-                    process.env.FRONTEND_URL?.replace('/api', '') || 
-                    `http://localhost:${process.env.PORT || 3000}`;
-    return `${baseUrl}/public/images/docalink-logo.png`;
+    console.error(`❌ [EMAIL] Error al leer imagen ${imageName}:`, error.message);
+    return '';
   }
 }
 
 /**
- * Genera el header del email con el logo de DOCALINK
+ * Shorthand para obtener el logo principal
  */
-function generateEmailHeader(title: string, headerColor: string = '#14b8a6'): string {
-  const logoDataUri = getLogoBase64();
-  return `
-    <div class="header" style="background: linear-gradient(135deg, ${headerColor} 0%, ${headerColor}dd 100%); color: white; padding: 30px 20px; text-align: center;">
-      <img src="${logoDataUri}" alt="DOCALINK" style="max-width: 180px; height: auto; margin-bottom: 15px; display: block; margin-left: auto; margin-right: auto;" />
-      <h1 style="margin: 0; font-size: 24px; font-weight: 600;">${title}</h1>
-    </div>
-  `;
+function getLogoBase64(): string {
+  return getImageBase64('splash.png');
 }
 
 /**
- * Plantilla base para emails con logo
+ * Plantilla base para emails con el nuevo diseño de DocaLink
  */
 function generateEmailTemplateBase(options: {
   title: string;
   headerColor?: string;
+  footerColor?: string;
   content: string;
+  showSocial?: boolean;
 }): string {
-  const headerColor = options.headerColor || '#14b8a6';
+  const primaryColor = options.headerColor || '#004aad';
+  const footerColor = options.footerColor || primaryColor;
   const logoDataUri = getLogoBase64();
   
   return `
@@ -144,33 +146,99 @@ function generateEmailTemplateBase(options: {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
-    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f9fafb; }
-    .container { max-width: 600px; margin: 0 auto; padding: 20px; background-color: #ffffff; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); }
-    .header { background: linear-gradient(135deg, ${headerColor} 0%, ${headerColor}dd 100%); color: white; padding: 30px 20px; text-align: center; }
-    .header img { max-width: 180px; height: auto; margin-bottom: 15px; display: block; margin-left: auto; margin-right: auto; }
-    .header h1 { margin: 0; font-size: 24px; font-weight: 600; }
-    .content { padding: 30px 20px; background-color: #ffffff; }
-    .info-item { margin: 12px 0; padding: 8px 0; }
-    .button { display: inline-block; background: ${headerColor}; color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); }
-    .warning { background: #fef3c7; padding: 15px; border-radius: 8px; border-left: 4px solid #f59e0b; margin: 20px 0; }
-    .link-box { background: #f3f4f6; padding: 15px; border-radius: 8px; margin: 20px 0; word-break: break-all; }
-    .footer { text-align: center; padding: 25px 20px; color: #6b7280; font-size: 12px; background-color: #f9fafb; border-top: 1px solid #e5e7eb; }
-    .footer p { margin: 5px 0; }
+    body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; line-height: 1.6; color: #334155; margin: 0; padding: 0; background-color: #f8fafc; }
+    .main-container { max-width: 600px; margin: 20px auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+    .header { padding: 30px 20px; text-align: center; background-color: #ffffff; border-bottom: 1px solid #f1f5f9; }
+    .header img { max-width: 180px; height: auto; }
+    .content { padding: 40px 30px; }
+    .title { color: ${primaryColor}; font-size: 28px; font-weight: 800; margin: 0 0 10px 0; text-align: center; }
+    .subtitle { color: #64748b; font-size: 16px; margin: 0 0 30px 0; text-align: center; }
+    .illustration { text-align: center; margin-bottom: 30px; }
+    .illustration img { max-width: 200px; height: auto; }
+    .button-container { text-align: center; margin: 35px 0; }
+    .button { display: inline-block; background-color: ${primaryColor}; color: #ffffff !important; padding: 16px 35px; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 16px; box-shadow: 0 4px 6px rgba(0, 74, 173, 0.2); }
+    .footer-note { text-align: center; color: #94a3b8; font-size: 13px; margin-top: 20px; }
+    
+    /* Sección de Ayuda */
+    .help-section { display: flex; justify-content: space-between; padding: 30px; border-top: 1px solid #f1f5f9; background-color: #ffffff; }
+    .help-item { flex: 1; text-align: center; padding: 0 10px; }
+    .help-icon { font-size: 24px; margin-bottom: 10px; display: block; }
+    .help-text { font-size: 13px; color: #64748b; margin: 0; }
+    .help-link { color: ${primaryColor}; font-weight: 600; text-decoration: none; font-size: 13px; }
+    
+    /* Redes Sociales */
+    .social-section { text-align: center; padding: 20px; background-color: #ffffff; border-top: 1px solid #f1f5f9; }
+    .social-title { font-size: 14px; font-weight: 700; color: #1e293b; margin-bottom: 15px; }
+    .social-icons { margin-bottom: 10px; }
+    .social-icon { display: inline-block; margin: 0 8px; width: 32px; height: 32px; }
+    
+    /* Footer Final */
+    .final-footer { background-color: ${footerColor}; color: #ffffff; padding: 25px 30px; }
+    .footer-content { display: flex; justify-content: space-between; align-items: center; }
+    .footer-logo { max-width: 120px; filter: brightness(0) invert(1); }
+    .footer-info { font-size: 11px; opacity: 0.9; text-align: right; }
+    
+    /* Caja de Detalles */
+    .details-box { background-color: #f8fafc; border-radius: 12px; padding: 20px; margin: 25px 0; border: 1px solid #e2e8f0; }
+    .details-title { font-weight: 700; color: #108369; font-size: 14px; margin-bottom: 15px; }
+    .detail-row { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 13px; }
+    .detail-label { color: #64748b; font-weight: 500; }
+    .detail-value { color: #1e293b; font-weight: 600; }
+
+    @media only screen and (max-width: 480px) {
+      .help-section { flex-direction: column; }
+      .help-item { margin-bottom: 20px; }
+      .footer-content { flex-direction: column; text-align: center; }
+      .footer-info { text-align: center; margin-top: 15px; }
+    }
   </style>
 </head>
 <body>
-  <div class="container">
+  <div class="main-container">
     <div class="header">
-      <img src="${logoDataUri}" alt="DOCALINK" />
-      <h1>${options.title}</h1>
+      <img src="${logoDataUri}" alt="DocaLink" />
     </div>
+    
     <div class="content">
       ${options.content}
     </div>
-    <div class="footer">
-      <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;">
-      <p><strong>DOCALINK</strong> - Conecta tu salud</p>
-      <p>Este es un email automático, por favor no respondas.</p>
+
+    <div class="help-section">
+      <div class="help-item">
+        <img src="${getImageBase64('soporte-contacto.jfif')}" width="50" style="margin-bottom: 10px; border-radius: 50%;" /><br>
+        <p class="help-text"><strong>¿Necesitas ayuda?</strong><br>Estamos aquí para ti.</p>
+      </div>
+      <div class="help-item">
+        <span class="help-icon">✉️</span>
+        <p class="help-text">Escríbenos a<br><a href="mailto:docalink1@gmail.com" class="help-link">docalink1@gmail.com</a></p>
+      </div>
+    </div>
+
+    <div class="social-section">
+      <p class="social-title">Síguenos en nuestras redes sociales</p>
+      <div class="social-icons">
+        <!-- Íconos simplificados (en producción usarían imágenes reales) -->
+        <a href="#"><img src="https://cdn-icons-png.flaticon.com/512/124/124010.png" width="24" style="margin: 0 5px;" /></a>
+        <a href="#"><img src="https://cdn-icons-png.flaticon.com/512/174/174855.png" width="24" style="margin: 0 5px;" /></a>
+        <a href="#"><img src="https://cdn-icons-png.flaticon.com/512/3046/3046121.png" width="24" style="margin: 0 5px;" /></a>
+        <a href="#"><img src="https://cdn-icons-png.flaticon.com/512/1384/1384060.png" width="24" style="margin: 0 5px;" /></a>
+      </div>
+    </div>
+
+    <div class="final-footer">
+      <table width="100%" border="0" cellspacing="0" cellpadding="0">
+        <tr>
+          <td align="left" style="color: white; font-size: 14px; font-weight: bold;">
+            DocaLink<br><span style="font-size: 10px; font-weight: normal; opacity: 0.8;">Conecta tu salud</span>
+          </td>
+          <td align="center" style="color: white; font-size: 10px; opacity: 0.8;">
+            Tu salud, conectada<br>en un solo lugar.
+          </td>
+          <td align="right" style="color: white; font-size: 10px; opacity: 0.8;">
+            Soporte:<br>docalink1@gmail.com
+          </td>
+        </tr>
+      </table>
     </div>
   </div>
 </body>
@@ -191,30 +259,22 @@ export function generateDoctorNewAppointmentEmail(data: {
   clinicAddress: string;
 }): string {
   const content = `
+    <h2 class="title">Nueva Cita Agendada</h2>
     <p>Hola Dr./Dra. <strong>${data.doctorName}</strong>,</p>
-    <p>Tienes una nueva cita agendada:</p>
-    <div class="info-item">
-      <strong>📅 Fecha:</strong> ${data.date}
+    <p>Tienes una nueva cita agendada en la plataforma:</p>
+    <div class="details-box">
+      <div class="detail-row"><span class="detail-label">📅 Fecha:</span> <span class="detail-value">${data.date}</span></div>
+      <div class="detail-row"><span class="detail-label">🕐 Hora:</span> <span class="detail-value">${data.time}</span></div>
+      <div class="detail-row"><span class="detail-label">👤 Paciente:</span> <span class="detail-value">${data.patientName}</span></div>
+      ${data.reason ? `<div class="detail-row"><span class="detail-label">📋 Motivo:</span> <span class="detail-value">${data.reason}</span></div>` : ''}
+      <div class="detail-row"><span class="detail-label">🏥 Clínica:</span> <span class="detail-value">${data.clinicName}</span></div>
+      <div class="detail-row"><span class="detail-label">📍 Dirección:</span> <span class="detail-value">${data.clinicAddress}</span></div>
     </div>
-    <div class="info-item">
-      <strong>🕐 Hora:</strong> ${data.time}
-    </div>
-    <div class="info-item">
-      <strong>👤 Paciente:</strong> ${data.patientName}
-    </div>
-    ${data.reason ? `<div class="info-item"><strong>📋 Motivo:</strong> ${data.reason}</div>` : ''}
-    <div class="info-item">
-      <strong>🏥 Clínica:</strong> ${data.clinicName}
-    </div>
-    <div class="info-item">
-      <strong>📍 Dirección:</strong> ${data.clinicAddress}
-    </div>
-    <p>Por favor, confirma tu disponibilidad.</p>
+    <p>Por favor, revisa tu agenda en el panel de control.</p>
   `;
   
   return generateEmailTemplateBase({
     title: 'Nueva Cita Agendada',
-    headerColor: '#14b8a6',
     content,
   });
 }
@@ -231,27 +291,18 @@ export function generateClinicNewAppointmentEmail(data: {
   reason?: string;
 }): string {
   const content = `
-    <p>Hola Administrador,</p>
-    <p>Se ha agendado una nueva cita en tu clínica:</p>
-    <div class="info-item">
-      <strong>👨‍⚕️ Médico:</strong> Dr./Dra. ${data.doctorName} - ${data.doctorSpecialty}
+    <h2 class="title">Nueva Cita Agendada</h2>
+    <p>Se ha registrado una nueva cita en tu clínica:</p>
+    <div class="details-box">
+      <div class="detail-row"><span class="detail-label">👨‍⚕️ Médico:</span> <span class="detail-value">${data.doctorName} (${data.doctorSpecialty})</span></div>
+      <div class="detail-row"><span class="detail-label">👤 Paciente:</span> <span class="detail-value">${data.patientName}</span></div>
+      <div class="detail-row"><span class="detail-label">📅 Fecha:</span> <span class="detail-value">${data.date}</span></div>
+      <div class="detail-row"><span class="detail-label">🕐 Hora:</span> <span class="detail-value">${data.time}</span></div>
     </div>
-    <div class="info-item">
-      <strong>👤 Paciente:</strong> ${data.patientName}
-    </div>
-    <div class="info-item">
-      <strong>📅 Fecha:</strong> ${data.date}
-    </div>
-    <div class="info-item">
-      <strong>🕐 Hora:</strong> ${data.time}
-    </div>
-    ${data.reason ? `<div class="info-item"><strong>📋 Motivo:</strong> ${data.reason}</div>` : ''}
-    <p>Puedes ver todos los detalles en tu panel de administración.</p>
   `;
   
   return generateEmailTemplateBase({
     title: 'Nueva Cita Agendada',
-    headerColor: '#14b8a6',
     content,
   });
 }
@@ -270,30 +321,21 @@ export function generatePatientNewAppointmentEmail(data: {
   reason?: string;
 }): string {
   const content = `
+    <h2 class="title" style="color: #108369;">¡Cita Confirmada!</h2>
     <p>Hola <strong>${data.patientName}</strong>,</p>
-    <p>Tu cita ha sido confirmada:</p>
-    <div class="info-item">
-      <strong>👨‍⚕️ Médico:</strong> Dr./Dra. ${data.doctorName} - ${data.doctorSpecialty}
+    <p>Tu cita médica ha sido confirmada exitosamente:</p>
+    <div class="details-box">
+      <div class="detail-row"><span class="detail-label">👨‍⚕️ Médico:</span> <span class="detail-value">Dr./Dra. ${data.doctorName}</span></div>
+      <div class="detail-row"><span class="detail-label">📅 Fecha:</span> <span class="detail-value">${data.date}</span></div>
+      <div class="detail-row"><span class="detail-label">🕐 Hora:</span> <span class="detail-value">${data.time}</span></div>
+      <div class="detail-row"><span class="detail-label">📍 Lugar:</span> <span class="detail-value">${data.clinicName}</span></div>
     </div>
-    <div class="info-item">
-      <strong>🏥 Clínica:</strong> ${data.clinicName}
-    </div>
-    <div class="info-item">
-      <strong>📍 Dirección:</strong> ${data.clinicAddress}
-    </div>
-    <div class="info-item">
-      <strong>📅 Fecha:</strong> ${data.date}
-    </div>
-    <div class="info-item">
-      <strong>🕐 Hora:</strong> ${data.time}
-    </div>
-    ${data.reason ? `<div class="info-item"><strong>📋 Motivo:</strong> ${data.reason}</div>` : ''}
-    <p><strong>Recuerda llegar 10 minutos antes de tu cita.</strong></p>
+    <p style="text-align: center; font-weight: 600;">Recuerda asistir 10 minutos antes.</p>
   `;
   
   return generateEmailTemplateBase({
-    title: 'Tu Cita Ha Sido Confirmada',
-    headerColor: '#14b8a6',
+    title: 'Cita Confirmada',
+    headerColor: '#108369',
     content,
   });
 }
@@ -310,28 +352,19 @@ export function generatePatientReminderEmail(data: {
   time: string;
 }): string {
   const content = `
+    <h2 class="title" style="color: #f59e0b;">Recordatorio de Cita</h2>
     <p>Hola <strong>${data.patientName}</strong>,</p>
-    <p>Este es un recordatorio de tu cita:</p>
-    <div class="info-item">
-      <strong>👨‍⚕️ Médico:</strong> Dr./Dra. ${data.doctorName}
+    <p>Te recordamos que tienes una cita programada para el día de mañana:</p>
+    <div class="details-box">
+      <div class="detail-row"><span class="detail-label">👨‍⚕️ Médico:</span> <span class="detail-value">${data.doctorName}</span></div>
+      <div class="detail-row"><span class="detail-label">📅 Fecha:</span> <span class="detail-value">${data.date}</span></div>
+      <div class="detail-row"><span class="detail-label">🕐 Hora:</span> <span class="detail-value">${data.time}</span></div>
+      <div class="detail-row"><span class="detail-label">📍 Dirección:</span> <span class="detail-value">${data.clinicAddress}</span></div>
     </div>
-    <div class="info-item">
-      <strong>🏥 Clínica:</strong> ${data.clinicName}
-    </div>
-    <div class="info-item">
-      <strong>📅 Fecha:</strong> ${data.date} (mañana)
-    </div>
-    <div class="info-item">
-      <strong>🕐 Hora:</strong> ${data.time}
-    </div>
-    <div class="info-item">
-      <strong>📍 Dirección:</strong> ${data.clinicAddress}
-    </div>
-    <p>Por favor, confirma tu asistencia o cancela con anticipación si no puedes asistir.</p>
   `;
   
   return generateEmailTemplateBase({
-    title: '⏰ Recordatorio: Tu Cita es Mañana',
+    title: 'Recordatorio de Cita',
     headerColor: '#f59e0b',
     content,
   });
@@ -347,25 +380,18 @@ export function generateDoctorCancellationEmail(data: {
   time: string;
 }): string {
   const content = `
+    <h2 class="title" style="color: #ef4444;">Cita Cancelada</h2>
     <p>Hola Dr./Dra. <strong>${data.doctorName}</strong>,</p>
-    <p>Se ha cancelado la siguiente cita:</p>
-    <div class="info-item">
-      <strong>👤 Paciente:</strong> ${data.patientName}
+    <p>Se ha cancelado la siguiente cita programada:</p>
+    <div class="details-box">
+      <div class="detail-row"><span class="detail-label">👤 Paciente:</span> <span class="detail-value">${data.patientName}</span></div>
+      <div class="detail-row"><span class="detail-label">📅 Fecha:</span> <span class="detail-value">${data.date}</span></div>
+      <div class="detail-row"><span class="detail-label">🕐 Hora:</span> <span class="detail-value">${data.time}</span></div>
     </div>
-    <div class="info-item">
-      <strong>📅 Fecha:</strong> ${data.date}
-    </div>
-    <div class="info-item">
-      <strong>🕐 Hora:</strong> ${data.time}
-    </div>
-    <div class="info-item">
-      <strong>❌ Estado:</strong> Cancelada
-    </div>
-    <p>Puedes ver más detalles en tu panel.</p>
   `;
   
   return generateEmailTemplateBase({
-    title: '❌ Cita Cancelada',
+    title: 'Cita Cancelada',
     headerColor: '#ef4444',
     content,
   });
@@ -382,25 +408,18 @@ export function generatePatientCancellationEmail(data: {
   clinicName: string;
 }): string {
   const content = `
+    <h2 class="title" style="color: #ef4444;">Tu cita ha sido cancelada</h2>
     <p>Hola <strong>${data.patientName}</strong>,</p>
-    <p>Lamentamos informarte que tu cita ha sido cancelada:</p>
-    <div class="info-item">
-      <strong>📅 Fecha:</strong> ${data.date}
+    <p>Lamentamos informarte que tu cita ha sido cancelada.</p>
+    <div class="details-box">
+      <div class="detail-row"><span class="detail-label">👨‍⚕️ Médico:</span> <span class="detail-value">${data.doctorName}</span></div>
+      <div class="detail-row"><span class="detail-label">📅 Fecha:</span> <span class="detail-value">${data.date}</span></div>
+      <div class="detail-row"><span class="detail-label">🕐 Hora:</span> <span class="detail-value">${data.time}</span></div>
     </div>
-    <div class="info-item">
-      <strong>🕐 Hora:</strong> ${data.time}
-    </div>
-    <div class="info-item">
-      <strong>👨‍⚕️ Médico:</strong> Dr./Dra. ${data.doctorName}
-    </div>
-    <div class="info-item">
-      <strong>🏥 Clínica:</strong> ${data.clinicName}
-    </div>
-    <p>Si deseas reagendar, por favor contacta a la clínica o agenda una nueva cita desde la app.</p>
   `;
   
   return generateEmailTemplateBase({
-    title: '❌ Tu Cita Ha Sido Cancelada',
+    title: 'Cita Cancelada',
     headerColor: '#ef4444',
     content,
   });
@@ -417,32 +436,64 @@ export function generatePasswordResetEmail(data: {
   const resetLink = `${frontendUrl}/reset-password?token=${data.resetToken}`;
   
   const content = `
-    <p>Hola <strong>${data.userName}</strong>,</p>
-    <p>Recibimos una solicitud para restablecer la contraseña de tu cuenta en <strong>DOCALINK</strong>.</p>
-    <div class="warning">
-      <p style="margin: 0; color: #92400e;">
-        ⚠️ <strong>Importante:</strong> Si no solicitaste este cambio, ignora este email. 
-        Tu contraseña permanecerá sin cambios.
-      </p>
+    <h2 class="title">Recupera tu contraseña</h2>
+    <p class="subtitle">Solicitamos restablecer tu contraseña en DocaLink.</p>
+    
+    <div class="illustration">
+      <img src="${getImageBase64('restablecer-contraseña.jfif')}" alt="Recuperar" />
     </div>
-    <p>Para restablecer tu contraseña, haz clic en el siguiente botón:</p>
-    <div style="text-align: center;">
-      <a href="${resetLink}" class="button">Restablecer Contraseña</a>
+
+    <p>Hola, <strong>${data.userName}</strong> 👋</p>
+    <p>Recibimos una solicitud para restablecer la contraseña de tu cuenta en DocaLink.</p>
+    <p>Para continuar, haz clic en el siguiente botón:</p>
+    
+    <div class="button-container">
+      <a href="${resetLink}" class="button">🔒 Restablecer mi contraseña</a>
     </div>
-    <p style="color: #6b7280; font-size: 14px;">
-      ⏰ <strong>Este enlace expira en 1 hora</strong> por seguridad.
-    </p>
-    <div class="link-box">
-      <p style="margin: 0; font-size: 13px; color: #6b7280;">
-        Si el botón no funciona, copia y pega este enlace en tu navegador:<br>
-        <a href="${resetLink}" style="color: #14b8a6;">${resetLink}</a>
-      </p>
+
+    <p class="footer-note">Este enlace expirará en 60 minutos por seguridad.</p>
+  `;
+  
+  return generateEmailTemplateBase({
+    title: 'Recuperar Contraseña',
+    content,
+  });
+}
+
+/**
+ * Genera el HTML del email de confirmación de cambio de contraseña exitoso
+ */
+export function generatePasswordUpdatedEmail(data: {
+  userName: string;
+  date?: string;
+  time?: string;
+  location?: string;
+  device?: string;
+}): string {
+  const content = `
+    <h2 class="title" style="color: #108369;">¡Tu contraseña ha sido actualizada con éxito!</h2>
+    <p class="subtitle">Tu cuenta en DocaLink está segura.</p>
+    
+    <div class="illustration">
+      <img src="${getImageBase64('contraseña-actualizada.jfif')}" alt="Seguro" />
+    </div>
+
+    <p>Hola, <strong>${data.userName}</strong> 👋</p>
+    <p>Te informamos que tu contraseña fue actualizada correctamente. Si no realizaste este cambio, te recomendamos contactar a nuestro soporte de inmediato.</p>
+    
+    <div class="details-box">
+      <p class="details-title">Detalles del cambio</p>
+      <div class="detail-row"><span class="detail-label">📅 Fecha:</span> <span class="detail-value">${data.date || new Date().toLocaleDateString()}</span></div>
+      <div class="detail-row"><span class="detail-label">🕐 Hora:</span> <span class="detail-value">${data.time || new Date().toLocaleTimeString()}</span></div>
+      <div class="detail-row"><span class="detail-label">📍 Ubicación aproximada:</span> <span class="detail-value">${data.location || 'No disponible'}</span></div>
+      <div class="detail-row"><span class="detail-label">💻 Dispositivo:</span> <span class="detail-value">${data.device || 'Navegador web'}</span></div>
     </div>
   `;
   
   return generateEmailTemplateBase({
-    title: '🔐 Recuperación de Contraseña',
-    headerColor: '#14b8a6',
+    title: 'Contraseña Actualizada',
+    headerColor: '#108369',
+    footerColor: '#108369',
     content,
   });
 }
@@ -455,86 +506,32 @@ export function generateDoctorInvitationEmail(data: {
   invitationLink: string;
 }): string {
   const content = `
-    <p>Hola,</p>
-    <p>Has sido invitado a unirte a <strong>${data.clinicName}</strong> en la plataforma <strong>DOCALINK</strong>.</p>
-    <p>DOCALINK es la plataforma que conecta profesionales de la salud con pacientes, facilitando la gestión de citas y el acceso a servicios médicos.</p>
-    <p>Para aceptar la invitación y crear tu cuenta, haz clic en el siguiente botón:</p>
-    <div style="text-align: center;">
+    <h2 class="title">Invitación a DocaLink</h2>
+    <p>Has sido invitado a unirte a <strong>${data.clinicName}</strong>.</p>
+    <div class="button-container">
       <a href="${data.invitationLink}" class="button">Aceptar Invitación</a>
     </div>
-    <p style="color: #6b7280; font-size: 14px;">
-      ⏰ <strong>Esta invitación expira en 7 días</strong> por seguridad.
-    </p>
-    <div class="link-box">
-      <p style="margin: 0; font-size: 13px; color: #6b7280;">
-        Si el botón no funciona, copia y pega este enlace en tu navegador:<br>
-        <a href="${data.invitationLink}" style="color: #14b8a6;">${data.invitationLink}</a>
-      </p>
-    </div>
-    <p>Si no solicitaste esta invitación, puedes ignorar este email.</p>
   `;
   
   return generateEmailTemplateBase({
-    title: '🏥 Invitación a DOCALINK',
-    headerColor: '#14b8a6',
+    title: 'Invitación',
     content,
   });
 }
 
-/**
- * Genera el HTML del email de bienvenida
- * (Estilo consistente con el email de recuperación, pero con contenido de onboarding)
- */
 export function generateWelcomeEmail(data: {
   userName: string;
   userRole: string;
 }): string {
-  const frontendUrl = process.env.FRONTEND_URL || "https://docalink.com";
-  const dashboardLink = `${frontendUrl}/dashboard`;
-
-  // Mapear roles a nombres más amigables (para mostrar en el email)
-  const roleNames: Record<string, string> = {
-    provider: "Proveedor de Servicios",
-    patient: "Paciente",
-    doctor: "Médico",
-    pharmacy: "Farmacia",
-    laboratory: "Laboratorio",
-    ambulance: "Ambulancia",
-    supplies: "Suministros Médicos",
-    clinic: "Clínica",
-  };
-
-  const displayRole =
-    roleNames[(data.userRole || "").toLowerCase()] || data.userRole || "Usuario";
-
   const content = `
-    <p>Hola <strong>${data.userName}</strong>, 👋</p>
-    <p>Tu registro fue aprobado y ya puedes usar <strong>DOCALINK</strong>.</p>
-
-    <div style="background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); padding: 16px; border-radius: 10px; border: 2px solid #14b8a6; margin: 18px 0;">
-      <p style="margin: 0 0 8px 0;"><strong>Tipo de cuenta:</strong> ${displayRole}</p>
-      <p style="margin: 0; color: #6b7280; font-size: 13px;">Te recomendamos completar tu perfil para aprovechar al máximo la plataforma.</p>
-    </div>
-
-    <div style="text-align: center;">
-      <a href="${dashboardLink}" class="button">Ir a mi panel</a>
-    </div>
-
-    <p style="margin-top: 6px;"><strong>Próximos pasos:</strong></p>
-    <ul style="margin: 14px 0 0 0; padding-left: 18px; color: #374151;">
-      <li style="margin: 8px 0;">Completa tu perfil y datos de contacto.</li>
-      <li style="margin: 8px 0;">Configura tu disponibilidad y horarios.</li>
-      <li style="margin: 8px 0;">Explora las funcionalidades de la plataforma.</li>
-    </ul>
-
-    <p style="margin-top: 18px; color: #6b7280; font-size: 13px;">
-      Si no fuiste tú quien creó esta cuenta, puedes ignorar este email.
-    </p>
+    <h2 class="title">¡Bienvenido a DocaLink! 🎉</h2>
+    <p>Hola <strong>${data.userName}</strong>, estamos felices de tenerte con nosotros.</p>
+    <p>Tu cuenta como <strong>${data.userRole}</strong> ha sido creada exitosamente.</p>
+    <p>Ya puedes acceder a todos nuestros servicios desde la plataforma.</p>
   `;
   
   return generateEmailTemplateBase({
-    title: '🎉 ¡Bienvenido a DOCALINK!',
-    headerColor: '#14b8a6',
+    title: 'Bienvenido',
     content,
   });
 }

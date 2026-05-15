@@ -52,33 +52,34 @@ export async function checkReminders() {
       const { patient_id, title, note, push_token, id, type, frequency, time } =
         record;
 
-      const recordDateUtc = new Date(time);
-      const recordHourEcuador = Number(
-        recordDateUtc.toLocaleString("en-US", {
-          timeZone: "America/Guayaquil",
-          hour: "numeric",
-          hour12: false,
-        }),
-      );
+      // El tiempo se guarda como digits UTC (ej: 10:00 AM -> 1970-01-01 10:00:00 UTC)
+      // Extraemos las horas y minutos directamente de la parte UTC para que coincidan con lo que el usuario guardó
+      const recordDate = new Date(time);
+      const recordHour = recordDate.getUTCHours();
+      const recordMinute = recordDate.getUTCMinutes();
 
       console.log(
-        `   🔎 ID ${id} | Hora DB (Ecuador): ${recordHourEcuador} vs Hora Actual: ${currentHour}`,
+        `   🔎 ID ${id} | Hora Recordatorio: ${recordHour}:${recordMinute} vs Hora Actual: ${currentHour}:${currentMinute}`,
       );
 
       let shouldNotify = false;
       let notifTitle = "";
       let notifBody = "";
 
+      // Solo procesar si el minuto coincide exactamente (el query ya lo filtra, pero por seguridad)
+      if (recordMinute !== currentMinute) continue;
+
       // === LÓGICA MEDICAMENTOS ===
       if (type === ReminderType.MEDICAMENTO) {
         const freq = frequency || 8;
-        let diffHours = currentHour - recordHourEcuador;
+        // Calculamos la diferencia de horas
+        let diffHours = currentHour - recordHour;
         if (diffHours < 0) diffHours += 24;
 
+        // Suena si la diferencia es múltiplo de la frecuencia
         if (diffHours % freq === 0) {
           shouldNotify = true;
           notifTitle = "💊 Hora de tu medicamento";
-
           notifBody = note ? `${title}\n${note}` : title;
         }
       }
@@ -86,7 +87,10 @@ export async function checkReminders() {
       // === LÓGICA CITAS / GENERAL ===
       else if (type === ReminderType.CITA || type === ReminderType.GENERAL) {
         const hoursBefore = frequency || 0;
-        const targetNotificationHour = recordHourEcuador - hoursBefore;
+        
+        // El recordatorio de cita suena 'hoursBefore' horas antes de la hora de la cita (recordHour)
+        let targetNotificationHour = recordHour - hoursBefore;
+        if (targetNotificationHour < 0) targetNotificationHour += 24;
 
         if (currentHour === targetNotificationHour) {
           shouldNotify = true;
@@ -95,7 +99,6 @@ export async function checkReminders() {
             hoursBefore > 0 ? `en ${hoursBefore} horas` : "ahora";
 
           notifTitle = `📅 Recordatorio de Cita (${timeText})`;
-
           notifBody = note ? `${title}\n${note}` : title;
         }
       }
@@ -105,16 +108,20 @@ export async function checkReminders() {
         const notificationType =
           type === ReminderType.MEDICAMENTO ? "farmacia" : "cita";
 
-        // Crear Notificación Interna
+        // 1. Crear Notificación Interna para el historial del App
         await patientNotificationService.create({
           patientId: patient_id,
           type: notificationType,
           title: notifTitle,
           body: notifBody,
-          data: { targetScreen: "Reminders", reminderId: id },
+          data: { 
+            targetScreen: "Reminders", 
+            reminderId: id,
+            type: "recordatorio" 
+          },
         });
 
-        // 2. Enviar Push
+        // 2. Enviar Push Notification (Firebase/Expo)
         if (push_token) {
           try {
             if (push_token.startsWith("ExponentPushToken")) {
@@ -123,7 +130,7 @@ export async function checkReminders() {
                 notifTitle,
                 notifBody,
                 { 
-                  type: "recordatorio", // Identificador para activar la alarma de 30s en el app
+                  type: "recordatorio", // Identificador clave para que el app active la alarma visual/vibratoria
                   targetScreen: "Reminders", 
                   reminderId: id 
                 }
@@ -139,12 +146,13 @@ export async function checkReminders() {
           }
         }
 
+        // Si es una cita o general, desactivar tras el primer aviso (a menos que se quiera recurrencia, que no es el caso aquí)
         if (type === ReminderType.CITA || type === ReminderType.GENERAL) {
           await prisma.patient_reminders.update({
             where: { id },
             data: { is_active: false },
           });
-          console.log("      🔄 Recordatorio desactivado.");
+          console.log("      🔄 Recordatorio de cita completado y desactivado.");
         }
 
         sentCount++;
