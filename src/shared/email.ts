@@ -88,10 +88,11 @@ export async function sendEmail(options: EmailOptions): Promise<boolean> {
  */
 function getImageBase64(imageName: string): string {
   const CLOUDINARY_URLS: Record<string, string> = {
-    'splash.png': 'https://res.cloudinary.com/dws7ywsvy/image/upload/v1778813439/docalink/emails/docalink_email_splash.png',
-    'restablecer-contraseña.jfif': 'https://res.cloudinary.com/dws7ywsvy/image/upload/v1778813440/docalink/emails/docalink_email_restablecer-contrase%C3%B1a.jpg',
-    'contraseña-actualizada.jfif': 'https://res.cloudinary.com/dws7ywsvy/image/upload/v1778813440/docalink/emails/docalink_email_contrase%C3%B1a-actualizada.jpg',
-    'soporte-contacto.jfif': 'https://res.cloudinary.com/dws7ywsvy/image/upload/v1778813441/docalink/emails/docalink_email_soporte-contacto.jpg'
+    'splash.png': 'https://res.cloudinary.com/dws7ywsvy/image/upload/v1778814193/docalink/emails/docalink_email_new_docalink-logo.png',
+    'docalink-logo.png': 'https://res.cloudinary.com/dws7ywsvy/image/upload/v1778814193/docalink/emails/docalink_email_new_docalink-logo.png',
+    'restablecer-contraseña.png': 'https://res.cloudinary.com/dws7ywsvy/image/upload/v1778814194/docalink/emails/docalink_email_new_restablecer-contrase%C3%B1a.png',
+    'contraseña-actualizada.png': 'https://res.cloudinary.com/dws7ywsvy/image/upload/v1778814195/docalink/emails/docalink_email_new_contrase%C3%B1a-actualizada.png',
+    'soporte-contacto.png': 'https://res.cloudinary.com/dws7ywsvy/image/upload/v1778814196/docalink/emails/docalink_email_new_soporte-contacto.png'
   };
 
   if (CLOUDINARY_URLS[imageName]) {
@@ -171,7 +172,7 @@ function generateEmailTemplateBase(options: {
                 <table width="100%" border="0" cellspacing="0" cellpadding="0">
                   <tr>
                     <td width="50%" align="center" style="border-right: 1px solid #f1f5f9; padding-right: 10px;">
-                      <img src="${getImageBase64('soporte-contacto.jfif')}" width="50" height="50" style="border-radius: 50%; display: block; margin-bottom: 10px;" />
+                      <img src="${getImageBase64('soporte-contacto.png')}" width="45" height="45" style="display: block; margin-bottom: 10px;" />
                       <p style="margin: 0; font-size: 13px; color: #64748b; font-family: Arial, sans-serif;"><strong>¿Necesitas ayuda?</strong><br>Estamos aquí para ti.</p>
                     </td>
                     <td width="50%" align="center" style="padding-left: 10px;">
@@ -420,7 +421,7 @@ export function generatePasswordResetEmail(data: {
     <p class="subtitle">Solicitamos restablecer tu contraseña en DocaLink.</p>
     
     <div class="illustration">
-      <img src="${getImageBase64('restablecer-contraseña.jfif')}" alt="Recuperar" />
+      <img src="${getImageBase64('restablecer-contraseña.png')}" width="200" alt="Recuperar" />
     </div>
 
     <p>Hola, <strong>${data.userName}</strong> 👋</p>
@@ -455,7 +456,7 @@ export function generatePasswordUpdatedEmail(data: {
     <p class="subtitle">Tu cuenta en DocaLink está segura.</p>
     
     <div class="illustration">
-      <img src="${getImageBase64('contraseña-actualizada.jfif')}" alt="Seguro" />
+      <img src="${getImageBase64('contraseña-actualizada.png')}" width="200" alt="Seguro" />
     </div>
 
     <p>Hola, <strong>${data.userName}</strong> 👋</p>

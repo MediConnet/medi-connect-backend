@@ -13,14 +13,14 @@ cloudinary.config({
 });
 
 const assets = [
-  { name: 'splash.png', path: path.join(__dirname, '..', '..', 'medi-conecct-app', 'assets', 'splash.png') },
-  { name: 'restablecer-contraseña.jfif', path: path.join(__dirname, '..', '..', 'medi-conecct-app', 'assets', 'restablecer-contraseña.jfif') },
-  { name: 'contraseña-actualizada.jfif', path: path.join(__dirname, '..', '..', 'medi-conecct-app', 'assets', 'contraseña-actualizada.jfif') },
-  { name: 'soporte-contacto.jfif', path: path.join(__dirname, '..', '..', 'medi-conecct-app', 'assets', 'soporte-contacto.jfif') },
+  { name: 'docalink-logo.png', path: path.join(__dirname, '..', 'public', 'images', 'docalink-logo.png') },
+  { name: 'restablecer-contraseña.png', path: path.join(__dirname, '..', 'public', 'images', 'restablecer-contraseña.png') },
+  { name: 'contraseña-actualizada.png', path: path.join(__dirname, '..', 'public', 'images', 'contraseña-actualizada.png') },
+  { name: 'soporte-contacto.png', path: path.join(__dirname, '..', 'public', 'images', 'soporte-contacto.png') },
 ];
 
 async function uploadAssets() {
-  console.log('🚀 Iniciando subida de assets a Cloudinary...');
+  console.log('🚀 Iniciando subida de NUEVOS assets (sin fondo) a Cloudinary...');
   
   const results: Record<string, string> = {};
 
@@ -29,7 +29,7 @@ async function uploadAssets() {
       try {
         console.log(`📤 Subiendo ${asset.name}...`);
         const result = await cloudinary.uploader.upload(asset.path, {
-          public_id: `docalink_email_${asset.name.split('.')[0]}`,
+          public_id: `docalink_email_new_${asset.name.split('.')[0]}`,
           folder: 'docalink/emails',
           overwrite: true,
         });
@@ -43,7 +43,7 @@ async function uploadAssets() {
     }
   }
 
-  console.log('\n📋 URLs Generadas:');
+  console.log('\n📋 NUEVAS URLs Generadas:');
   console.log(JSON.stringify(results, null, 2));
 }
 
