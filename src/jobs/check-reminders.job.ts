@@ -23,19 +23,58 @@ export async function checkReminders() {
   );
 
   try {
-    const potentialReminders: any[] = await prisma.$queryRaw`
-      SELECT r.*, u.push_token 
-      FROM patient_reminders r
-      JOIN patients p ON r.patient_id = p.id
-      JOIN users u ON p.user_id = u.id
-      WHERE r.is_active = true
-      AND EXTRACT(MINUTE FROM r.time) = ${currentMinute}
-      AND (
-        (r.type = ${ReminderType.MEDICAMENTO} AND r.start_date::date <= ${todayString}::date)
-        OR
-        (r.type IN (${ReminderType.CITA}, ${ReminderType.GENERAL}) AND r.start_date::date = ${todayString}::date)
-      )
-    `;
+    const today = new Date(todayString);
+
+    // 1. Consultar de forma ultra-rápida usando los índices (is_active y start_date)
+    const activeReminders = await prisma.patient_reminders.findMany({
+      where: {
+        is_active: true,
+        OR: [
+          {
+            type: ReminderType.MEDICAMENTO,
+            start_date: {
+              lte: today,
+            },
+          },
+          {
+            type: {
+              in: [ReminderType.CITA, ReminderType.GENERAL],
+            },
+            start_date: today,
+          },
+        ],
+      },
+      include: {
+        patients: {
+          include: {
+            users: {
+              select: {
+                push_token: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    // 2. Filtrar en memoria por el minuto exacto. Esto evita hacer EXTRACT(MINUTE FROM ...) secuencial en la BD,
+    // ahorrando un uso masivo de CPU en PostgreSQL/Neon.
+    const potentialReminders = activeReminders
+      .filter((r) => {
+        const recordDate = new Date(r.time);
+        const recordMinute = recordDate.getUTCMinutes();
+        return recordMinute === currentMinute;
+      })
+      .map((r) => ({
+        id: r.id,
+        patient_id: r.patient_id,
+        title: r.title,
+        note: r.note,
+        type: r.type,
+        frequency: r.frequency,
+        time: r.time,
+        push_token: r.patients?.users?.push_token || null,
+      }));
 
     if (potentialReminders.length === 0) {
       console.log("ℹ️ [CRON] Sin recordatorios para este minuto.");
