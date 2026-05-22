@@ -10,7 +10,13 @@ export function getPrismaClient(): PrismaClient {
     if (!connectionString) {
       throw new Error('DATABASE_URL environment variable is not set');
     }
-    const pool = new Pool({ connectionString, ssl: { rejectUnauthorized: false } });
+    const pool = new Pool({ 
+      connectionString, 
+      ssl: { rejectUnauthorized: false },
+      max: 5,
+      idleTimeoutMillis: 10000,
+      connectionTimeoutMillis: 5000
+    });
     const adapter = new PrismaPg(pool);
     prisma = new PrismaClient({
       adapter,

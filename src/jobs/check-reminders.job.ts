@@ -2,6 +2,7 @@ import { ReminderType } from "../shared/enums";
 import { patientNotificationService } from "../shared/patient-notification.service";
 import { getPrismaClient } from "../shared/prisma";
 import { pushNotificationService } from "../shared/push-notification.service";
+import { getRemindersFromCache, triggerCacheReload } from "./reminder-cache";
 
 export async function checkReminders() {
   const prisma = getPrismaClient();
@@ -23,19 +24,26 @@ export async function checkReminders() {
   );
 
   try {
-    const potentialReminders: any[] = await prisma.$queryRaw`
-      SELECT r.*, u.push_token 
-      FROM patient_reminders r
-      JOIN patients p ON r.patient_id = p.id
-      JOIN users u ON p.user_id = u.id
-      WHERE r.is_active = true
-      AND EXTRACT(MINUTE FROM r.time) = ${currentMinute}
-      AND (
-        (r.type = ${ReminderType.MEDICAMENTO} AND r.start_date::date <= ${todayString}::date)
-        OR
-        (r.type IN (${ReminderType.CITA}, ${ReminderType.GENERAL}) AND r.start_date::date = ${todayString}::date)
-      )
-    `;
+    // Obtener los recordatorios activos desde la caché en memoria
+    const cachedReminders = getRemindersFromCache();
+
+    // Filtrar en memoria aplicando exactamente la misma lógica que hacía el query de Postgres
+    const potentialReminders = cachedReminders.filter(record => {
+      const recordDate = new Date(record.time);
+      const recordMinute = recordDate.getUTCMinutes();
+      
+      if (recordMinute !== currentMinute) return false;
+      
+      const recordStartDateString = new Date(record.start_date).toISOString().split("T")[0];
+      
+      if (record.type === ReminderType.MEDICAMENTO) {
+        return recordStartDateString <= todayString;
+      } else if (record.type === ReminderType.CITA || record.type === ReminderType.GENERAL) {
+        return recordStartDateString === todayString;
+      }
+      
+      return false;
+    });
 
     if (potentialReminders.length === 0) {
       console.log("ℹ️ [CRON] Sin recordatorios para este minuto.");
@@ -47,6 +55,7 @@ export async function checkReminders() {
     );
 
     let sentCount = 0;
+    let needsCacheReload = false;
 
     for (const record of potentialReminders) {
       const { patient_id, title, note, push_token, id, type, frequency, time } =
@@ -66,7 +75,7 @@ export async function checkReminders() {
       let notifTitle = "";
       let notifBody = "";
 
-      // Solo procesar si el minuto coincide exactamente (el query ya lo filtra, pero por seguridad)
+      // Solo procesar si el minuto coincide exactamente (el filter ya lo hace, pero por seguridad)
       if (recordMinute !== currentMinute) continue;
 
       // === LÓGICA MEDICAMENTOS ===
@@ -153,10 +162,15 @@ export async function checkReminders() {
             data: { is_active: false },
           });
           console.log("      🔄 Recordatorio de cita completado y desactivado.");
+          needsCacheReload = true;
         }
 
         sentCount++;
       }
+    }
+
+    if (needsCacheReload) {
+      await triggerCacheReload();
     }
 
     if (sentCount > 0) {

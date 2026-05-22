@@ -8,20 +8,18 @@ import {
   clinics,
   patients,
   pharmacy_chains,
-  PrismaClient,
   provider_branches,
   providers,
   service_categories,
   specialties,
   users
 } from '../src/generated/prisma/client';
+import { getPrismaClient } from '../src/shared/prisma';
 
 // Cargar variables de entorno
 dotenv.config();
 
-const prisma = new PrismaClient({
-  log: process.env.STAGE === 'dev' ? ['query', 'error', 'warn'] : ['error'],
-});
+const prisma = getPrismaClient();
 
 // Helper para convertir día de la semana
 function dayToNumber(day: string): number {

@@ -4,6 +4,7 @@ import { AuthContext, requireAuth } from "../shared/auth";
 import { ReminderType } from "../shared/enums";
 import { logger } from "../shared/logger";
 import { getPrismaClient } from "../shared/prisma";
+import { triggerCacheReload } from "../jobs/reminder-cache";
 import {
   errorResponse,
   internalErrorResponse,
@@ -185,6 +186,11 @@ export async function createReminder(
       },
     });
 
+    // Recargar la caché de recordatorios activos in-memory
+    triggerCacheReload().catch(err => {
+      console.error("❌ [REMINDERS] Falló la recarga de caché al crear:", err.message);
+    });
+
     return successResponse(normalizeReminder(reminder), 201, event);
   } catch (error: any) {
     if (error instanceof z.ZodError) {
@@ -267,6 +273,11 @@ export async function updateReminder(
       where: { id: reminderId },
     });
 
+    // Recargar la caché de recordatorios activos in-memory
+    triggerCacheReload().catch(err => {
+      console.error("❌ [REMINDERS] Falló la recarga de caché al actualizar:", err.message);
+    });
+
     return successResponse(normalizeReminder(updatedReminder), 200, event);
   } catch (error: any) {
     if (error instanceof z.ZodError) {
@@ -345,6 +356,11 @@ export async function deleteReminder(
       `🗑️ Recordatorio eliminado. También se borraron ${deletedNotifications.count} notificaciones asociadas.`,
     );
 
+    // Recargar la caché de recordatorios activos in-memory
+    triggerCacheReload().catch(err => {
+      console.error("❌ [REMINDERS] Falló la recarga de caché al eliminar:", err.message);
+    });
+
     return successResponse(
       {
         message: "Reminder deleted successfully",
@@ -420,6 +436,11 @@ export async function toggleReminder(
         is_active: !currentReminder.is_active,
         updated_at: new Date(),
       },
+    });
+
+    // Recargar la caché de recordatorios activos in-memory
+    triggerCacheReload().catch(err => {
+      console.error("❌ [REMINDERS] Falló la recarga de caché al cambiar estado:", err.message);
     });
 
     return successResponse(normalizeReminder(updatedReminder), 200, event);

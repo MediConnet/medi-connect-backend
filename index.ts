@@ -548,8 +548,12 @@ httpServer.listen(PORT, async () => {
   console.log(`🌐 API available at /api`);
   console.log(`🔌 Realtime (Socket.IO) available at path ${process.env.SOCKET_IO_PATH || '/socket.io'}`);
   
-  // Ejecutar migraciones antes de verificar la conexión
-  await runMigrations();
+  // Ejecutar migraciones antes de verificar la conexión (configurable para producción/Render)
+  if (process.env.SKIP_MIGRATIONS_ON_STARTUP !== 'true') {
+    await runMigrations();
+  } else {
+    console.log('⏭️  Saltando ejecucion de migraciones en el inicio (configurado por SKIP_MIGRATIONS_ON_STARTUP)');
+  }
   
   // Verificar conexión a la base de datos
   try {
