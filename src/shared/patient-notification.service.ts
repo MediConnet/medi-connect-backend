@@ -69,6 +69,29 @@ export const patientNotificationService = {
         },
       });
 
+      // ---- ENVIAR PUSH NOTIFICATION NATIVA AL MÓVIL ----
+      try {
+        const patient = await prisma.patients.findUnique({
+          where: { id: payload.patientId },
+          include: {
+            users: {
+              select: {
+                push_token: true,
+              },
+            },
+          },
+        });
+
+        const token = patient?.users?.push_token;
+        if (token && token.startsWith("ExponentPushToken")) {
+          const { pushNotificationService } = await import("./push-notification.service");
+          await pushNotificationService.send([token], payload.title, payload.body, payload.data);
+          console.log(`📲 [PATIENT-NOTIF] Push individual enviado con éxito a paciente: ${payload.patientId}`);
+        }
+      } catch (pushErr: any) {
+        console.error("❌ [PATIENT-NOTIF] Error enviando push individual:", pushErr.message);
+      }
+
       return notification;
     } catch (error: any) {
       console.error("❌ [PATIENT-NOTIF] Error create:", error.message);
@@ -94,7 +117,14 @@ export const patientNotificationService = {
 
       const patients = await prisma.patients.findMany({
         where: whereCondition,
-        select: { id: true },
+        select: { 
+          id: true,
+          users: {
+            select: {
+              push_token: true,
+            },
+          },
+        },
       });
 
       if (patients.length === 0) return;
@@ -119,6 +149,21 @@ export const patientNotificationService = {
       console.log(
         `📢 [PATIENT-NOTIF] Broadcast enviado a ${patients.length} pacientes: ${payload.title}`,
       );
+
+      // ---- ENVIAR PUSH NOTIFICATION NATIVA EN LOTE ----
+      try {
+        const tokens = patients
+          .map((p) => p.users?.push_token)
+          .filter((t): t is string => !!t && t.startsWith("ExponentPushToken"));
+
+        if (tokens.length > 0) {
+          const { pushNotificationService } = await import("./push-notification.service");
+          await pushNotificationService.send(tokens, payload.title, payload.body, payload.data);
+          console.log(`📲 [PATIENT-NOTIF] Push broadcast enviado con éxito a ${tokens.length} dispositivos`);
+        }
+      } catch (pushErr: any) {
+        console.error("❌ [PATIENT-NOTIF] Error enviando push broadcast:", pushErr.message);
+      }
     } catch (error: any) {
       console.error("❌ [PATIENT-NOTIF] Error broadcast:", error.message);
       logger.error("Error broadcasting patient notification", error);
