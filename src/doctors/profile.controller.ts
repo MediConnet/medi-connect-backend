@@ -115,11 +115,12 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
     latitude: mainBranch?.latitude ? Number(mainBranch.latitude) : null,
     longitude: mainBranch?.longitude ? Number(mainBranch.longitude) : null,
     google_maps_url: mainBranch?.google_maps_url || null,
+    preview_images: (mainBranch as any)?.preview_images || [],
     status: profile.verification_status,
-    is_published: mainBranch?.is_active ?? false, 
+    is_published: mainBranch?.is_active ?? false,
     commission_percentage: profile.commission_percentage,
     bankAccount,
-    
+
     // Mapeo de horarios para el frontend - Estructura completa con todos los días
     schedules: (() => {
       const daysMap: Record<number, any> = {};
@@ -215,6 +216,41 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
       uploadedImageUrl = body.imageUrl;
     }
 
+    // --- SUBIR IMAGEN DE PERFIL (AVATAR) A CLOUDINARY ---
+    let uploadedProfilePictureUrl: string | undefined;
+    if (body.profile_picture_url && isBase64Image(body.profile_picture_url)) {
+      try {
+        uploadedProfilePictureUrl = await uploadImageToCloudinary(body.profile_picture_url, 'providers/doctors/avatars');
+        console.log('✅ [DOCTORS] Avatar subido a Cloudinary:', uploadedProfilePictureUrl);
+      } catch (imgErr: any) {
+        console.error('❌ [DOCTORS] Error subiendo avatar a Cloudinary:', imgErr.message);
+        return errorResponse('Error al subir la imagen de perfil. Intenta de nuevo.', 500);
+      }
+    } else if (body.profile_picture_url && !isBase64Image(body.profile_picture_url) && !body.profile_picture_url.startsWith('blob:')) {
+      uploadedProfilePictureUrl = body.profile_picture_url;
+    }
+
+    // --- SUBIR IMÁGENES DE VISTA PREVIA A CLOUDINARY ---
+    let uploadedPreviewImages: string[] | undefined;
+    if (body.preview_images && body.preview_images.length > 0) {
+      uploadedPreviewImages = [];
+      for (const img of body.preview_images) {
+        if (isBase64Image(img)) {
+          try {
+            const url = await uploadImageToCloudinary(img, 'providers/doctors/previews');
+            uploadedPreviewImages.push(url);
+          } catch (imgErr: any) {
+            console.error('❌ [DOCTORS] Error subiendo imagen de galería a Cloudinary:', imgErr.message);
+            return errorResponse('Error al subir imagen de galería. Intenta de nuevo.', 500);
+          }
+        } else if (!img.startsWith('blob:')) {
+          uploadedPreviewImages.push(img);
+        }
+      }
+    } else if (body.preview_images && body.preview_images.length === 0) {
+      uploadedPreviewImages = [];
+    }
+
     // --- TRANSACCIÓN UNIFICADA ---
     await prisma.$transaction(async (tx) => {
       
@@ -233,6 +269,15 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
           where: { id: profile.id },
           data: providerUpdateData,
         });
+      }
+
+      // Actualizar profile_picture_url en users
+      if (uploadedProfilePictureUrl !== undefined) {
+        await tx.users.update({
+          where: { id: authContext.user.id },
+          data: { profile_picture_url: uploadedProfilePictureUrl },
+        });
+        console.log('✅ [DOCTORS] profile_picture_url guardado en users:', uploadedProfilePictureUrl);
       }
 
       // A2. Actualizar especialidades con tarifas
@@ -288,6 +333,7 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
             payment_methods: (body.payment_methods && body.payment_methods.length > 0) ? body.payment_methods : undefined,
             is_active: body.is_published,
             image_url: uploadedImageUrl, // Cloudinary URL
+            preview_images: uploadedPreviewImages as any, // Cloudinary URLs de galería
         };
         
         Object.keys(branchData).forEach(key => branchData[key] === undefined && delete branchData[key]);
@@ -458,11 +504,12 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
       latitude: updatedMainBranch?.latitude ? Number(updatedMainBranch.latitude) : null,
       longitude: updatedMainBranch?.longitude ? Number(updatedMainBranch.longitude) : null,
       google_maps_url: updatedMainBranch?.google_maps_url || null,
+      preview_images: (updatedMainBranch as any)?.preview_images || [],
       status: updatedProfile?.verification_status,
       is_published: updatedMainBranch?.is_active ?? false,
       commission_percentage: updatedProfile?.commission_percentage,
       bankAccount,
-      
+
       schedules: (() => {
         const daysMap: Record<number, any> = {};
         const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];

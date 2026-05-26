@@ -87,6 +87,7 @@ function mapDoctorData(doctor: any) {
     horarioAtencion: formatSmartSchedule(schedules),
 
     imagen: mainBranch?.image_url || doctor.logo_url || doctor.users?.profile_picture_url || "",
+    preview_images: (mainBranch as any)?.preview_images || [],
     calificacion: mainBranch?.rating_cache
       ? Number(mainBranch.rating_cache)
       : 0,
