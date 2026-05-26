@@ -99,6 +99,7 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
     email: user?.email,
     profile_picture_url: user?.profile_picture_url || profile.logo_url,
     imageUrl: mainBranch?.image_url || profile.logo_url || null,
+    preview_images: (mainBranch as any)?.preview_images || [],
     
     specialty: specialtyName,
     specialties_list: specialtiesWithFees.map(s => s.name),
@@ -115,7 +116,6 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
     latitude: mainBranch?.latitude ? Number(mainBranch.latitude) : null,
     longitude: mainBranch?.longitude ? Number(mainBranch.longitude) : null,
     google_maps_url: mainBranch?.google_maps_url || null,
-    preview_images: (mainBranch as any)?.preview_images || [],
     status: profile.verification_status,
     is_published: mainBranch?.is_active ?? false,
     commission_percentage: profile.commission_percentage,
@@ -201,7 +201,8 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
 
     if (!profile) return notFoundResponse('Doctor profile not found for updates');
 
-    // --- SUBIR IMAGEN A CLOUDINARY (fuera de la transacción) ---
+    // --- SUBIR IMAGENES A CLOUDINARY (fuera de la transacción) ---
+    // A. Imagen de sucursal/banner
     let uploadedImageUrl: string | undefined;
     if (body.imageUrl && isBase64Image(body.imageUrl)) {
       try {
@@ -216,7 +217,7 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
       uploadedImageUrl = body.imageUrl;
     }
 
-    // --- SUBIR IMAGEN DE PERFIL (AVATAR) A CLOUDINARY ---
+    // B. Avatar del doctor (profile_picture_url)
     let uploadedProfilePictureUrl: string | undefined;
     if (body.profile_picture_url && isBase64Image(body.profile_picture_url)) {
       try {
@@ -230,7 +231,7 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
       uploadedProfilePictureUrl = body.profile_picture_url;
     }
 
-    // --- SUBIR IMÁGENES DE VISTA PREVIA A CLOUDINARY ---
+    // C. Imágenes de vista previa
     let uploadedPreviewImages: string[] | undefined;
     if (body.preview_images && body.preview_images.length > 0) {
       uploadedPreviewImages = [];
@@ -333,7 +334,6 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
             payment_methods: (body.payment_methods && body.payment_methods.length > 0) ? body.payment_methods : undefined,
             is_active: body.is_published,
             image_url: uploadedImageUrl, // Cloudinary URL
-            preview_images: uploadedPreviewImages as any, // Cloudinary URLs de galería
         };
         
         Object.keys(branchData).forEach(key => branchData[key] === undefined && delete branchData[key]);
@@ -486,6 +486,7 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
       email: updatedUser?.email, 
       profile_picture_url: updatedUser?.profile_picture_url || updatedProfile?.logo_url,
       imageUrl: updatedMainBranch?.image_url || updatedProfile?.logo_url || null,
+      preview_images: (updatedMainBranch as any)?.preview_images || [],
       
       specialty: specialtyName,
       specialties_list: updatedSpecialtiesWithFees.map(s => s.name),
@@ -504,7 +505,6 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
       latitude: updatedMainBranch?.latitude ? Number(updatedMainBranch.latitude) : null,
       longitude: updatedMainBranch?.longitude ? Number(updatedMainBranch.longitude) : null,
       google_maps_url: updatedMainBranch?.google_maps_url || null,
-      preview_images: (updatedMainBranch as any)?.preview_images || [],
       status: updatedProfile?.verification_status,
       is_published: updatedMainBranch?.is_active ?? false,
       commission_percentage: updatedProfile?.commission_percentage,
