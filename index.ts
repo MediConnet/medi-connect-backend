@@ -2,7 +2,7 @@ import { APIGatewayProxyEventV2 } from 'aws-lambda';
 import cors from 'cors';
 import * as dotenv from 'dotenv';
 import express from 'express';
-import { execSync } from 'child_process';
+
 import http from 'http';
 import { attachRealtimeToHttpServer } from './src/shared/realtime';
 import { startScheduler } from './src/jobs/scheduler';
@@ -521,23 +521,6 @@ app.get('/api/health', (req: express.Request, res: express.Response) => {
   });
 });
 
-// Función para ejecutar migraciones
-async function runMigrations() {
-  try {
-    console.log(`🔄 Ejecutando migraciones de base de datos...`);
-    execSync('npx prisma migrate deploy', { 
-      stdio: 'inherit',
-      env: { ...process.env }
-    });
-    console.log(`✅ Migraciones aplicadas exitosamente`);
-  } catch (error: any) {
-    console.error(`❌ Error al ejecutar migraciones:`, error.message);
-    // No bloqueamos el inicio del servidor si las migraciones fallan
-    // pero registramos el error para que sea visible
-    console.log(`⚠️  Continuando con el inicio del servidor...`);
-  }
-}
-
 // Start server
 const httpServer = http.createServer(app);
 attachRealtimeToHttpServer(httpServer);
@@ -548,23 +531,36 @@ httpServer.listen(PORT, async () => {
   console.log(`🌐 API available at /api`);
   console.log(`🔌 Realtime (Socket.IO) available at path ${process.env.SOCKET_IO_PATH || '/socket.io'}`);
   
-  // Ejecutar migraciones antes de verificar la conexión (configurable para producción/Render)
-  if (process.env.SKIP_MIGRATIONS_ON_STARTUP !== 'true') {
-    await runMigrations();
-  } else {
-    console.log('⏭️  Saltando ejecucion de migraciones en el inicio (configurado por SKIP_MIGRATIONS_ON_STARTUP)');
+  // Verificar conexión a la base de datos (con reintento)
+  const maxRetries = 3;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const { getPrismaClient } = await import('./src/shared/prisma');
+      const prisma = getPrismaClient();
+      await prisma.$connect();
+      console.log(`✅ Conexión a la base de datos exitosa (intento ${attempt}/${maxRetries})`);
+      break;
+    } catch (error: any) {
+      console.error(`❌ Error al conectar (intento ${attempt}/${maxRetries}):`, error.message);
+      if (attempt < maxRetries) {
+        const delay = attempt * 2000;
+        console.log(`   Reintentando en ${delay}ms...`);
+        await new Promise(r => setTimeout(r, delay));
+      } else {
+        console.log(`⚠️  No se pudo conectar tras ${maxRetries} intentos. El servidor seguirá ejecutándose.`);
+      }
+    }
   }
   
-  // Verificar conexión a la base de datos
-  try {
-    const { getPrismaClient } = await import('./src/shared/prisma');
-    const prisma = getPrismaClient();
-    await prisma.$connect();
-    console.log(`✅ Conexión a la base de datos exitosa`);
-  } catch (error: any) {
-    console.error(`❌ Error al conectar a la base de datos:`, error.message);
-    console.log(`⚠️  El servidor está corriendo pero la base de datos no está disponible`);
-  }
+  // Limpiar conexiones al apagar
+  const cleanup = async () => {
+    console.log('🛑 Cerrando servidor y conexiones...');
+    const { disconnectPrisma } = await import('./src/shared/prisma');
+    await disconnectPrisma();
+    process.exit(0);
+  };
+  process.on('SIGTERM', cleanup);
+  process.on('SIGINT', cleanup);
 
   // Iniciar cron jobs
   startScheduler();

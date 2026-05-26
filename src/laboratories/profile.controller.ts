@@ -11,8 +11,7 @@ import {
   successResponse,
 } from "../shared/response";
 import { parseBody, updateLaboratoryProfileSchema } from "../shared/validators";
-
-const LAB_CATEGORY_SLUGS = ["laboratory", "laboratorio"];
+import { LAB_CATEGORY_SLUGS } from "../shared/constants";
 
 function dayIdToSlug(dayId: number): string {
   // IMPORTANT: frontend expects lowercase english slugs

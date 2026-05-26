@@ -447,18 +447,36 @@ httpServer.listen(PORT, async () => {
   console.log(`🌐 API available at http://localhost:${PORT}/api`);
   console.log(`🔌 Realtime (Socket.IO) available at path ${process.env.SOCKET_IO_PATH || "/socket.io"}`);
 
-  // Verificar conexión a la base de datos
-  try {
-    const { getPrismaClient } = await import("../src/shared/prisma");
-    const prisma = getPrismaClient();
-    await prisma.$connect();
-    console.log(`✅ Conexión a la base de datos exitosa`);
-  } catch (error: any) {
-    console.error(`❌ Error al conectar a la base de datos:`, error.message);
-    console.log(
-      `⚠️  El servidor está corriendo pero la base de datos no está disponible`,
-    );
+  // Verificar conexión a la base de datos (con reintento)
+  const maxRetries = 3;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const { getPrismaClient } = await import("../src/shared/prisma");
+      const prisma = getPrismaClient();
+      await prisma.$connect();
+      console.log(`✅ Conexión a la base de datos exitosa (intento ${attempt}/${maxRetries})`);
+      break;
+    } catch (error: any) {
+      console.error(`❌ Error al conectar (intento ${attempt}/${maxRetries}):`, error.message);
+      if (attempt < maxRetries) {
+        const delay = attempt * 2000;
+        console.log(`   Reintentando en ${delay}ms...`);
+        await new Promise(r => setTimeout(r, delay));
+      } else {
+        console.log(`⚠️  No se pudo conectar tras ${maxRetries} intentos. El servidor seguirá ejecutándose.`);
+      }
+    }
   }
+
+  // Limpiar conexiones al apagar
+  const cleanup = async () => {
+    console.log('🛑 Cerrando servidor y conexiones...');
+    const { disconnectPrisma } = await import("../src/shared/prisma");
+    await disconnectPrisma();
+    process.exit(0);
+  };
+  process.on('SIGTERM', cleanup);
+  process.on('SIGINT', cleanup);
 
   console.log(`\n📋 Available endpoints:`);
   console.log(`   - POST   /api/auth/register`);

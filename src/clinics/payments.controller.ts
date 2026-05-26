@@ -4,6 +4,7 @@ import { getPrismaClient } from '../shared/prisma';
 import { successResponse, errorResponse, internalErrorResponse, notFoundResponse } from '../shared/response';
 import { logger } from '../shared/logger';
 import { getAuthContext } from '../shared/auth';
+import { PAYOUT_TYPE_CLINIC } from '../shared/constants';
 
 /**
  * GET /api/clinics/payments
@@ -34,7 +35,7 @@ export async function getClinicPayments(event: APIGatewayProxyEventV2): Promise<
     const payouts = await prisma.payouts.findMany({
       where: {
         provider_id: clinic.id,
-        payout_type: 'clinic',
+        payout_type: PAYOUT_TYPE_CLINIC,
       },
       select: {
         id: true,

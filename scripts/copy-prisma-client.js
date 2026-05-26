@@ -1,11 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 
-// Copiar el cliente de Prisma generado a dist/generated/prisma
+// Copiar el cliente de Prisma generado a dist/src/generated/prisma
 // para que la ruta ../generated/prisma/client desde dist/src/shared funcione
 const sourceDir = path.join(__dirname, '..', 'src', 'generated', 'prisma');
-const destDir1 = path.join(__dirname, '..', 'dist', 'src', 'generated', 'prisma'); // Para desarrollo local
-const destDir2 = path.join(__dirname, '..', 'dist', 'generated', 'prisma'); // Para producción (ruta que busca el código compilado)
+const destDir = path.join(__dirname, '..', 'dist', 'src', 'generated', 'prisma');
 
 function copyRecursiveSync(src, dest) {
   if (!fs.existsSync(dest)) {
@@ -27,17 +26,9 @@ function copyRecursiveSync(src, dest) {
 }
 
 if (fs.existsSync(sourceDir)) {
-  console.log('📦 Copiando cliente de Prisma generado...');
-  
-  // Copiar a dist/src/generated/prisma (para desarrollo)
-  if (fs.existsSync(path.join(__dirname, '..', 'dist', 'src'))) {
-    copyRecursiveSync(sourceDir, destDir1);
-  }
-  
-  // Copiar a dist/generated/prisma (para producción - ruta que busca el código compilado)
-  copyRecursiveSync(sourceDir, destDir2);
-  
+  console.log('📦 Copiando cliente de Prisma generado a dist/...');
+  copyRecursiveSync(sourceDir, destDir);
   console.log('✅ Cliente de Prisma copiado exitosamente');
 } else {
-  console.warn('⚠️  No se encontró el cliente de Prisma generado. Asegúrate de ejecutar prisma generate primero.');
+  console.warn('⚠️  No se encontró el cliente de Prisma generado. Ejecuta prisma generate primero.');
 }

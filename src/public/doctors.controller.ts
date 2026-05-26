@@ -1,4 +1,5 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResult } from "aws-lambda";
+import { enum_verification } from "../generated/prisma/client";
 import { formatSmartSchedule } from "../shared/helpers/scheduleFormatter";
 import { logger } from "../shared/logger";
 import { getPrismaClient } from "../shared/prisma";
@@ -139,7 +140,7 @@ export async function getAllDoctors(
     const cityParam = queryParams.city;
 
     const where: any = {
-      verification_status: "APPROVED",
+      verification_status: enum_verification.APPROVED,
       category_id: 1,
       users: {
         is_active: true,
@@ -297,7 +298,7 @@ export async function getDoctorById(
     const doctor = await prisma.providers.findFirst({
       where: {
         id: doctorId,
-        verification_status: "APPROVED",
+        verification_status: enum_verification.APPROVED,
         category_id: 1,
         users: { is_active: true },
         provider_branches: { some: { is_active: true } },
@@ -404,7 +405,7 @@ export async function getDoctorConsultationPrices(
     const doctor = await prisma.providers.findFirst({
       where: {
         id: doctorId,
-        verification_status: "APPROVED",
+        verification_status: enum_verification.APPROVED,
         category_id: 1,
         users: { is_active: true },
       },

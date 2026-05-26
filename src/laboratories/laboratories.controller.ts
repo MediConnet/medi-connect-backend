@@ -1,4 +1,5 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResult } from "aws-lambda";
+import { enum_verification } from "../generated/prisma/client";
 import { AuthContext, requireAuth } from "../shared/auth";
 import { formatSmartSchedule } from "../shared/helpers/scheduleFormatter";
 import { getPrismaClient } from "../shared/prisma";
@@ -55,7 +56,7 @@ export async function getAllLaboratories(
     const allProviders = await prisma.providers.findMany({
       where: {
         category_id: laboratoryCategory.id,
-        verification_status: "APPROVED",
+        verification_status: enum_verification.APPROVED,
       },
       include: {
         provider_branches: {

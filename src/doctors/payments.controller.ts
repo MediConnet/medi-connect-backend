@@ -3,9 +3,7 @@ import { getPrismaClient } from '../shared/prisma';
 import { successResponse, errorResponse, internalErrorResponse, notFoundResponse } from '../shared/response';
 import { logger } from '../shared/logger';
 import { getAuthContext } from '../shared/auth';
-
-const DIRECT_PAYMENT_SOURCES = ['admin', 'ADMIN', 'PAYPHONE', 'payphone'];
-const CHARGED_PAYMENT_STATUSES = ['PAID', 'paid', 'completed', 'COMPLETED'];
+import { CHARGED_PAYMENT_STATUSES, DIRECT_PAYMENT_SOURCES } from '../shared/constants';
 
 function isChargedPayment(status?: string | null, paidAt?: Date | null): boolean {
   if (paidAt) return true;

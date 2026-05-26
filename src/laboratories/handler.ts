@@ -75,8 +75,8 @@ export async function handler(
     if (normalizedPath.startsWith("/api/laboratories/") && method === "GET") {
       const pathParts = normalizedPath.split("/");
       const lastPart = pathParts[pathParts.length - 1];
-      const reserved = ["search", "dashboard", "reviews", "profile", "exams"];
-      if (!reserved.includes(lastPart) && !normalizedPath.startsWith("/api/laboratories/exams/")) {
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(lastPart);
+      if (isUuid && !normalizedPath.startsWith("/api/laboratories/exams/")) {
         return await getLaboratoryById(event);
       }
     }

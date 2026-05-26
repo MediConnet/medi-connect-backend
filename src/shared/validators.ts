@@ -1,6 +1,15 @@
 import { z } from "zod";
 
-import { enum_appt_status } from "../generated/prisma/client";
+import { enum_appt_status, enum_payment_method } from "../generated/prisma/client";
+import {
+  BANK_ACCOUNT_TYPES,
+  CLINIC_APPOINTMENT_STATUSES,
+  CONSULTATION_TYPES,
+  PAYMENT_METHODS,
+  PHARMACY_ORDER_STATUSES,
+  RECEPTION_STATUSES,
+  REGISTRATION_ROLES,
+} from "./constants";
 
 const emptyStringToUndefined = (val: unknown) =>
   val === "" || val === null ? undefined : val;
@@ -21,7 +30,7 @@ const digitsOnlyOrUndefined = (val: unknown) => {
 // Auth validators
 export const registerSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(6),
+  password: z.string().min(8).max(20),
 
   // Datos del Representante / Persona
   firstName: z.string().optional(),
@@ -36,17 +45,7 @@ export const registerSchema = z.object({
   specialties: z.array(z.string()).optional(),
 
   phone: z.string().optional(),
-  role: z
-    .enum([
-      "PATIENT",
-      "DOCTOR",
-      "PHARMACY",
-      "LABORATORY",
-      "AMBULANCE",
-      "CLINIC",
-      "PROVIDER",
-    ])
-    .optional(),
+  role: z.enum(REGISTRATION_ROLES).optional(),
   address: z.string().optional(),
   cityId: z.string().uuid().optional(),
   city: z.string().optional(),
@@ -66,7 +65,7 @@ export const loginSchema = z.object({
 
 export const changePasswordSchema = z.object({
   currentPassword: z.string().min(1, "Current password is required"),
-  newPassword: z.string().min(8, "New password must be at least 8 characters"),
+  newPassword: z.string().min(8, "New password must be at least 8 characters").max(20, "New password must not exceed 20 characters"),
 });
 
 export const forgotPasswordSchema = z.object({
@@ -75,7 +74,7 @@ export const forgotPasswordSchema = z.object({
 
 export const resetPasswordSchema = z.object({
   token: z.string().min(1, "Reset token is required"),
-  newPassword: z.string().min(6, "New password must be at least 6 characters"),
+  newPassword: z.string().min(8, "New password must be at least 8 characters").max(20, "New password must not exceed 20 characters"),
 });
 
 export const refreshTokenSchema = z.object({
@@ -120,7 +119,7 @@ const bankAccountSchema = z.object({
   accountNumber: z.coerce
     .string()
     .min(10, "Account number must be at least 10 digits"),
-  accountType: z.enum(["checking", "savings"], {
+  accountType: z.enum(BANK_ACCOUNT_TYPES, {
     errorMap: () => ({ message: "Account type must be checking or savings" }),
   }),
   accountHolder: z.string().min(1, "Account holder is required"),
@@ -189,7 +188,7 @@ export const doctorBankAccountSchema = z.object({
     .string()
     .min(10, "Account number must be at least 10 digits")
     .regex(/^\d+$/, "Account number must contain only digits"),
-  accountType: z.enum(["checking", "savings"], {
+  accountType: z.enum(BANK_ACCOUNT_TYPES, {
     errorMap: () => ({ message: "Account type must be checking or savings" }),
   }),
   accountHolder: z.string().min(1, "Account holder is required"),
@@ -360,15 +359,12 @@ export const updateProductSchema = z.object({
 });
 
 export const updateOrderStatusSchema = z.object({
-  status: z.enum(
-    ["pending", "confirmed", "preparing", "ready", "delivered", "cancelled"],
-    {
-      errorMap: () => ({
-        message:
-          "Status must be one of: pending, confirmed, preparing, ready, delivered, cancelled",
-      }),
-    },
-  ),
+  status: z.enum(PHARMACY_ORDER_STATUSES, {
+    errorMap: () => ({
+      message:
+        "Status must be one of: pending, confirmed, preparing, ready, delivered, cancelled",
+    }),
+  }),
 });
 
 // Clinic validators
@@ -560,40 +556,13 @@ export const inviteDoctorSchema = z.object({
   // ❌ name y specialty ya no se envían en la invitación - se completan al aceptar
 });
 
-const validSpecialties = [
-  "Medicina General",
-  "Cardiología",
-  "Dermatología",
-  "Ginecología",
-  "Pediatría",
-  "Oftalmología",
-  "Traumatología",
-  "Neurología",
-  "Psiquiatría",
-  "Urología",
-  "Endocrinología",
-  "Gastroenterología",
-  "Neumología",
-  "Otorrinolaringología",
-  "Oncología",
-  "Reumatología",
-  "Nefrología",
-  "Cirugía General",
-  "Anestesiología",
-  "Odontología",
-] as const;
-
 export const acceptInvitationSchema = z.object({
   name: z.string().min(3, "Name must be at least 3 characters"),
-  specialty: z
-    .string()
-    .min(1, "Specialty is required")
-    .refine((val) => validSpecialties.includes(val as any), {
-      message: `Specialty must be one of: ${validSpecialties.join(", ")}`,
-    }),
+  specialty: z.string().min(1, "Specialty is required"),
   password: z
     .string()
     .min(8, "Password must be at least 8 characters")
+    .max(20, "Password must not exceed 20 characters")
     .optional(), // Opcional para usuarios ya registrados
   phone: z
     .string()
@@ -614,19 +583,16 @@ export const updateDoctorOfficeSchema = z.object({
 });
 
 export const updateAppointmentStatusClinicSchema = z.object({
-  status: z.enum(
-    ["scheduled", "confirmed", "attended", "cancelled", "no_show"],
-    {
-      errorMap: () => ({
-        message:
-          "Status must be one of: scheduled, confirmed, attended, cancelled, no-show",
-      }),
-    },
-  ),
+  status: z.enum(CLINIC_APPOINTMENT_STATUSES, {
+    errorMap: () => ({
+      message:
+        "Status must be one of: scheduled, confirmed, attended, cancelled, no-show",
+    }),
+  }),
 });
 
 export const updateReceptionStatusSchema = z.object({
-  receptionStatus: z.enum(["arrived", "not_arrived", "attended"], {
+  receptionStatus: z.enum(RECEPTION_STATUSES, {
     errorMap: () => ({
       message:
         "Reception status must be one of: arrived, not_arrived, attended",
@@ -780,7 +746,7 @@ export const createAppointmentSchema = z.object({
     .string()
     .regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, "Time must be in HH:MM format"),
   type: z
-    .enum(["presencial", "virtual"], {
+    .enum(CONSULTATION_TYPES, {
       errorMap: () => ({
         message: 'Type must be either "presencial" or "virtual"',
       }),
@@ -789,7 +755,7 @@ export const createAppointmentSchema = z.object({
     .default("presencial"),
   reason: z.string().min(1, "Reason is required"),
   paymentMethod: z
-    .enum(["CASH", "CARD", "TRANSFER"], {
+    .enum([PAYMENT_METHODS.CASH, PAYMENT_METHODS.CARD, PAYMENT_METHODS.TRANSFER], {
       errorMap: () => ({
         message: "Payment method must be CASH, CARD, or TRANSFER",
       }),

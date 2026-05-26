@@ -3,10 +3,7 @@ import { randomUUID } from 'crypto';
 import { getPrismaClient } from '../shared/prisma';
 import { successResponse, errorResponse, internalErrorResponse } from '../shared/response';
 import { logger } from '../shared/logger';
-
-const CARD_METHODS = ['CARD', 'card'];
-const DIRECT_PAYMENT_SOURCES = ['admin', 'ADMIN', 'PAYPHONE', 'payphone'];
-const CHARGED_PAYMENT_STATUSES = ['PAID', 'paid', 'completed', 'COMPLETED'];
+import { CARD_METHODS, CHARGED_PAYMENT_STATUSES, DIRECT_PAYMENT_SOURCES, PAYOUT_TYPE_CLINIC } from '../shared/constants';
 
 function normalizePaymentStatus(status?: string | null, paidAt?: Date | null): 'pending' | 'paid' {
   if (paidAt) return 'paid';
@@ -99,7 +96,7 @@ export async function getClinicPayments(event: APIGatewayProxyEventV2): Promise<
     // Obtener payouts de tipo 'clinic' con status='pending'
     const payouts = await prisma.payouts.findMany({
       where: {
-        payout_type: 'clinic',
+        payout_type: PAYOUT_TYPE_CLINIC,
         status: 'pending',
       },
       include: {
@@ -319,7 +316,7 @@ export async function getPaymentHistory(event: APIGatewayProxyEventV2): Promise<
     // Obtener pagos a clínicas pagados
     const clinicPayments = await prisma.payouts.findMany({
       where: {
-        payout_type: 'clinic',
+        payout_type: PAYOUT_TYPE_CLINIC,
         status: 'paid',
       },
       orderBy: {

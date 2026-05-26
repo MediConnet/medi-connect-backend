@@ -455,6 +455,14 @@ export async function acceptInvitation(event: APIGatewayProxyEventV2): Promise<A
     const token = extractIdFromPath(event.requestContext.http.path, '/api/clinics/invite/', '/accept');
     const body = parseBody(event.body, acceptInvitationSchema);
 
+    // Validar que la especialidad exista en la base de datos
+    const specialtyRecord = await prisma.specialties.findFirst({
+      where: { name: { equals: body.specialty, mode: 'insensitive' } },
+    });
+    if (!specialtyRecord) {
+      return errorResponse(`La especialidad "${body.specialty}" no existe. Las especialidades son gestionadas por el administrador.`, 400);
+    }
+
     // Buscar invitación
     const invitation = await prisma.doctor_invitations.findFirst({
       where: { invitation_token: token },

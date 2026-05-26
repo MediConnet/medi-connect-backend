@@ -1,4 +1,5 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResult } from "aws-lambda";
+import { enum_verification } from "../generated/prisma/client";
 import { logger } from "../shared/logger";
 import { getPrismaClient } from "../shared/prisma";
 import {
@@ -114,7 +115,7 @@ export async function getAllAmbulances(
     // Filtros base
     const where: any = {
       category_id: 4,
-      verification_status: "APPROVED",
+      verification_status: enum_verification.APPROVED,
       users: {
         is_active: true,
       },
@@ -257,7 +258,7 @@ export async function getAmbulanceById(
       where: {
         id: ambulanceId,
         category_id: 4,
-        verification_status: "APPROVED",
+        verification_status: enum_verification.APPROVED,
         users: { is_active: true },
         provider_branches: { some: { is_active: true } },
       },
