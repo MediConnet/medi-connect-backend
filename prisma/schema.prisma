@@ -266,7 +266,6 @@ model provider_branches {
   ambulance_types    String[]             @default([])
   coverage_area      String?              @db.VarChar(255)
   google_maps_url    String?              @db.VarChar(500)
-  preview_images     String[]             @default([])
   appointments       appointments[]
   blockedSlots       blocked_slots[]
   featured_branches  featured_branches[]
