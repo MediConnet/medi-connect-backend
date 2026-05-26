@@ -6,7 +6,7 @@ import { logger } from '../shared/logger';
 import { getPrismaClient } from '../shared/prisma';
 import { errorResponse, internalErrorResponse, notFoundResponse, successResponse } from '../shared/response';
 import { parseBody, updateDoctorProfileSchema } from '../shared/validators';
-import { uploadImageToCloudinary, isBase64Image } from '../shared/cloudinary';
+import { uploadImageToCloudinary, uploadAvatarToCloudinary, uploadPreviewToCloudinary, isBase64Image } from '../shared/cloudinary';
 
 // --- HELPER FUNCTIONS ---
 function dayNumberToString(day: number): string {
@@ -99,6 +99,7 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
     email: user?.email,
     profile_picture_url: user?.profile_picture_url || profile.logo_url,
     imageUrl: mainBranch?.image_url || profile.logo_url || null,
+    preview_images: (mainBranch as any)?.preview_images || [],
     
     specialty: specialtyName,
     specialties_list: specialtiesWithFees.map(s => s.name),
@@ -200,7 +201,8 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
 
     if (!profile) return notFoundResponse('Doctor profile not found for updates');
 
-    // --- SUBIR IMAGEN A CLOUDINARY (fuera de la transacción) ---
+    // --- SUBIR IMAGENES A CLOUDINARY (fuera de la transacción) ---
+    // A. Imagen de sucursal/banner
     let uploadedImageUrl: string | undefined;
     if (body.imageUrl && isBase64Image(body.imageUrl)) {
       try {
@@ -215,9 +217,53 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
       uploadedImageUrl = body.imageUrl;
     }
 
+    // B. Foto de perfil (Avatar del usuario - 400x400 1:1)
+    let uploadedAvatarUrl: string | null | undefined;
+    if (body.profile_picture_url === null) {
+      uploadedAvatarUrl = null;
+    } else if (body.profile_picture_url && isBase64Image(body.profile_picture_url)) {
+      try {
+        uploadedAvatarUrl = await uploadAvatarToCloudinary(body.profile_picture_url, 'providers/doctors/avatars');
+        console.log('✅ [DOCTORS] Avatar subido a Cloudinary:', uploadedAvatarUrl);
+      } catch (imgErr: any) {
+        console.error('❌ [DOCTORS] Error subiendo avatar a Cloudinary:', imgErr.message);
+        return errorResponse('Error al subir la imagen de perfil.', 500);
+      }
+    } else if (body.profile_picture_url && !isBase64Image(body.profile_picture_url) && !body.profile_picture_url.startsWith('blob:')) {
+      uploadedAvatarUrl = body.profile_picture_url;
+    }
+
+    // C. Galería de Vista Previa (hasta 10 imágenes - 800x400 2:1)
+    let uploadedPreviewImages: string[] | undefined;
+    if (body.preview_images !== undefined && Array.isArray(body.preview_images)) {
+      uploadedPreviewImages = [];
+      const imagesToProcess = body.preview_images.slice(0, 10);
+      for (const img of imagesToProcess) {
+        if (isBase64Image(img)) {
+          try {
+            const url = await uploadPreviewToCloudinary(img, 'providers/doctors/previews');
+            uploadedPreviewImages.push(url);
+          } catch (err: any) {
+            console.error('❌ [DOCTORS] Error subiendo imagen de vista previa:', err.message);
+            return errorResponse('Error al subir las imágenes de vista previa.', 500);
+          }
+        } else if (img && !img.startsWith('blob:')) {
+          uploadedPreviewImages.push(img);
+        }
+      }
+    }
+
     // --- TRANSACCIÓN UNIFICADA ---
     await prisma.$transaction(async (tx) => {
       
+      // A0. Actualizar Avatar (Usuario)
+      if (uploadedAvatarUrl !== undefined) {
+        await tx.users.update({
+          where: { id: authContext.user.id },
+          data: { profile_picture_url: uploadedAvatarUrl },
+        });
+      }
+
       // A. Actualizar Provider
       const providerUpdateData: any = {
         commercial_name: body.full_name,
@@ -288,6 +334,7 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
             payment_methods: (body.payment_methods && body.payment_methods.length > 0) ? body.payment_methods : undefined,
             is_active: body.is_published,
             image_url: uploadedImageUrl, // Cloudinary URL
+            preview_images: uploadedPreviewImages, // Array de URLs de la galería
         };
         
         Object.keys(branchData).forEach(key => branchData[key] === undefined && delete branchData[key]);
@@ -440,6 +487,7 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
       email: updatedUser?.email, 
       profile_picture_url: updatedUser?.profile_picture_url || updatedProfile?.logo_url,
       imageUrl: updatedMainBranch?.image_url || updatedProfile?.logo_url || null,
+      preview_images: (updatedMainBranch as any)?.preview_images || [],
       
       specialty: specialtyName,
       specialties_list: updatedSpecialtiesWithFees.map(s => s.name),
