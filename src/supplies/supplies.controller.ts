@@ -1,6 +1,7 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResult } from "aws-lambda";
 import { randomUUID } from "crypto";
 import { z } from "zod";
+import { enum_verification } from "../generated/prisma/client";
 import { AuthContext, requireAuth } from "../shared/auth";
 import { formatSmartSchedule } from "../shared/helpers/scheduleFormatter";
 import { getPrismaClient } from "../shared/prisma";
@@ -191,6 +192,8 @@ export async function updateSuppliesProfile(
     });
 
     if (!provider) {
+      const settings = await prisma.admin_settings.findFirst();
+      const commissionPercentage = settings ? Number((settings as any).commission_supplies || 15.0) : 15.0;
       provider = await prisma.providers.create({
         data: {
           id: randomUUID(),
@@ -198,8 +201,8 @@ export async function updateSuppliesProfile(
           category_id: suppliesCategory.id,
           commercial_name: body.name || "Insumos",
           description: body.description || null,
-          verification_status: "APPROVED",
-          commission_percentage: 15.0,
+          verification_status: enum_verification.APPROVED,
+          commission_percentage: commissionPercentage,
         },
       });
     }
@@ -336,7 +339,7 @@ export async function getSupplyStores(
     const allProviders = await prisma.providers.findMany({
       where: {
         category_id: suppliesCategory.id,
-        verification_status: "APPROVED",
+        verification_status: enum_verification.APPROVED,
       },
       include: {
         provider_branches: {

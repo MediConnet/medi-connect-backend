@@ -44,7 +44,7 @@ model appointments {
 
 model cities {
   id                String              @id @db.Uuid
-  name              String              @db.VarChar(255)
+  name                 String                 @unique @db.VarChar(255)
   state             String?             @db.VarChar(255)
   country           String?             @db.VarChar(255)
   provider_branches provider_branches[]

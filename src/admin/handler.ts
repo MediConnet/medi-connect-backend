@@ -1,6 +1,6 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResult } from 'aws-lambda';
 import { z } from 'zod';
-import { enum_roles } from '../generated/prisma/client';
+import { ad_status, enum_roles, enum_verification } from '../generated/prisma/client';
 import { requireRole } from '../shared/auth';
 import { logger } from '../shared/logger';
 import { getPrismaClient } from '../shared/prisma';
@@ -23,6 +23,7 @@ import {
   deleteUser
 } from './users.controller';
 import { getSettings, updateSettings } from './settings.controller';
+import { getSpecialties, createSpecialty, updateSpecialty, deleteSpecialty } from './specialties.controller';
 
 export async function handler(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   const method = event.requestContext.http.method;
@@ -291,6 +292,26 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       return await deleteAdminAd(event);
     }
 
+    // GET /api/admin/specialties
+    if (method === 'GET' && path === '/api/admin/specialties') {
+      return await getSpecialties(event);
+    }
+
+    // POST /api/admin/specialties
+    if (method === 'POST' && path === '/api/admin/specialties') {
+      return await createSpecialty(event);
+    }
+
+    // PUT /api/admin/specialties/:id
+    if (method === 'PUT' && path.match(/^\/api\/admin\/specialties\/[^/]+$/)) {
+      return await updateSpecialty(event);
+    }
+
+    // DELETE /api/admin/specialties/:id
+    if (method === 'DELETE' && path.match(/^\/api\/admin\/specialties\/[^/]+$/)) {
+      return await deleteSpecialty(event);
+    }
+
     console.log(`❌ [ADMIN] ${method} ${path} - Ruta no encontrada (404)`);
     return errorResponse('Not found', 404);
   } catch (error: any) {
@@ -395,33 +416,9 @@ async function compileRecentActivity(prisma: any, limitCount: number = 5): Promi
 
     activities.sort((a, b) => b.timeVal - a.timeVal);
     
-    // Fallback si está vacío
+    // Si está vacío, retornar array vacío
     if (activities.length === 0) {
-      const getRecentDateTime = (hoursAgo: number) => {
-        const now = new Date();
-        now.setHours(now.getHours() - hoursAgo);
-        return now;
-      };
-      return [
-        {
-          id: "bk-1",
-          type: "info",
-          message: "Nueva solicitud de registro: Dra. María González",
-          timestamp: formatSpanishDate(getRecentDateTime(2)),
-        },
-        {
-          id: "bk-2",
-          type: "success",
-          message: "Servicio aprobado: Dr. Roberto Sánchez",
-          timestamp: formatSpanishDate(getRecentDateTime(5)),
-        },
-        {
-          id: "bk-3",
-          type: "info",
-          message: "Nueva solicitud de registro: Farmacia del Pueblo",
-          timestamp: formatSpanishDate(getRecentDateTime(8)),
-        }
-      ];
+      return [];
     }
 
     return activities.slice(0, limitCount).map(({ timeVal, ...rest }) => rest);
@@ -772,9 +769,9 @@ async function getRequestDetail(event: APIGatewayProxyEventV2): Promise<APIGatew
       ? new Date(provider.users.created_at).toISOString().split('T')[0]
       : new Date().toISOString().split('T')[0],
     documentsCount: docs.length,
-    status: provider.verification_status === 'APPROVED' ? 'APPROVED' :
-            provider.verification_status === 'REJECTED' ? 'REJECTED' :
-            'PENDING',
+      status: provider.verification_status === enum_verification.APPROVED ? enum_verification.APPROVED :
+              provider.verification_status === enum_verification.REJECTED ? enum_verification.REJECTED :
+              enum_verification.PENDING,
     rejectionReason: (provider as any).rejection_reason || null,
     phone: branch?.phone_contact || '',           // ✅ Desde provider_branches.phone_contact
     whatsapp: branch?.phone_contact || '',     // ✅ Mismo teléfono para whatsapp
@@ -847,7 +844,7 @@ async function getAdRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayP
                        'doctor';
 
     // Verificar si el anuncio está activo
-    const hasActiveAd = ad.status === 'APPROVED' && 
+    const hasActiveAd = ad.status === ad_status.APPROVED && 
                        ad.is_active === true &&
                        ad.start_date &&
                        new Date(ad.start_date) <= now &&
@@ -1216,68 +1213,10 @@ async function getActivity(event: APIGatewayProxyEventV2): Promise<APIGatewayPro
     // Ordenar actividades de la más reciente a la más antigua
     activities.sort((a, b) => b.timestamp - a.timestamp);
 
-    // Si no hay actividades en la base de datos, proveer mock realista
+    // Si no hay actividades, retornar array vacío
     if (activities.length === 0) {
-      console.log('⚠️ [GET_ACTIVITY] Base de datos vacía, generando actividades de respaldo...');
-      
-      const getRecentDateTime = (hoursAgo: number) => {
-        const now = new Date();
-        now.setHours(now.getHours() - hoursAgo);
-        return now;
-      };
-
-      const backups = [
-        {
-          id: "bk-1",
-          title: "Nueva solicitud de registro: Dra. María González",
-          actor: "Sistema",
-          date: formatSpanishDate(getRecentDateTime(2)),
-          timestamp: getRecentDateTime(2).getTime(),
-          type: "REGISTRATION",
-        },
-        {
-          id: "bk-2",
-          title: "Servicio aprobado: Dr. Roberto Sánchez",
-          actor: "Admin General",
-          date: formatSpanishDate(getRecentDateTime(5)),
-          timestamp: getRecentDateTime(5).getTime(),
-          type: "APPROVAL",
-        },
-        {
-          id: "bk-3",
-          title: "Nueva solicitud de registro: Farmacia del Pueblo",
-          actor: "Sistema",
-          date: formatSpanishDate(getRecentDateTime(8)),
-          timestamp: getRecentDateTime(8).getTime(),
-          type: "REGISTRATION",
-        },
-        {
-          id: "bk-4",
-          title: "Nuevo anuncio creado: Chequeo Cardiológico Completo",
-          actor: "Dr. Carlos Mendoza",
-          date: formatSpanishDate(getRecentDateTime(12)),
-          timestamp: getRecentDateTime(12).getTime(),
-          type: "ANNOUNCEMENT",
-        },
-        {
-          id: "bk-5",
-          title: "Solicitud rechazada: Insumos Médicos Plus (documentos incompletos)",
-          actor: "Admin General",
-          date: formatSpanishDate(getRecentDateTime(18)),
-          timestamp: getRecentDateTime(18).getTime(),
-          type: "REJECTION",
-        },
-        {
-          id: "bk-6",
-          title: "Perfil actualizado: Farmacia San José",
-          actor: "Farmacia San José",
-          date: formatSpanishDate(getRecentDateTime(24)),
-          timestamp: getRecentDateTime(24).getTime(),
-          type: "UPDATE",
-        }
-      ];
-
-      return successResponse(backups);
+      console.log('ℹ️ [GET_ACTIVITY] No hay actividades registradas');
+      return successResponse([]);
     }
 
     // Remover campo auxiliar timestamp antes de retornar

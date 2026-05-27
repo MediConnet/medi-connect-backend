@@ -181,7 +181,7 @@ export async function getClinicProfile(
         whatsapp: clinic.whatsapp,
         logoUrl: clinic.logo_url,
       },
-      specialty: specialtiesList[0] || "Medicina General",
+      specialty: specialtiesList[0] || "",
       experience: provider.years_of_experience || 0,
       bio: provider.description || "",
       education: parsedDocs.education || [],

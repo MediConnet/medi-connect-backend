@@ -1,5 +1,6 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResult } from "aws-lambda";
 import { AuthContext, requireAuth } from "../shared/auth";
+import { enum_verification } from "../generated/prisma/client";
 import { getPrismaClient } from "../shared/prisma";
 import { errorResponse, successResponse } from "../shared/response";
 import { uploadImageToCloudinary, isBase64Image } from "../shared/cloudinary";
@@ -88,7 +89,7 @@ export async function getAmbulanceProfile(
         },
       });
       
-      const actualStatus = anyProvider?.verification_status || "PENDING";
+      const actualStatus = anyProvider?.verification_status || enum_verification.PENDING;
       
       return successResponse({
         id: null,
@@ -148,7 +149,7 @@ export async function getAmbulanceProfile(
       latitude: mainBranch?.latitude ? Number(mainBranch.latitude) : null,
       longitude: mainBranch?.longitude ? Number(mainBranch.longitude) : null,
       google_maps_url: mainBranch?.google_maps_url || null,
-      status: provider.verification_status || "APPROVED",
+      status: provider.verification_status || enum_verification.APPROVED,
       is24h: mainBranch?.is_24h ?? false,
       ambulanceTypes: mainBranch?.ambulance_types || [],
       coverageArea: mainBranch?.coverage_area || null,

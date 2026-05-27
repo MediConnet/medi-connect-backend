@@ -157,64 +157,7 @@ async function main() {
   );
 
   console.log('✅ Categorías de servicio creadas');
-
-  // 2.5. Crear las 20 especialidades médicas
-  console.log('🏥 Creando especialidades médicas...');
-  const specialtiesList = [
-    { name: 'Medicina General', description: 'Atención médica general y preventiva', color_hex: '#4CAF50' },
-    { name: 'Cardiología', description: 'Especialidad médica que se encarga del corazón y sistema circulatorio', color_hex: '#F44336' },
-    { name: 'Dermatología', description: 'Especialidad médica que trata enfermedades de la piel', color_hex: '#FF9800' },
-    { name: 'Ginecología', description: 'Especialidad médica que trata la salud reproductiva de la mujer', color_hex: '#E91E63' },
-    { name: 'Pediatría', description: 'Especialidad médica que trata la salud de niños y adolescentes', color_hex: '#00BCD4' },
-    { name: 'Oftalmología', description: 'Especialidad médica que trata enfermedades de los ojos', color_hex: '#2196F3' },
-    { name: 'Traumatología', description: 'Especialidad médica que trata lesiones del sistema musculoesquelético', color_hex: '#9C27B0' },
-    { name: 'Neurología', description: 'Especialidad médica que trata enfermedades del sistema nervioso', color_hex: '#3F51B5' },
-    { name: 'Psiquiatría', description: 'Especialidad médica que trata trastornos mentales y emocionales', color_hex: '#009688' },
-    { name: 'Urología', description: 'Especialidad médica que trata el sistema urinario y reproductor masculino', color_hex: '#795548' },
-    { name: 'Endocrinología', description: 'Especialidad médica que trata enfermedades del sistema endocrino', color_hex: '#FF5722' },
-    { name: 'Gastroenterología', description: 'Especialidad médica que trata enfermedades del sistema digestivo', color_hex: '#607D8B' },
-    { name: 'Neumología', description: 'Especialidad médica que trata enfermedades del sistema respiratorio', color_hex: '#00ACC1' },
-    { name: 'Otorrinolaringología', description: 'Especialidad médica que trata oído, nariz y garganta', color_hex: '#8BC34A' },
-    { name: 'Oncología', description: 'Especialidad médica que trata el cáncer', color_hex: '#E53935' },
-    { name: 'Reumatología', description: 'Especialidad médica que trata enfermedades reumáticas', color_hex: '#AB47BC' },
-    { name: 'Nefrología', description: 'Especialidad médica que trata enfermedades de los riñones', color_hex: '#26A69A' },
-    { name: 'Cirugía General', description: 'Especialidad médica quirúrgica de procedimientos generales', color_hex: '#5C6BC0' },
-    { name: 'Anestesiología', description: 'Especialidad médica que administra anestesia y manejo del dolor', color_hex: '#42A5F5' },
-    { name: 'Odontología', description: 'Especialidad médica que trata la salud bucal y dental', color_hex: '#66BB6A' },
-  ];
-
-  let createdCount = 0;
-  let existingCount = 0;
-  let errorCount = 0;
-  
-  for (const specialty of specialtiesList) {
-    try {
-      const existing = await prisma.specialties.findFirst({
-        where: { name: specialty.name },
-      });
-      
-      if (existing) {
-        console.log(`  ⚠️  Especialidad ya existe: ${specialty.name}`);
-        existingCount++;
-      } else {
-        await prisma.specialties.create({
-          data: {
-            id: randomUUID(),
-            name: specialty.name,
-            description: specialty.description,
-            color_hex: specialty.color_hex,
-          },
-        });
-        console.log(`  ✅ Creada: ${specialty.name}`);
-        createdCount++;
-      }
-    } catch (error: any) {
-      console.error(`  ❌ Error al crear especialidad ${specialty.name}:`, error.message);
-      errorCount++;
-    }
-  }
-  
-  console.log(`✅ Especialidades procesadas: ${createdCount} creadas, ${existingCount} ya existían${errorCount > 0 ? `, ${errorCount} errores` : ''}`);
+  console.log('🏥 Las especialidades médicas son gestionadas por el administrador vía API');
 
   // 3. Crear usuarios administradores
   console.log('👨‍💼 Creando usuarios administradores...');
@@ -1137,28 +1080,6 @@ async function main() {
       is_active: true,
     }
   );
-
-  // Crear especialidades de la clínica
-  const clinicSpecialties = [
-    'Medicina General',
-    'Cardiología',
-    'Pediatría',
-    'Ginecología',
-    'Traumatología',
-    'Neurología',
-  ];
-
-  for (const specialty of clinicSpecialties) {
-    await findOrCreate(
-      prisma.clinic_specialties,
-      { clinic_id: clinic.id, specialty },
-      {
-        id: randomUUID(),
-        clinic_id: clinic.id,
-        specialty,
-      }
-    );
-  }
 
   // Crear horarios de la clínica
   const clinicSchedules = [

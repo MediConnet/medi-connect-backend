@@ -1,5 +1,5 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResult } from 'aws-lambda';
-import { enum_roles } from '../generated/prisma/client';
+import { enum_appt_status, enum_roles } from '../generated/prisma/client';
 import { AuthContext, requireRole } from '../shared/auth';
 import { logger } from '../shared/logger';
 import { getPrismaClient } from '../shared/prisma';
@@ -48,12 +48,12 @@ export async function getOrders(event: APIGatewayProxyEventV2): Promise<APIGatew
     if (status) {
       // Mapear estados del frontend a estados de la BD
       const statusMap: Record<string, string> = {
-        'pending': 'CONFIRMED',
-        'confirmed': 'CONFIRMED',
-        'preparing': 'CONFIRMED',
-        'ready': 'CONFIRMED',
-        'delivered': 'COMPLETED',
-        'cancelled': 'CANCELLED',
+        'pending': enum_appt_status.CONFIRMED,
+        'confirmed': enum_appt_status.CONFIRMED,
+        'preparing': enum_appt_status.CONFIRMED,
+        'ready': enum_appt_status.CONFIRMED,
+        'delivered': enum_appt_status.COMPLETED,
+        'cancelled': enum_appt_status.CANCELLED,
       };
       where.status = statusMap[status] || status.toUpperCase();
     }

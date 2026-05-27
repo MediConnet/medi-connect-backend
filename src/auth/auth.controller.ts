@@ -9,8 +9,9 @@ import * as bcrypt from "bcrypt";
 import * as crypto from "crypto";
 import { randomUUID } from "crypto";
 import { OAuth2Client } from "google-auth-library";
-import { enum_roles } from "../generated/prisma/client";
+import { enum_roles, enum_verification } from "../generated/prisma/client";
 import { requireAuth } from "../shared/auth";
+import { ROLE_TO_ENUM, TYPE_TO_SLUG } from "../shared/constants";
 import { logger } from "../shared/logger";
 import {
   isMultipartContentType,
@@ -91,25 +92,8 @@ function generateLocalJWT(payload: {
 }
 
 function mapRoleToEnum(role: string): enum_roles {
-  const roleMap: Record<string, enum_roles> = {
-    PATIENT: enum_roles.patient,
-    DOCTOR: enum_roles.provider,
-    PHARMACY: enum_roles.provider,
-    LABORATORY: enum_roles.provider,
-    AMBULANCE: enum_roles.provider,
-    CLINIC: enum_roles.provider,
-    PROVIDER: enum_roles.provider,
-    patient: enum_roles.patient,
-    doctor: enum_roles.provider,
-    provider: enum_roles.provider,
-    admin: enum_roles.admin,
-    user: enum_roles.user,
-  };
-  return (
-    roleMap[role.toUpperCase()] ||
-    roleMap[role.toLowerCase()] ||
-    enum_roles.patient
-  );
+  const mapped = ROLE_TO_ENUM[role] || ROLE_TO_ENUM[role.toUpperCase()] || ROLE_TO_ENUM[role.toLowerCase()];
+  return (enum_roles as any)[mapped] || enum_roles.patient;
 }
 
 // HELPER: Crea el perfil de proveedor
@@ -127,22 +111,25 @@ async function createProviderProfile(prisma: any, userId: string, body: any) {
   let businessName = body.serviceName;
   if (!businessName) businessName = representativeName;
 
-  const typeToSlug: Record<string, string> = {
-    doctor: "doctor",
-    pharmacy: "pharmacy",
-    lab: "laboratory",
-    laboratory: "laboratory",
-    ambulance: "ambulance",
-    supplies: "supplies",
-    clinic: "clinic",
-  };
-  const categorySlug = body.type ? typeToSlug[body.type] || "doctor" : "doctor";
+  const categorySlug = body.type ? TYPE_TO_SLUG[body.type] || "doctor" : "doctor";
 
   const category = await prisma.service_categories.findFirst({
     where: { slug: categorySlug },
     select: { id: true },
   });
   const categoryId = category ? category.id : null;
+
+  const commissionFieldMap: Record<string, string> = {
+    doctor: 'commission_doctor',
+    pharmacy: 'commission_pharmacy',
+    laboratory: 'commission_laboratory',
+    ambulance: 'commission_ambulance',
+    supplies: 'commission_supplies',
+    clinic: 'commission_clinic',
+  };
+  const commissionField = commissionFieldMap[categorySlug] || 'commission_doctor';
+  const settings = await prisma.admin_settings.findFirst();
+  const commissionPercentage = settings ? Number((settings as any)[commissionField] || 15.0) : 15.0;
 
   let yearsExp = 0;
   if (body.yearsOfExperience) {
@@ -176,7 +163,7 @@ async function createProviderProfile(prisma: any, userId: string, body: any) {
       users: { connect: { id: userId } },
 
       commercial_name: representativeName,
-      verification_status: "PENDING",
+      verification_status: enum_verification.PENDING,
       description: body.description || "Perfil profesional",
       logo_url: null,
 
@@ -188,7 +175,7 @@ async function createProviderProfile(prisma: any, userId: string, body: any) {
         ? { pharmacy_chains: { connect: { id: body.chainId } } }
         : {}),
 
-      commission_percentage: 15.0,
+      commission_percentage: commissionPercentage,
 
       years_of_experience: yearsExp,
 
@@ -599,7 +586,7 @@ export async function register(
             where: { id: existingProvider.id },
             data: {
               documents: uploadedDocuments,
-              verification_status: "PENDING",
+              verification_status: enum_verification.PENDING,
             },
           });
         }
@@ -897,7 +884,7 @@ export async function login(
               where: {
                 user_id: user.id,
                 service_categories: { slug: categorySlug },
-                verification_status: "APPROVED",
+                verification_status: enum_verification.APPROVED,
               },
               include: {
                 service_categories: { select: { slug: true, name: true } },
@@ -911,7 +898,7 @@ export async function login(
             provider = await prisma.providers.findFirst({
               where: {
                 user_id: user.id,
-                verification_status: "APPROVED",
+                verification_status: enum_verification.APPROVED,
               },
               include: {
                 service_categories: { select: { slug: true, name: true } },
@@ -922,7 +909,7 @@ export async function login(
           }
 
           if (provider) {
-            if (provider.verification_status !== "APPROVED") {
+            if (provider.verification_status !== enum_verification.APPROVED) {
               return unauthorizedResponse(
                 "Tu cuenta está en proceso de verificación. Debes esperar a ser aprobado para ingresar.",
               );
@@ -1115,7 +1102,7 @@ export async function refresh(
         const provider = await prisma.providers.findFirst({
           where: {
             user_id: user.id,
-            verification_status: { in: ["APPROVED", "PENDING"] },
+            verification_status: { in: [enum_verification.APPROVED, enum_verification.PENDING] },
           },
           include: {
             service_categories: { select: { slug: true } },
@@ -1229,7 +1216,7 @@ export async function me(
       where: {
         user_id: user.id,
         OR: [
-          { verification_status: { in: ["APPROVED", "PENDING"] } },
+          { verification_status: { in: [enum_verification.APPROVED, enum_verification.PENDING] } },
           { verification_status: null }, // Tratar null como PENDING
         ],
       },
@@ -1508,9 +1495,9 @@ export async function resetPassword(
       return errorResponse("Token y nueva contraseña son requeridos", 400);
     }
 
-    if (body.newPassword.length < 6) {
+    if (body.newPassword.length < 8 || body.newPassword.length > 20) {
       return errorResponse(
-        "La contraseña debe tener al menos 6 caracteres",
+        "La contraseña debe tener entre 8 y 20 caracteres",
         400,
       );
     }

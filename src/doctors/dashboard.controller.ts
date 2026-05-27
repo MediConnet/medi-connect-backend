@@ -4,9 +4,7 @@ import { enum_roles } from '../generated/prisma/client';
 import { AuthContext, requireRole } from '../shared/auth';
 import { getPrismaClient } from '../shared/prisma';
 import { successResponse } from '../shared/response';
-
-const DIRECT_PAYMENT_SOURCES = ['admin', 'ADMIN', 'PAYPHONE', 'payphone'];
-const CHARGED_PAYMENT_STATUSES = ['PAID', 'paid', 'completed', 'COMPLETED'];
+import { CHARGED_PAYMENT_STATUSES, DIRECT_PAYMENT_SOURCES } from '../shared/constants';
 
 export async function getDashboard(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   console.log('✅ [DOCTORS] GET /api/doctors/dashboard - Obteniendo dashboard');

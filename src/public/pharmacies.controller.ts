@@ -1,4 +1,5 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResult } from "aws-lambda";
+import { enum_verification } from "../generated/prisma/client";
 import { formatSmartSchedule } from "../shared/helpers/scheduleFormatter";
 import { logger } from "../shared/logger";
 import { getPrismaClient } from "../shared/prisma";
@@ -99,7 +100,7 @@ async function getPharmacyBrandsFallback(
     const pharmacies = await prisma.providers.findMany({
       where: {
         service_categories: { slug: "pharmacy" },
-        verification_status: "APPROVED",
+        verification_status: enum_verification.APPROVED,
         users: { is_active: true },
         provider_branches: { some: { is_active: true } },
       },
@@ -177,7 +178,7 @@ export async function getPharmacyBranches(
       providers: {
         OR: [{ chain_id: brandId }, { id: brandId }],
         service_categories: { slug: "pharmacy" },
-        verification_status: "APPROVED",
+        verification_status: enum_verification.APPROVED,
         users: { is_active: true },
       },
     };
@@ -401,7 +402,7 @@ export async function getAllPharmacies(
 
     const where: any = {
       service_categories: { slug: "pharmacy" },
-      verification_status: "APPROVED",
+      verification_status: enum_verification.APPROVED,
       users: { is_active: true },
       provider_branches: { some: { is_active: true } },
     };
