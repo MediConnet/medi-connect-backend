@@ -1319,10 +1319,19 @@ async function approveRequest(event: APIGatewayProxyEventV2): Promise<APIGateway
   const requestId = extractIdFromPath(event.requestContext.http.path, '/api/admin/requests/', '/approve');
   const prisma = getPrismaClient();
   
-  // Buscar el provider
+  // Buscar el provider con especialidades y cadenas de farmacias
   const provider = await prisma.providers.findUnique({
     where: { id: requestId },
-    include: { users: true, service_categories: true },
+    include: { 
+      users: true, 
+      service_categories: true,
+      provider_specialties: {
+        include: {
+          specialties: true,
+        },
+      },
+      pharmacy_chains: true,
+    },
   });
 
   if (!provider) {
@@ -1351,6 +1360,61 @@ async function approveRequest(event: APIGatewayProxyEventV2): Promise<APIGateway
     where: { provider_id: requestId },
     data: { is_active: true },
   });
+
+  // Enviar notificación a todos los pacientes (broadcast) sobre el nuevo proveedor
+  try {
+    const { patientNotificationService } = await import("../shared/patient-notification.service");
+    
+    const providerName = provider.commercial_name || "Un nuevo proveedor";
+    let type: any = "general";
+    let title = "¡Nuevo proveedor disponible! 🎉";
+    let body = `${providerName} se ha unido a DOCALINK. Ya puedes consultar sus servicios y agendar con ellos.`;
+    
+    const categorySlug = provider.service_categories?.slug;
+    
+    if (categorySlug === "doctor") {
+      type = "cita";
+      const specialtiesList = provider.provider_specialties?.map(ps => ps.specialties?.name).filter(Boolean) || [];
+      const specialtiesText = specialtiesList.length > 0 ? ` de especialidad ${specialtiesList.join(", ")}` : "";
+      title = "¡Nuevo especialista disponible! 🩺";
+      body = `El Dr(a). ${providerName}${specialtiesText} se ha unido a DOCALINK. Ya puedes agendar una cita con él.`;
+    } else if (categorySlug === "pharmacy") {
+      type = "farmacia";
+      const chainName = provider.pharmacy_chains?.name;
+      const chainText = chainName ? ` de la cadena ${chainName}` : "";
+      title = "¡Nueva farmacia disponible! 💊";
+      body = `La farmacia ${providerName}${chainText} se ha unido a DOCALINK. Ya puedes consultar su ubicación y servicios de entrega.`;
+    } else if (categorySlug === "laboratory") {
+      type = "laboratorio";
+      title = "¡Nuevo laboratorio disponible! 🔬";
+      body = `El laboratorio ${providerName} se ha unido a DOCALINK. Ya puedes consultar su catálogo de exámenes y contacto directo.`;
+    } else if (categorySlug === "ambulance") {
+      type = "ambulancia";
+      title = "¡Nuevo servicio de ambulancia! 🚑";
+      body = `El servicio de ambulancias ${providerName} se ha unido a DOCALINK para ofrecer atención y traslados de emergencia.`;
+    } else if (categorySlug === "supplies") {
+      type = "insumo";
+      title = "¡Nueva tienda de insumos médicos! 📦";
+      body = `${providerName} se ha unido a DOCALINK. Ya puedes consultar su catálogo de productos y equipos médicos.`;
+    } else if (categorySlug === "clinic") {
+      type = "cita";
+      title = "¡Nueva clínica disponible! 🏥";
+      body = `La clínica ${providerName} se ha unido a DOCALINK. Ya puedes agendar citas en sus consultorios.`;
+    }
+
+    console.log(`🔔 [APPROVE_REQUEST] Enviando broadcast de nuevo proveedor a todos los pacientes: ${providerName}`);
+    await patientNotificationService.broadcast({
+      type,
+      title,
+      body,
+      data: {
+        providerId: provider.id,
+        category: categorySlug,
+      }
+    });
+  } catch (notifError: any) {
+    console.error("❌ [APPROVE_REQUEST] Error al enviar notificación masiva:", notifError.message);
+  }
 
   // Enviar email de bienvenida (asíncrono, no bloquea la respuesta)
   if (provider.users?.email) {

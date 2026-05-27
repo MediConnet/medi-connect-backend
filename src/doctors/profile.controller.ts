@@ -99,6 +99,7 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
     email: user?.email,
     profile_picture_url: user?.profile_picture_url || profile.logo_url,
     imageUrl: mainBranch?.image_url || profile.logo_url || null,
+    preview_images: (mainBranch as any)?.preview_images || [],
     
     specialty: specialtyName,
     specialties_list: specialtiesWithFees.map(s => s.name),
@@ -116,10 +117,10 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
     longitude: mainBranch?.longitude ? Number(mainBranch.longitude) : null,
     google_maps_url: mainBranch?.google_maps_url || null,
     status: profile.verification_status,
-    is_published: mainBranch?.is_active ?? false, 
+    is_published: mainBranch?.is_active ?? false,
     commission_percentage: profile.commission_percentage,
     bankAccount,
-    
+
     // Mapeo de horarios para el frontend - Estructura completa con todos los días
     schedules: (() => {
       const daysMap: Record<number, any> = {};
@@ -200,7 +201,8 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
 
     if (!profile) return notFoundResponse('Doctor profile not found for updates');
 
-    // --- SUBIR IMAGEN A CLOUDINARY (fuera de la transacción) ---
+    // --- SUBIR IMAGENES A CLOUDINARY (fuera de la transacción) ---
+    // A. Imagen de sucursal/banner
     let uploadedImageUrl: string | undefined;
     if (body.imageUrl && isBase64Image(body.imageUrl)) {
       try {
@@ -213,6 +215,41 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
     } else if (body.imageUrl && !isBase64Image(body.imageUrl) && !body.imageUrl.startsWith('blob:')) {
       // Ya es una URL válida (no base64, no blob), usarla directamente
       uploadedImageUrl = body.imageUrl;
+    }
+
+    // B. Avatar del doctor (profile_picture_url)
+    let uploadedProfilePictureUrl: string | undefined;
+    if (body.profile_picture_url && isBase64Image(body.profile_picture_url)) {
+      try {
+        uploadedProfilePictureUrl = await uploadImageToCloudinary(body.profile_picture_url, 'providers/doctors/avatars');
+        console.log('✅ [DOCTORS] Avatar subido a Cloudinary:', uploadedProfilePictureUrl);
+      } catch (imgErr: any) {
+        console.error('❌ [DOCTORS] Error subiendo avatar a Cloudinary:', imgErr.message);
+        return errorResponse('Error al subir la imagen de perfil. Intenta de nuevo.', 500);
+      }
+    } else if (body.profile_picture_url && !isBase64Image(body.profile_picture_url) && !body.profile_picture_url.startsWith('blob:')) {
+      uploadedProfilePictureUrl = body.profile_picture_url;
+    }
+
+    // C. Imágenes de vista previa
+    let uploadedPreviewImages: string[] | undefined;
+    if (body.preview_images && body.preview_images.length > 0) {
+      uploadedPreviewImages = [];
+      for (const img of body.preview_images) {
+        if (isBase64Image(img)) {
+          try {
+            const url = await uploadImageToCloudinary(img, 'providers/doctors/previews');
+            uploadedPreviewImages.push(url);
+          } catch (imgErr: any) {
+            console.error('❌ [DOCTORS] Error subiendo imagen de galería a Cloudinary:', imgErr.message);
+            return errorResponse('Error al subir imagen de galería. Intenta de nuevo.', 500);
+          }
+        } else if (!img.startsWith('blob:')) {
+          uploadedPreviewImages.push(img);
+        }
+      }
+    } else if (body.preview_images && body.preview_images.length === 0) {
+      uploadedPreviewImages = [];
     }
 
     // --- TRANSACCIÓN UNIFICADA ---
@@ -233,6 +270,15 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
           where: { id: profile.id },
           data: providerUpdateData,
         });
+      }
+
+      // Actualizar profile_picture_url en users
+      if (uploadedProfilePictureUrl !== undefined) {
+        await tx.users.update({
+          where: { id: authContext.user.id },
+          data: { profile_picture_url: uploadedProfilePictureUrl },
+        });
+        console.log('✅ [DOCTORS] profile_picture_url guardado en users:', uploadedProfilePictureUrl);
       }
 
       // A2. Actualizar especialidades con tarifas
@@ -440,6 +486,7 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
       email: updatedUser?.email, 
       profile_picture_url: updatedUser?.profile_picture_url || updatedProfile?.logo_url,
       imageUrl: updatedMainBranch?.image_url || updatedProfile?.logo_url || null,
+      preview_images: (updatedMainBranch as any)?.preview_images || [],
       
       specialty: specialtyName,
       specialties_list: updatedSpecialtiesWithFees.map(s => s.name),
@@ -462,7 +509,7 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
       is_published: updatedMainBranch?.is_active ?? false,
       commission_percentage: updatedProfile?.commission_percentage,
       bankAccount,
-      
+
       schedules: (() => {
         const daysMap: Record<number, any> = {};
         const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];

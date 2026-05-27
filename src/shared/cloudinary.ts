@@ -20,8 +20,47 @@ export async function uploadImageToCloudinary(
   const result = await cloudinary.uploader.upload(image, {
     folder,
     resource_type: "image",
-    // Limitar tamaño máximo de salida para no desperdiciar storage
     transformation: [{ width: 800, height: 800, crop: "limit", quality: "auto" }],
+  });
+
+  return result.secure_url;
+}
+
+/**
+ * Sube una imagen de perfil (avatar) a Cloudinary optimizada para 400x400 1:1.
+ */
+export async function uploadAvatarToCloudinary(
+  image: string,
+  folder = "medi-connect/avatars",
+): Promise<string> {
+  if (!image) throw new Error("No image provided");
+
+  const result = await cloudinary.uploader.upload(image, {
+    folder,
+    resource_type: "image",
+    transformation: [
+      { width: 400, height: 400, crop: "fill", gravity: "face", quality: "auto", fetch_format: "auto" },
+    ],
+  });
+
+  return result.secure_url;
+}
+
+/**
+ * Sube una imagen de vista previa a Cloudinary optimizada para 800x400 2:1.
+ */
+export async function uploadPreviewToCloudinary(
+  image: string,
+  folder = "medi-connect/previews",
+): Promise<string> {
+  if (!image) throw new Error("No image provided");
+
+  const result = await cloudinary.uploader.upload(image, {
+    folder,
+    resource_type: "image",
+    transformation: [
+      { width: 800, height: 400, crop: "fill", quality: "auto", fetch_format: "auto" },
+    ],
   });
 
   return result.secure_url;

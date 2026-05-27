@@ -262,6 +262,7 @@ model provider_branches {
   is_main            Boolean?             @default(false)
   is_active          Boolean?             @default(false)
   payment_methods    String[]
+  preview_images     String[]             @default([])
   ambulance_types    String[]             @default([])
   coverage_area      String?              @db.VarChar(255)
   google_maps_url    String?              @db.VarChar(500)
