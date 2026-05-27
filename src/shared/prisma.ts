@@ -34,15 +34,26 @@ export function getPrismaClient(): PrismaClient {
   return prisma;
 }
 
-export async function disconnectPrisma(): Promise<void> {
-  if (prisma) {
-    await prisma.$disconnect();
-    prisma = null;
+let disconnectPromise: Promise<void> | null = null;
+
+export function disconnectPrisma(): Promise<void> {
+  if (!disconnectPromise) {
+    disconnectPromise = (async () => {
+      if (prisma) {
+        await prisma.$disconnect().catch(e => console.error('Error disconnecting Prisma:', e));
+        prisma = null;
+      }
+      if (pool) {
+        await pool.end().catch((e: any) => {
+          if (e && e.message !== 'Called end on pool more than once') {
+            console.error('Error ending pg pool:', e);
+          }
+        });
+        pool = null;
+      }
+    })();
   }
-  if (pool) {
-    await pool.end();
-    pool = null;
-  }
+  return disconnectPromise;
 }
 
 process.on('SIGTERM', async () => {

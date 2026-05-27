@@ -50,25 +50,6 @@ app.use("/uploads", express.static("uploads"));
 // Middleware de logging para todas las requests
 app.use((req, res, next) => {
   console.log(`\n🌐 [INCOMING] ${req.method} ${req.originalUrl}`);
-  console.log(
-    `🔍 [INCOMING] Todos los headers:`,
-    Object.keys(req.headers).join(", "),
-  );
-  const authHeader = Array.isArray(req.headers.authorization)
-    ? req.headers.authorization[0]
-    : req.headers.authorization;
-  const authHeaderUpper = Array.isArray(req.headers.Authorization)
-    ? req.headers.Authorization[0]
-    : req.headers.Authorization;
-
-  console.log(`🔍 [INCOMING] Headers específicos:`, {
-    authorization: authHeader ? `${authHeader.substring(0, 50)}...` : "Ausente",
-    Authorization: authHeaderUpper
-      ? `${authHeaderUpper.substring(0, 50)}...`
-      : "Ausente",
-    "content-type": req.headers["content-type"],
-    origin: req.headers.origin,
-  });
   next();
 });
 
@@ -134,13 +115,6 @@ async function handleLambdaResponse(
   path: string,
 ) {
   const startTime = Date.now();
-  console.log(`\n📥 [REQUEST] ${req.method} ${path} - Iniciando...`);
-  console.log(`🔍 [REQUEST] Headers recibidos:`, {
-    authorization: req.headers.authorization ? "Presente" : "Ausente",
-    Authorization: req.headers.Authorization ? "Presente" : "Ausente",
-    "content-type": req.headers["content-type"],
-    origin: req.headers.origin,
-  });
 
   // Validar que el handler sea una función
   if (!handler || typeof handler !== "function") {
@@ -157,10 +131,6 @@ async function handleLambdaResponse(
 
   try {
     const event = createApiGatewayEvent(req, path);
-    console.log(`🔍 [REQUEST] Event creado. Headers en event:`, {
-      authorization: event.headers.authorization ? "Presente" : "Ausente",
-      Authorization: event.headers.Authorization ? "Presente" : "Ausente",
-    });
 
     const result = await handler(event);
     const duration = Date.now() - startTime;
@@ -254,7 +224,6 @@ app.use("/api/auth", async (req, res) => {
 
 // Route - Public Ads (Debe ir antes de /api/public genérico)
 // Esta ruta es manejada por el módulo de Ads, no por el módulo Public general
-console.log("✅ [ADS] Registrando ruta pública en /api/public/ads");
 app.get("/api/public/ads", async (req, res) => {
   const path = req.originalUrl.split("?")[0];
   console.log(`🔍 [PUBLIC ADS] ${req.method} ${path}`);
@@ -263,7 +232,6 @@ app.get("/api/public/ads", async (req, res) => {
 });
 
 // Routes - Public (doctors, pharmacies, generic)
-console.log("✅ [PUBLIC] Registrando rutas públicas generales en /api/public");
 app.use("/api/public", async (req, res) => {
   const path = req.originalUrl.split("?")[0];
   console.log(
@@ -320,7 +288,6 @@ app.use("/api/pharmacy-chains", async (req, res) => {
 });
 
 // Routes - Gmail
-console.log("✅ [GMAIL] Registrando rutas de Gmail en /api/gmail");
 app.use("/api/gmail", async (req, res) => {
   const path = req.originalUrl.split("?")[0];
   console.log(
@@ -330,7 +297,6 @@ app.use("/api/gmail", async (req, res) => {
 });
 
 // Routes - Payments
-console.log("✅ [PAYMENTS] Registrando rutas de pagos en /api/payments");
 app.use("/api/payments", async (req, res) => {
   const path = req.originalUrl.split("?")[0];
 
@@ -357,7 +323,6 @@ app.use("/api/payments", async (req, res) => {
 
 // Routes - Patients
 if (patientsHandler) {
-  console.log("✅ [PATIENTS] Registrando rutas de pacientes en /api/patients");
   app.use("/api/patients", async (req, res) => {
     const path = req.originalUrl.split("?")[0];
     console.log(
@@ -381,9 +346,6 @@ if (patientsHandler) {
 }
 
 // Routes - Pharmacies
-console.log(
-  "✅ [PHARMACIES] Registrando rutas de farmacias en /api/pharmacies",
-);
 app.use("/api/pharmacies", async (req, res) => {
   const path = req.originalUrl.split("?")[0];
   console.log(
@@ -401,9 +363,6 @@ if (laboratoriesHandler) {
 }
 
 // Routes - Ambulances (panel privado)
-console.log(
-  "✅ [AMBULANCES] Registrando rutas de ambulancias en /api/ambulances (panel privado)",
-);
 app.use("/api/ambulances", async (req, res) => {
   const path = req.originalUrl.split("?")[0];
   console.log(
@@ -414,7 +373,6 @@ app.use("/api/ambulances", async (req, res) => {
 
 // Routes - Clinics (si existe)
 if (clinicsHandler) {
-  console.log("✅ [CLINICS] Registrando rutas de clínicas");
   app.use("/api/clinics", async (req, res) => {
     const path = req.originalUrl.split("?")[0];
     console.log(`🔍 [CLINICS] Ruta recibida: ${req.method} ${path}`);
@@ -478,42 +436,4 @@ httpServer.listen(PORT, async () => {
   process.on('SIGTERM', cleanup);
   process.on('SIGINT', cleanup);
 
-  console.log(`\n📋 Available endpoints:`);
-  console.log(`   - POST   /api/auth/register`);
-  console.log(`   - POST   /api/auth/login`);
-  console.log(`   - POST   /api/auth/refresh`);
-  console.log(`   - GET    /api/auth/me`);
-  console.log(`   - POST   /api/providers/register`);
-  console.log(`   - GET    /api/public/ads (Carrusel App)`);
-  console.log(`   - POST   /api/ads (Crear solicitud)`);
-  console.log(`   - GET    /api/ads (Obtener mi anuncio)`);
-  console.log(`   - POST   /api/payments/payphone/link (Generar link de pago)`);
-  console.log(`   - GET    /api/admin/dashboard/stats`);
-  console.log(`   - GET    /api/admin/requests`);
-  console.log(`   - GET    /api/admin/ad-requests`);
-  console.log(`   - GET    /api/admin/provider-requests`);
-  console.log(`   - GET    /api/admin/activity`);
-  console.log(`   - GET    /api/admin/history`);
-  console.log(`   - GET    /api/admin/rejected-services`);
-  console.log(`   - PUT    /api/admin/requests/:id/approve`);
-  console.log(`   - PUT    /api/admin/requests/:id/reject`);
-  console.log(`   - PUT    /api/admin/ad-requests/:id/approve`);
-  console.log(`   - PUT    /api/admin/ad-requests/:id/reject`);
-  console.log(`   - GET    /api/supplies/stores`);
-  console.log(`\n📧 Gmail API endpoints:`);
-  console.log(`   - GET    /api/gmail/authorize (Obtener URL de autorización)`);
-  console.log(`   - GET    /api/gmail/callback (Callback OAuth2)`);
-  console.log(`   - POST   /api/gmail/send (Enviar correo)`);
-  console.log(`   - GET    /api/gmail/test (Enviar correo de prueba)`);
-  console.log(`   - GET    /api/gmail/status (Verificar estado)`);
-  console.log(`   - DELETE /api/gmail/revoke (Revocar autorización)`);
-  console.log(`\n💡 Make sure your .env file is configured with:`);
-  console.log(`   - DATABASE_URL`);
-  console.log(`   - AWS_REGION`);
-  console.log(`   - COGNITO_USER_POOL_ID (optional for local dev)`);
-  console.log(`   - CORS_ORIGINS=http://localhost:5173,http://localhost:3000`);
-  console.log(`\n🔑 Credenciales de prueba:`);
-  console.log(`   - Admin: admin@medicones.com / admin123`);
-  console.log(`   - Doctor: doctor@medicones.com / doctor123`);
-  console.log(`   - Farmacia: farmacia@medicones.com / farmacia123`);
 });

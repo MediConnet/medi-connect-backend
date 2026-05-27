@@ -363,7 +363,6 @@ app.use('/api/auth', async (req: express.Request, res: express.Response) => {
 });
 
 // Routes - Public (doctors, pharmacies, etc.)
-console.log('✅ [PUBLIC] Registrando rutas públicas en /api/public');
 app.use('/api/public', async (req: express.Request, res: express.Response) => {
   const path = req.originalUrl.split('?')[0];
   console.log(`🔍 [PUBLIC ROUTE] ${req.method} ${path} - originalUrl: ${req.originalUrl}`);
@@ -419,7 +418,6 @@ app.use('/api/pharmacy-chains', async (req: express.Request, res: express.Respon
 
 // Routes - Patients
 if (patientsHandler) {
-  console.log('✅ [PATIENTS] Registrando rutas de pacientes en /api/patients');
   app.use('/api/patients', async (req: express.Request, res: express.Response) => {
     const path = req.originalUrl.split('?')[0];
     console.log(`🔍 [PATIENTS ROUTE] ${req.method} ${path} - originalUrl: ${req.originalUrl}`);
@@ -437,7 +435,6 @@ if (patientsHandler) {
 }
 
 // Routes - Pharmacies
-console.log('✅ [PHARMACIES] Registrando rutas de farmacias en /api/pharmacies');
 app.use('/api/pharmacies', async (req: express.Request, res: express.Response) => {
   const path = req.originalUrl.split('?')[0];
   console.log(`🔍 [PHARMACIES ROUTE] ${req.method} ${path} - originalUrl: ${req.originalUrl}`);
@@ -454,7 +451,6 @@ if (laboratoriesHandler) {
 
 // Routes - Ambulances (usando handler específico para rutas privadas del panel)
 if (ambulancesHandler) {
-  console.log('✅ [AMBULANCES] Registrando rutas de ambulancias en /api/ambulances');
   app.use('/api/ambulances', async (req: express.Request, res: express.Response) => {
     const path = req.originalUrl.split('?')[0];
     console.log(`🔍 [AMBULANCES ROUTE] ${req.method} ${path} - originalUrl: ${req.originalUrl}`);
@@ -473,7 +469,6 @@ if (ambulancesHandler) {
 
 // Routes - Clinics (si existe)
 if (clinicsHandler) {
-  console.log('✅ [CLINICS] Registrando rutas de clínicas');
   app.use('/api/clinics', async (req: express.Request, res: express.Response) => {
     const path = req.originalUrl.split('?')[0];
     console.log(`🔍 [CLINICS] Ruta recibida: ${req.method} ${path}`);
@@ -565,24 +560,4 @@ httpServer.listen(PORT, async () => {
   // Iniciar cron jobs
   startScheduler();
   
-  console.log(`\n📋 Available endpoints:`);
-  console.log(`   - POST   /api/auth/register`);
-  console.log(`   - POST   /api/auth/login`);
-  console.log(`   - POST   /api/auth/refresh`);
-  console.log(`   - GET    /api/auth/me`);
-  console.log(`   - POST   /api/providers/register`);
-  console.log(`   - POST   /api/ads (Crear solicitud)`);
-  console.log(`   - GET    /api/ads (Obtener mi anuncio)`);
-  console.log(`   - GET    /api/admin/dashboard/stats`);
-  console.log(`   - GET    /api/admin/requests`);
-  console.log(`   - GET    /api/admin/ad-requests`);
-  console.log(`   - GET    /api/admin/provider-requests`);
-  console.log(`   - GET    /api/admin/activity`);
-  console.log(`   - GET    /api/admin/history`);
-  console.log(`   - GET    /api/admin/rejected-services`);
-  console.log(`   - PUT    /api/admin/requests/:id/approve`);
-  console.log(`   - PUT    /api/admin/requests/:id/reject`);
-  console.log(`   - PUT    /api/admin/ad-requests/:id/approve`);
-  console.log(`   - PUT    /api/admin/ad-requests/:id/reject`);
-  console.log(`   - GET    /api/supplies/stores`);
 });
