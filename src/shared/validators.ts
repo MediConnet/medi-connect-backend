@@ -158,6 +158,8 @@ export const updateDoctorProfileSchema = z.object({
   payment_methods: z.array(z.string()).optional(), // Array de strings
   is_published: z.boolean().optional(),
   imageUrl: z.string().optional().nullable(), // base64 o URL — se sube a Cloudinary
+  profile_picture_url: z.string().optional().nullable(), // base64 o URL — avatar del doctor
+  preview_images: z.array(z.string()).optional(), // Array de base64 o URLs — galería de imágenes
   workSchedule: z.array(scheduleItemSchema).optional(),
   bankAccount: doctorProfileBankAccountSchema.optional().nullable(),
 });
