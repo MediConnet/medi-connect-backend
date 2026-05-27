@@ -334,6 +334,7 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
             payment_methods: (body.payment_methods && body.payment_methods.length > 0) ? body.payment_methods : undefined,
             is_active: body.is_published,
             image_url: uploadedImageUrl, // Cloudinary URL
+            preview_images: uploadedPreviewImages !== undefined ? uploadedPreviewImages : undefined,
         };
         
         Object.keys(branchData).forEach(key => branchData[key] === undefined && delete branchData[key]);

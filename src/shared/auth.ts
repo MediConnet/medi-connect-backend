@@ -38,7 +38,6 @@ export function extractJWT(event: APIGatewayProxyEventV2): string | null {
   }
   
   const token = authHeader.substring(7);
-  console.log('✅ [EXTRACT_JWT] Token extraído. Longitud:', token.length, 'Primeros 30 chars:', token.substring(0, 30) + '...');
   return token;
 }
 
@@ -64,10 +63,6 @@ export function getJWTClaims(event: APIGatewayProxyEventV2): JWTClaims | null {
     const token = extractJWT(event);
     if (token) {
       try {
-        console.log('🔧 [AUTH] Modo desarrollo local - Decodificando token');
-        console.log('🔧 [AUTH] Longitud del token:', token.length);
-        console.log('🔧 [AUTH] Primeros 30 caracteres:', token.substring(0, 30));
-        
         // Intentar decodificar como token simple (base64 JSON)
         try {
           const decoded = JSON.parse(Buffer.from(token, 'base64').toString());
@@ -81,7 +76,6 @@ export function getJWTClaims(event: APIGatewayProxyEventV2): JWTClaims | null {
 
         // Decodificar JWT estándar (solo para desarrollo local)
         const parts = token.split('.');
-        console.log('🔧 [AUTH] Partes del JWT:', parts.length);
         
         if (parts.length === 3) {
           try {
@@ -94,8 +88,6 @@ export function getJWTClaims(event: APIGatewayProxyEventV2): JWTClaims | null {
             
             const jsonPayload = Buffer.from(paddedBase64, 'base64').toString('utf-8');
             const decoded = JSON.parse(jsonPayload);
-            console.log('✅ [AUTH] JWT decodificado exitosamente. Email:', decoded.email || decoded.sub);
-            console.log('🔍 [AUTH] Claims decodificados:', JSON.stringify(decoded, null, 2).substring(0, 200));
             return decoded as JWTClaims;
           } catch (jwtError: any) {
             console.error('❌ [AUTH] Error decodificando JWT con método directo:', jwtError.message);
