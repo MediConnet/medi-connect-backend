@@ -305,7 +305,104 @@ export async function getActiveAds(event: APIGatewayProxyEventV2): Promise<APIGa
   }
 }
 
-// --- 3. FUNCIÓN DE CONSULTA PROPIA (GET) ---
+// --- 3. FUNCIÓN DE LISTADO COMPLETO CON FILTROS (GET /api/ads?mode=all) ---
+export async function getMyAds(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  const authResult = await requireRole(event, [
+    enum_roles.provider, enum_roles.pharmacy, enum_roles.lab, enum_roles.ambulance, enum_roles.supplies
+  ]);
+  if ('statusCode' in authResult) return authResult;
+  const { user } = authResult as AuthContext;
+  const prisma = getPrismaClient();
+
+  try {
+    const provider = await prisma.providers.findFirst({ where: { user_id: user.id } });
+    if (!provider) return successResponse([]);
+
+    const queryParams = event.queryStringParameters || {};
+    const statusFilter = queryParams.status && queryParams.status !== 'all'
+      ? { status: queryParams.status as any }
+      : {};
+    const dateFrom = queryParams.dateFrom ? new Date(queryParams.dateFrom) : null;
+    const dateTo = queryParams.dateTo ? new Date(queryParams.dateTo + 'T23:59:59.999Z') : null;
+
+    const dateFilter: any = {};
+    if (dateFrom) dateFilter.gte = dateFrom;
+    if (dateTo) dateFilter.lte = dateTo;
+
+    const where: any = {
+      provider_id: provider.id,
+      ...statusFilter,
+    };
+    if (dateFrom || dateTo) {
+      where.start_date = dateFilter;
+    }
+
+    const ads = await prisma.provider_ads.findMany({
+      where,
+      orderBy: { start_date: 'desc' },
+    });
+
+    return successResponse(ads);
+  } catch (error) {
+    console.error('Error getMyAds:', error);
+    return internalErrorResponse('Error fetching my ads');
+  }
+}
+
+// --- 4. FUNCIÓN DE ACTUALIZACIÓN PROPIA (PUT /api/ads/:id) ---
+export async function updateMyAd(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  const authResult = await requireRole(event, [
+    enum_roles.provider, enum_roles.pharmacy, enum_roles.lab, enum_roles.ambulance, enum_roles.supplies
+  ]);
+  if ('statusCode' in authResult) return authResult;
+  const { user } = authResult as AuthContext;
+
+  const path = event.requestContext.http.path;
+  const id = path.split('/').pop() || '';
+  if (!id) return errorResponse('ID de anuncio no proporcionado', 400);
+
+  const prisma = getPrismaClient();
+
+  try {
+    const provider = await prisma.providers.findFirst({ where: { user_id: user.id } });
+    if (!provider) return errorResponse('Perfil de proveedor no encontrado', 404);
+
+    const existing = await prisma.provider_ads.findUnique({ where: { id } });
+    if (!existing) return errorResponse('Anuncio no encontrado', 404);
+    if (existing.provider_id !== provider.id) return errorResponse('No tienes permiso para editar este anuncio', 403);
+    if (existing.status !== 'PENDING') return errorResponse('Solo puedes editar anuncios con estado Pendiente', 400);
+
+    const body = JSON.parse(event.body || '{}');
+    const { badge_text, discount_title, description, button_text, image_url, start_date, end_date } = body;
+
+    let finalImageUrl = existing.image_url;
+    if (image_url && isBase64Image(image_url)) {
+      finalImageUrl = await uploadImageToCloudinary(image_url, 'ads');
+    } else if (image_url !== undefined) {
+      finalImageUrl = image_url;
+    }
+
+    const updated = await prisma.provider_ads.update({
+      where: { id },
+      data: {
+        ...(badge_text !== undefined && { badge_text }),
+        ...(discount_title !== undefined && { title: discount_title }),
+        ...(description !== undefined && { subtitle: description }),
+        ...(button_text !== undefined && { action_text: button_text }),
+        ...(finalImageUrl !== existing.image_url && { image_url: finalImageUrl }),
+        ...(start_date !== undefined && { start_date: new Date(start_date) }),
+        ...(end_date !== undefined && { end_date: end_date ? new Date(end_date) : null }),
+      },
+    });
+
+    return successResponse({ message: 'Anuncio actualizado correctamente', ad: updated });
+  } catch (error) {
+    console.error('Error updateMyAd:', error);
+    return internalErrorResponse('Error al actualizar el anuncio');
+  }
+}
+
+// --- 5. FUNCIÓN DE CONSULTA PROPIA (GET /api/ads) ---
 export async function getMyAd(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   const authResult = await requireRole(event, [
     enum_roles.provider, enum_roles.pharmacy, enum_roles.lab, enum_roles.ambulance, enum_roles.supplies
