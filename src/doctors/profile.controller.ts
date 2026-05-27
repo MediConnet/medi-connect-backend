@@ -22,6 +22,19 @@ function getDayIdFromString(day: string): number {
   return map[day.toLowerCase()] ?? 1;
 }
 
+function parseBlockedHoursByDay(documents: unknown): Record<string, string[]> {
+  if (!documents || typeof documents !== "object") return {};
+  const blockedRaw = (documents as any).blockedHoursByDay;
+  if (!blockedRaw || typeof blockedRaw !== "object") return {};
+
+  const result: Record<string, string[]> = {};
+  for (const [day, value] of Object.entries(blockedRaw)) {
+    if (!Array.isArray(value)) continue;
+    result[day] = value.filter((v) => typeof v === "string");
+  }
+  return result;
+}
+
 // --- GET PROFILE ---
 export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   const authResult = await requireRole(event, [enum_roles.provider]);
@@ -79,6 +92,7 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
 
   const mainBranch = profile.provider_branches[0] || null;
   const user = profile.users;
+  const blockedHoursByDay = parseBlockedHoursByDay(profile.documents);
   
   // Mapear especialidades con sus tarifas
   const specialtiesWithFees = profile.provider_specialties.map(ps => ({
@@ -159,6 +173,7 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
               endTime: endTime,
               breakStart,
               breakEnd,
+              blockedHours: blockedHoursByDay[dayNames[dayNum]] || [],
             };
           }
         }
@@ -381,6 +396,31 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
                     });
                 }
             }
+
+            // Guardar bloqueos recurrentes por día (UI "Bloquear horas específicas")
+            const currentDocuments =
+              profile.documents && typeof profile.documents === "object"
+                ? (profile.documents as any)
+                : {};
+            const blockedHoursByDay: Record<string, string[]> = {};
+
+            for (const item of body.workSchedule) {
+              if (!item?.day) continue;
+              const key = String(item.day).toLowerCase();
+              blockedHoursByDay[key] = Array.isArray((item as any).blockedHours)
+                ? (item as any).blockedHours.filter((h: unknown) => typeof h === "string")
+                : [];
+            }
+
+            await tx.providers.update({
+              where: { id: profile.id },
+              data: {
+                documents: {
+                  ...currentDocuments,
+                  blockedHoursByDay,
+                },
+              },
+            });
         }
       }
 
@@ -452,6 +492,7 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
 
     const updatedMainBranch = updatedProfile?.provider_branches[0] || null;
     const updatedUser = updatedProfile?.users;
+    const updatedBlockedHoursByDay = parseBlockedHoursByDay(updatedProfile?.documents);
 
     // Cuenta bancaria actualizada
     const updatedBankAccount = await prisma.doctor_bank_accounts.findUnique({
@@ -548,6 +589,7 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
                 endTime: endTime,
                 breakStart,
                 breakEnd,
+                blockedHours: updatedBlockedHoursByDay[dayNames[dayNum]] || [],
               };
             }
           }

@@ -21,11 +21,6 @@ export async function getSpecialties(event: APIGatewayProxyEventV2): Promise<API
       
     });
 
-
-    console.log("-------------------");
-    console.log(specialties);
-    console.log("-------------------");
-
     return successResponse(specialties);
   } catch (error: any) {
     console.error('Error getSpecialties:', error);

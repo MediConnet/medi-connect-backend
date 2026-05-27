@@ -97,6 +97,13 @@ const scheduleItemSchema = z
     // Break time (almuerzo) - enviar ambos o ninguno
     breakStart: timeHHMMNullable.optional(),
     breakEnd: timeHHMMNullable.optional(),
+    blockedHours: z
+      .array(
+        z
+          .string()
+          .regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, "Time must be in HH:mm format"),
+      )
+      .optional(),
   })
   .refine((v) => !v.enabled || (!!v.startTime && !!v.endTime), {
     message: "startTime y endTime son requeridos cuando enabled=true",

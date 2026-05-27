@@ -170,7 +170,16 @@ export async function getDashboard(event: APIGatewayProxyEventV2): Promise<APIGa
     where: { user_id: userId },
     include: {
       provider_branches: {
-        select: { id: true, name: true, address_text: true, phone_contact: true, email_contact: true },
+        where: { is_main: true },
+        take: 1,
+        include: {
+          provider_schedules: {
+            orderBy: { day_of_week: "asc" },
+          },
+        },
+      },
+      users: {
+        select: { email: true },
       },
       service_categories: { select: { id: true, name: true, slug: true } },
     },
@@ -271,6 +280,37 @@ export async function getDashboard(event: APIGatewayProxyEventV2): Promise<APIGa
       }
     : null;
 
+  const mainBranch = provider.provider_branches[0] || null;
+  const blockedHoursByDay =
+    provider.documents && typeof provider.documents === "object"
+      ? ((provider.documents as any).blockedHoursByDay as Record<string, string[]> | undefined)
+      : undefined;
+
+  const dayNames = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+  const schedules = (mainBranch?.provider_schedules || []).map((sch) => {
+    const dayKey = dayNames[sch.day_of_week ?? 0] || "monday";
+    const startTime = sch.start_time ? new Date(sch.start_time).toISOString().substring(11, 16) : null;
+    const endTime = sch.end_time ? new Date(sch.end_time).toISOString().substring(11, 16) : null;
+    const breakStart = sch.break_start
+      ? new Date(sch.break_start).toISOString().substring(11, 16)
+      : null;
+    const breakEnd = sch.break_end ? new Date(sch.break_end).toISOString().substring(11, 16) : null;
+
+    return {
+      day_id: sch.day_of_week ?? 0,
+      day: dayKey,
+      enabled: Boolean(sch.is_active ?? true),
+      startTime,
+      endTime,
+      breakStart,
+      breakEnd,
+      blockedHours:
+        blockedHoursByDay && Array.isArray(blockedHoursByDay[dayKey])
+          ? blockedHoursByDay[dayKey]
+          : [],
+    };
+  });
+
   return successResponse({
     totalAppointments,
     pendingAppointments,
@@ -298,8 +338,18 @@ export async function getDashboard(event: APIGatewayProxyEventV2): Promise<APIGa
       commercial_name: provider.commercial_name,
       description: provider.description,
       logoUrl: provider.logo_url,
+      email: provider.users?.email || null,
+      consultation_fee: 0,
+      years_of_experience: provider.years_of_experience ?? 0,
       specialty: null, // Placeholder
       category: provider.service_categories,
+      address_text: mainBranch?.address_text || "",
+      phone_contact: mainBranch?.phone_contact || "",
+      google_maps_url: mainBranch?.google_maps_url || null,
+      latitude: mainBranch?.latitude ?? null,
+      longitude: mainBranch?.longitude ?? null,
+      payment_methods: mainBranch?.payment_methods || [],
+      schedules,
       branches: provider.provider_branches,
       bankAccount: doctorBankAccount,
     },
