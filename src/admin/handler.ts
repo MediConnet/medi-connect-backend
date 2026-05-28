@@ -277,8 +277,8 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       return await createAdminAd(event);
     }
 
-    // PATCH /api/admin/ads/:id/toggle
-    if (method === 'PATCH' && path.match(/^\/api\/admin\/ads\/[^/]+\/toggle$/)) {
+    // PUT /api/admin/ads/:id/toggle
+    if (method === 'PUT' && path.match(/^\/api\/admin\/ads\/[^/]+\/toggle$/)) {
       return await toggleAdminAd(event);
     }
 

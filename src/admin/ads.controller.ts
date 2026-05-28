@@ -6,6 +6,22 @@ import { isBase64Image, uploadImageToCloudinary } from '../shared/cloudinary';
 import { getPrismaClient } from '../shared/prisma';
 import { errorResponse, internalErrorResponse, successResponse } from '../shared/response';
 
+async function autoExpireAds() {
+  try {
+    const prisma = getPrismaClient();
+    const now = new Date();
+    await prisma.provider_ads.updateMany({
+      where: {
+        is_active: true,
+        end_date: { lte: now },
+      },
+      data: { is_active: false },
+    });
+  } catch (e) {
+    console.error('Error auto-expiring ads (admin):', e);
+  }
+}
+
 function extractId(path: string, prefix: string): string {
   const after = path.slice(path.indexOf(prefix) + prefix.length);
   return after.split('/')[0];
@@ -16,6 +32,7 @@ function extractId(path: string, prefix: string): string {
  * Lista todos los anuncios APPROVED (propios del admin y de proveedores)
  */
 export async function getAdminAds(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  await autoExpireAds();
   const authResult = await requireRole(event, [enum_roles.admin]);
   if ('statusCode' in authResult) return authResult;
 

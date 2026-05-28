@@ -6,6 +6,22 @@ import { getPrismaClient } from '../shared/prisma';
 import { errorResponse, internalErrorResponse, successResponse } from '../shared/response';
 import { uploadImageToCloudinary, isBase64Image } from '../shared/cloudinary';
 
+async function autoExpireAds() {
+  try {
+    const prisma = getPrismaClient();
+    const now = new Date();
+    await prisma.provider_ads.updateMany({
+      where: {
+        is_active: true,
+        end_date: { lte: now },
+      },
+      data: { is_active: false },
+    });
+  } catch (e) {
+    console.error('Error auto-expiring ads:', e);
+  }
+}
+
 // Interface del formulario Frontend
 interface CreateAdBody {
   badge_text: string;
@@ -182,6 +198,7 @@ export async function createAdRequest(event: APIGatewayProxyEventV2): Promise<AP
 // --- 2. FUNCIÓN PÚBLICA PARA EL CARRUSEL (GET) ---
 // Endpoint: GET /api/public/ads
 export async function getPublicAds(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  await autoExpireAds();
   console.log('📢 [ADS] Obteniendo carrusel de anuncios públicos...');
   const prisma = getPrismaClient();
 
@@ -307,6 +324,7 @@ export async function getActiveAds(event: APIGatewayProxyEventV2): Promise<APIGa
 
 // --- 3. FUNCIÓN DE LISTADO COMPLETO CON FILTROS (GET /api/ads?mode=all) ---
 export async function getMyAds(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  await autoExpireAds();
   const authResult = await requireRole(event, [
     enum_roles.provider, enum_roles.pharmacy, enum_roles.lab, enum_roles.ambulance, enum_roles.supplies
   ]);
@@ -404,6 +422,7 @@ export async function updateMyAd(event: APIGatewayProxyEventV2): Promise<APIGate
 
 // --- 5. FUNCIÓN DE CONSULTA PROPIA (GET /api/ads) ---
 export async function getMyAd(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  await autoExpireAds();
   const authResult = await requireRole(event, [
     enum_roles.provider, enum_roles.pharmacy, enum_roles.lab, enum_roles.ambulance, enum_roles.supplies
   ]);
