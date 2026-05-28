@@ -3,7 +3,7 @@ import { enum_roles } from '../generated/prisma/client';
 import { AuthContext, requireRole } from '../shared/auth';
 import { logger } from '../shared/logger';
 import { getPrismaClient } from '../shared/prisma';
-import { errorResponse, internalErrorResponse, notFoundResponse, successResponse } from '../shared/response';
+import { errorResponse, internalErrorResponse, notFoundResponse, paginatedResponse, successResponse } from '../shared/response';
 import { extractIdFromPath } from '../shared/validators';
 
 // GET /api/clinics/notifications
@@ -30,7 +30,9 @@ export async function getClinicNotifications(event: APIGatewayProxyEventV2): Pro
     }
 
     const queryParams = event.queryStringParameters || {};
-    const limit = parseInt(queryParams.limit || '50', 10);
+    const page = parseInt(queryParams.page || '1', 10);
+    const limit = parseInt(queryParams.limit || '20', 10);
+    const offset = (page - 1) * limit;
     const unreadOnly = queryParams.unreadOnly === 'true';
 
     const where: any = { clinic_id: clinic.id };
@@ -38,14 +40,17 @@ export async function getClinicNotifications(event: APIGatewayProxyEventV2): Pro
       where.is_read = false;
     }
 
+    const total = await prisma.clinic_notifications.count({ where });
+
     const notifications = await prisma.clinic_notifications.findMany({
       where,
       orderBy: { created_at: 'desc' },
+      skip: offset,
       take: limit,
     });
 
-    console.log(`✅ [CLINICS] Notificaciones obtenidas: ${notifications.length}`);
-    return successResponse(notifications);
+    console.log(`✅ [CLINICS] Notificaciones obtenidas: ${notifications.length} (total: ${total})`);
+    return paginatedResponse(notifications, total, page, limit);
   } catch (error: any) {
     console.error(`❌ [CLINICS] Error al obtener notificaciones:`, error.message);
     logger.error('Error getting clinic notifications', error);

@@ -3,7 +3,7 @@ import { enum_roles } from '../generated/prisma/client';
 import { AuthContext, requireRole } from '../shared/auth';
 import { logger } from '../shared/logger';
 import { getPrismaClient } from '../shared/prisma';
-import { errorResponse, internalErrorResponse, notFoundResponse, successResponse } from '../shared/response';
+import { errorResponse, internalErrorResponse, notFoundResponse, paginatedResponse, successResponse } from '../shared/response';
 import { parseBody, createPharmacyChainSchema, updatePharmacyChainSchema } from '../shared/validators';
 import { randomUUID } from 'crypto';
 
@@ -26,9 +26,19 @@ export async function getPharmacyChains(event: APIGatewayProxyEventV2): Promise<
   const prisma = getPrismaClient();
 
   try {
-    const chains = await prisma.pharmacy_chains.findMany({
-      orderBy: { created_at: 'desc' },
-    });
+    const queryParams = event.queryStringParameters || {};
+    const page = parseInt(queryParams.page || '1', 10);
+    const limit = parseInt(queryParams.limit || '20', 10);
+    const offset = (page - 1) * limit;
+
+    const [chains, total] = await Promise.all([
+      prisma.pharmacy_chains.findMany({
+        orderBy: { created_at: 'desc' },
+        skip: offset,
+        take: limit,
+      }),
+      prisma.pharmacy_chains.count(),
+    ]);
 
     const chainsData = chains.map((chain) => ({
       id: chain.id,
@@ -40,8 +50,8 @@ export async function getPharmacyChains(event: APIGatewayProxyEventV2): Promise<
       isActive: chain.is_active ?? true,
     }));
 
-    console.log(`✅ [ADMIN] Retornando ${chainsData.length} cadenas`);
-    return successResponse(chainsData);
+    console.log(`✅ [ADMIN] Retornando ${chainsData.length} cadenas (página ${page}, total: ${total})`);
+    return paginatedResponse(chainsData, total, page, limit);
   } catch (error: any) {
     console.error(`❌ [ADMIN] Error al obtener cadenas:`, error.message);
     logger.error('Error getting pharmacy chains', error);

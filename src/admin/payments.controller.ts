@@ -1,7 +1,7 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResult } from 'aws-lambda';
 import { randomUUID } from 'crypto';
 import { getPrismaClient } from '../shared/prisma';
-import { successResponse, errorResponse, internalErrorResponse } from '../shared/response';
+import { successResponse, errorResponse, internalErrorResponse, paginatedResponse } from '../shared/response';
 import { logger } from '../shared/logger';
 import { CARD_METHODS, CHARGED_PAYMENT_STATUSES, DIRECT_PAYMENT_SOURCES, PAYOUT_TYPE_CLINIC } from '../shared/constants';
 
@@ -18,44 +18,52 @@ export async function getDoctorPayments(event: APIGatewayProxyEventV2): Promise<
   console.log('✅ [ADMIN] GET /api/admin/payments/doctors - Obteniendo pagos a médicos');
   
   const prisma = getPrismaClient();
+  const queryParams = event.queryStringParameters || {};
+  const page = parseInt(queryParams.page || '1', 10);
+  const limit = parseInt(queryParams.limit || '20', 10);
+  const offset = (page - 1) * limit;
 
   try {
-    // Vista contable: incluir pagos cobrados por tarjeta en admin + PayPhone.
-    const payments = await prisma.payments.findMany({
-      where: {
-        payment_source: { in: DIRECT_PAYMENT_SOURCES },
-        payment_method: { in: CARD_METHODS },
-        OR: [
-          { paid_at: { not: null } },
-          { status: { in: CHARGED_PAYMENT_STATUSES } },
-        ],
-      },
-      include: {
-        appointments: {
-          include: {
-            patients: {
-              select: {
-                id: true,
-                users: {
-                  select: {
-                    email: true,
+    const where = {
+      payment_source: { in: DIRECT_PAYMENT_SOURCES },
+      payment_method: { in: CARD_METHODS },
+      OR: [
+        { paid_at: { not: null } },
+        { status: { in: CHARGED_PAYMENT_STATUSES } },
+      ],
+    };
+
+    const [payments, total] = await Promise.all([
+      prisma.payments.findMany({
+        where,
+        include: {
+          appointments: {
+            include: {
+              patients: {
+                select: {
+                  id: true,
+                  users: {
+                    select: {
+                      email: true,
+                    },
                   },
                 },
               },
-            },
-            providers: {
-              select: {
-                id: true,
-                commercial_name: true,
+              providers: {
+                select: {
+                  id: true,
+                  commercial_name: true,
+                },
               },
             },
           },
         },
-      },
-      orderBy: {
-        created_at: 'desc',
-      },
-    });
+        orderBy: { created_at: 'desc' },
+        skip: offset,
+        take: limit,
+      }),
+      prisma.payments.count({ where }),
+    ]);
 
     // Mapear a formato del frontend
     const mappedPayments = payments.map((payment) => ({
@@ -74,8 +82,8 @@ export async function getDoctorPayments(event: APIGatewayProxyEventV2): Promise<
       providerName: payment.appointments?.providers?.commercial_name,
     }));
 
-    console.log(`✅ [ADMIN] ${mappedPayments.length} pagos a médicos obtenidos`);
-    return successResponse(mappedPayments);
+    console.log(`✅ [ADMIN] ${mappedPayments.length} pagos a médicos obtenidos (página ${page}, total: ${total})`);
+    return paginatedResponse(mappedPayments, total, page, limit);
   } catch (error: any) {
     console.error('❌ [ADMIN] Error al obtener pagos a médicos:', error.message);
     logger.error('Error getting doctor payments', error);
@@ -91,24 +99,31 @@ export async function getClinicPayments(event: APIGatewayProxyEventV2): Promise<
   console.log('✅ [ADMIN] GET /api/admin/payments/clinics - Obteniendo pagos a clínicas');
   
   const prisma = getPrismaClient();
+  const queryParams = event.queryStringParameters || {};
+  const page = parseInt(queryParams.page || '1', 10);
+  const limit = parseInt(queryParams.limit || '20', 10);
+  const offset = (page - 1) * limit;
 
   try {
-    // Obtener payouts de tipo 'clinic' con status='pending'
-    const payouts = await prisma.payouts.findMany({
-      where: {
-        payout_type: PAYOUT_TYPE_CLINIC,
-        status: 'pending',
-      },
-      include: {
-        payments: {
-          include: {
-            appointments: {
-              include: {
-                patients: {
-                  select: {
-                    users: {
-                      select: {
-                        email: true,
+    const where = {
+      payout_type: PAYOUT_TYPE_CLINIC,
+      status: 'pending',
+    };
+
+    const [payouts, total] = await Promise.all([
+      prisma.payouts.findMany({
+        where,
+        include: {
+          payments: {
+            include: {
+              appointments: {
+                include: {
+                  patients: {
+                    select: {
+                      users: {
+                        select: {
+                          email: true,
+                        },
                       },
                     },
                   },
@@ -116,13 +131,14 @@ export async function getClinicPayments(event: APIGatewayProxyEventV2): Promise<
               },
             },
           },
+          clinic_payment_distributions: true,
         },
-        clinic_payment_distributions: true,
-      },
-      orderBy: {
-        created_at: 'desc',
-      },
-    });
+        orderBy: { created_at: 'desc' },
+        skip: offset,
+        take: limit,
+      }),
+      prisma.payouts.count({ where }),
+    ]);
 
     // Obtener clínicas para mapear nombres
     const clinicIds = payouts.map(p => p.provider_id).filter((id): id is string => id !== null);
@@ -167,8 +183,8 @@ export async function getClinicPayments(event: APIGatewayProxyEventV2): Promise<
       };
     });
 
-    console.log(`✅ [ADMIN] ${mappedPayouts.length} pagos a clínicas obtenidos`);
-    return successResponse(mappedPayouts);
+    console.log(`✅ [ADMIN] ${mappedPayouts.length} pagos a clínicas obtenidos (página ${page}, total: ${total})`);
+    return paginatedResponse(mappedPayouts, total, page, limit);
   } catch (error: any) {
     console.error('❌ [ADMIN] Error al obtener pagos a clínicas:', error.message);
     logger.error('Error getting clinic payments', error);
@@ -284,14 +300,18 @@ export async function getPaymentHistory(event: APIGatewayProxyEventV2): Promise<
 
   try {
     // Historial contable: incluir cobros directos admin + PayPhone.
+    // Este endpoint retorna datos agregados, no una tabla paginada individual.
+    // Se mantiene sin paginación de lista porque combina dos fuentes (doctors + clinics).
+    const doctorWhere = {
+      payment_source: { in: DIRECT_PAYMENT_SOURCES },
+      OR: [
+        { paid_at: { not: null } },
+        { status: { in: CHARGED_PAYMENT_STATUSES } },
+      ],
+    };
+
     const doctorPayments = await prisma.payments.findMany({
-      where: {
-        payment_source: { in: DIRECT_PAYMENT_SOURCES },
-        OR: [
-          { paid_at: { not: null } },
-          { status: { in: CHARGED_PAYMENT_STATUSES } },
-        ],
-      },
+      where: doctorWhere,
       include: {
         appointments: {
           include: {
@@ -307,22 +327,18 @@ export async function getPaymentHistory(event: APIGatewayProxyEventV2): Promise<
           },
         },
       },
-      orderBy: {
-        paid_at: 'desc',
-      },
-      take: 50, // Limitar a últimos 50
+      orderBy: { paid_at: 'desc' },
     });
 
     // Obtener pagos a clínicas pagados
+    const clinicWhere = {
+      payout_type: PAYOUT_TYPE_CLINIC,
+      status: 'paid',
+    };
+
     const clinicPayments = await prisma.payouts.findMany({
-      where: {
-        payout_type: PAYOUT_TYPE_CLINIC,
-        status: 'paid',
-      },
-      orderBy: {
-        paid_at: 'desc',
-      },
-      take: 50,
+      where: clinicWhere,
+      orderBy: { paid_at: 'desc' },
     });
 
     // Obtener nombres de clínicas
@@ -351,7 +367,6 @@ export async function getPaymentHistory(event: APIGatewayProxyEventV2): Promise<
 
     console.log(`✅ [ADMIN] Historial obtenido: ${mappedDoctorPayments.length} médicos, ${mappedClinicPayments.length} clínicas`);
     return successResponse({
-      doctorPayments: mappedDoctorPayments,
       clinicPayments: mappedClinicPayments,
     });
   } catch (error: any) {

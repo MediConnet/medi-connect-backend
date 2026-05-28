@@ -7,6 +7,7 @@ import {
   errorResponse,
   internalErrorResponse,
   notFoundResponse,
+  paginatedResponse,
   successResponse,
 } from "../shared/response";
 import {
@@ -39,15 +40,26 @@ export async function getExams(event: APIGatewayProxyEventV2): Promise<APIGatewa
 
   const authContext = authResult as AuthContext;
   const prisma = getPrismaClient();
+  const queryParams = event.queryStringParameters || {};
+  const page = parseInt(queryParams.page || '1', 10);
+  const limit = parseInt(queryParams.limit || '20', 10);
+  const offset = (page - 1) * limit;
 
   try {
     const provider = await getLabProvider(prisma, authContext.user.id);
     if (!provider) return notFoundResponse("Laboratory not found");
 
-    const items = await prisma.provider_catalog.findMany({
-      where: { provider_id: provider.id },
-      orderBy: { name: "asc" },
-    });
+    const where = { provider_id: provider.id };
+
+    const [items, total] = await Promise.all([
+      prisma.provider_catalog.findMany({
+        where,
+        orderBy: { name: "asc" },
+        skip: offset,
+        take: limit,
+      }),
+      prisma.provider_catalog.count({ where }),
+    ]);
 
     const exams = items.map((e) => ({
       id: e.id,
@@ -58,7 +70,7 @@ export async function getExams(event: APIGatewayProxyEventV2): Promise<APIGatewa
       type: e.type ?? "exam",
     }));
 
-    return successResponse({ exams });
+    return paginatedResponse(exams, total, page, limit);
   } catch (err: any) {
     console.error("❌ [LABORATORIES] getExams error:", err.message);
     return internalErrorResponse("Failed to get exams");

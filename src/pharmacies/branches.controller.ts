@@ -4,7 +4,7 @@ import { enum_roles } from '../generated/prisma/client';
 import { AuthContext, requireRole } from '../shared/auth';
 import { logger } from '../shared/logger';
 import { getPrismaClient } from '../shared/prisma';
-import { errorResponse, internalErrorResponse, notFoundResponse, successResponse } from '../shared/response';
+import { errorResponse, internalErrorResponse, notFoundResponse, paginatedResponse, successResponse } from '../shared/response';
 import { parseBody, extractIdFromPath } from '../shared/validators';
 import { uploadImageToCloudinary, isBase64Image, isBlobUrl } from '../shared/cloudinary';
 import { z } from 'zod';
@@ -71,16 +71,24 @@ export async function getBranches(event: APIGatewayProxyEventV2): Promise<APIGat
       return successResponse([]);
     }
 
-    // Obtener todas las sucursales del provider (incluyendo la principal)
-    const branches = await prisma.provider_branches.findMany({
-      where: {
-        provider_id: provider.id,
-      },
-      orderBy: [
-        { is_main: 'desc' },
-        { name: 'asc' },
-      ],
-    });
+    const queryParams = event.queryStringParameters || {};
+    const page = parseInt(queryParams.page || '1', 10);
+    const limit = parseInt(queryParams.limit || '20', 10);
+    const offset = (page - 1) * limit;
+
+    const where = { provider_id: provider.id };
+    const [branches, total] = await Promise.all([
+      prisma.provider_branches.findMany({
+        where,
+        orderBy: [
+          { is_main: 'desc' },
+          { name: 'asc' },
+        ],
+        skip: offset,
+        take: limit,
+      }),
+      prisma.provider_branches.count({ where }),
+    ]);
 
     console.log(`✅ [PHARMACIES] Sucursales obtenidas exitosamente (${branches.length} sucursales)`);
 
@@ -100,7 +108,7 @@ export async function getBranches(event: APIGatewayProxyEventV2): Promise<APIGat
       google_maps_url: branch.google_maps_url || null,
     }));
 
-    return successResponse(formattedBranches);
+    return paginatedResponse(formattedBranches, total, page, limit);
   } catch (error: any) {
     console.error('❌ [PHARMACIES] Error al obtener sucursales:', error.message);
     logger.error('Error getting branches', error);

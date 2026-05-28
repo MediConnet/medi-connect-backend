@@ -9,6 +9,7 @@ import {
   errorResponse,
   internalErrorResponse,
   notFoundResponse,
+  paginatedResponse,
   successResponse,
 } from "../shared/response";
 import { extractIdFromPath, parseBody } from "../shared/validators";
@@ -96,6 +97,9 @@ export async function getReminders(
     const active = queryParams.active;
     const type = queryParams.type;
     const date = queryParams.date;
+    const page = parseInt(queryParams.page || '1', 10);
+    const limit = parseInt(queryParams.limit || '50', 10);
+    const offset = (page - 1) * limit;
 
     const where: any = {
       patient_id: patient.id,
@@ -113,12 +117,17 @@ export async function getReminders(
       where.start_date = new Date(date);
     }
 
-    const reminders = await prisma.patient_reminders.findMany({
-      where,
-      orderBy: [{ start_date: "asc" }, { time: "asc" }],
-    });
+    const [reminders, total] = await Promise.all([
+      prisma.patient_reminders.findMany({
+        where,
+        orderBy: [{ start_date: "asc" }, { time: "asc" }],
+        skip: offset,
+        take: limit,
+      }),
+      prisma.patient_reminders.count({ where }),
+    ]);
 
-    return successResponse(reminders.map(normalizeReminder), 200, event);
+    return paginatedResponse(reminders.map(normalizeReminder), total, page, limit, 200, event);
   } catch (error: any) {
     console.error(
       "❌ [REMINDERS] Error al listar recordatorios:",

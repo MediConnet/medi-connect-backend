@@ -1,6 +1,6 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResult } from 'aws-lambda';
 import { getPrismaClient } from '../shared/prisma';
-import { successResponse, errorResponse, internalErrorResponse, notFoundResponse } from '../shared/response';
+import { successResponse, errorResponse, internalErrorResponse, notFoundResponse, paginatedResponse } from '../shared/response';
 import { logger } from '../shared/logger';
 import { getAuthContext } from '../shared/auth';
 import { CHARGED_PAYMENT_STATUSES, DIRECT_PAYMENT_SOURCES } from '../shared/constants';
@@ -39,6 +39,8 @@ export async function getDoctorPayments(event: APIGatewayProxyEventV2): Promise<
     const queryParams = event.queryStringParameters || {};
     const statusFilter = queryParams.status; // 'pending' o 'paid'
     const sourceFilter = queryParams.source; // 'admin' o 'clinic'
+    const page = parseInt(queryParams.page || '1', 10);
+    const limit = parseInt(queryParams.limit || '20', 10);
 
     // 1. Obtener pagos directos (admin + PayPhone) para vista contable del médico
     const payments = await prisma.payments.findMany({
@@ -163,8 +165,12 @@ export async function getDoctorPayments(event: APIGatewayProxyEventV2): Promise<
       return dateB - dateA;
     });
 
-    console.log(`✅ [DOCTORS] ${allPayments.length} pagos obtenidos (${mappedDirectPayments.length} admin, ${mappedClinicPayments.length} clínica)`);
-    return successResponse(allPayments);
+    const total = allPayments.length;
+    const offset = (page - 1) * limit;
+    allPayments = allPayments.slice(offset, offset + limit);
+
+    console.log(`✅ [DOCTORS] ${total} pagos obtenidos (${mappedDirectPayments.length} admin, ${mappedClinicPayments.length} clínica)`);
+    return paginatedResponse(allPayments, total, page, limit);
   } catch (error: any) {
     console.error('❌ [DOCTORS] Error al obtener pagos:', error.message);
     logger.error('Error getting doctor payments', error);

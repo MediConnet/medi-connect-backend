@@ -6,6 +6,7 @@ import { getPrismaClient } from "../shared/prisma";
 import {
   errorResponse,
   internalErrorResponse,
+  paginatedResponse,
   successResponse,
 } from "../shared/response";
 
@@ -39,6 +40,9 @@ export async function getAllLaboratories(
 ): Promise<APIGatewayProxyResult> {
   const queryParams = event.queryStringParameters || {};
   const searchQuery = queryParams.q || "";
+  const page = parseInt(queryParams.page || '1', 10);
+  const limit = parseInt(queryParams.limit || '20', 10);
+  const offset = (page - 1) * limit;
 
   console.log(`✅ [LABORATORIES] Listando. Búsqueda: "${searchQuery}"`);
 
@@ -53,25 +57,32 @@ export async function getAllLaboratories(
       return errorResponse("Categoría de laboratorios no encontrada", 404);
     }
 
-    const allProviders = await prisma.providers.findMany({
-      where: {
-        category_id: laboratoryCategory.id,
-        verification_status: enum_verification.APPROVED,
-      },
-      include: {
-        provider_branches: {
-          where: { is_active: true, is_main: true },
-          take: 1,
-          include: {
-            provider_schedules: {
-              where: { is_active: true },
-              orderBy: { day_of_week: "asc" },
+    const where = {
+      category_id: laboratoryCategory.id,
+      verification_status: enum_verification.APPROVED,
+    };
+
+    const [allProviders, total] = await Promise.all([
+      prisma.providers.findMany({
+        where,
+        include: {
+          provider_branches: {
+            where: { is_active: true, is_main: true },
+            take: 1,
+            include: {
+              provider_schedules: {
+                where: { is_active: true },
+                orderBy: { day_of_week: "asc" },
+              },
+              cities: true,
             },
-            cities: true,
           },
         },
-      },
-    });
+        skip: offset,
+        take: limit,
+      }),
+      prisma.providers.count({ where }),
+    ]);
 
     let filteredProviders = allProviders;
 
@@ -137,7 +148,7 @@ export async function getAllLaboratories(
       })
       .filter((item) => item !== null);
 
-    return successResponse({ laboratories: formattedLaboratories });
+    return paginatedResponse(formattedLaboratories, total, page, limit);
   } catch (error: any) {
     console.error("❌ [LABORATORIES] Error getting laboratories:", error);
     return internalErrorResponse("Error al obtener laboratorios");

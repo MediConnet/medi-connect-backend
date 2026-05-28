@@ -2,7 +2,7 @@ import { APIGatewayProxyEventV2, APIGatewayProxyResult } from 'aws-lambda';
 import { enum_roles, Prisma } from '../generated/prisma/client';
 import { AuthContext, requireRole } from '../shared/auth';
 import { getPrismaClient } from '../shared/prisma';
-import { errorResponse, successResponse } from '../shared/response';
+import { errorResponse, successResponse, paginatedResponse } from '../shared/response';
 
 export async function getPatients(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   console.log('✅ [DOCTORS] GET /api/doctors/patients - Obteniendo pacientes');
@@ -99,15 +99,7 @@ export async function getPatients(event: APIGatewayProxyEventV2): Promise<APIGat
       };
     });
 
-    return successResponse({
-      data: formattedPatients,
-      meta: {
-        total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit)
-      }
-    });
+    return paginatedResponse(formattedPatients, total, page, limit);
 
   } catch (error) {
     console.error('Error getting patients:', error);

@@ -4,7 +4,7 @@ import { enum_roles } from '../generated/prisma/client';
 import { requireRole } from '../shared/auth';
 import { isBase64Image, uploadImageToCloudinary } from '../shared/cloudinary';
 import { getPrismaClient } from '../shared/prisma';
-import { errorResponse, internalErrorResponse, successResponse } from '../shared/response';
+import { errorResponse, internalErrorResponse, paginatedResponse, successResponse } from '../shared/response';
 
 async function autoExpireAds() {
   try {
@@ -38,12 +38,22 @@ export async function getAdminAds(event: APIGatewayProxyEventV2): Promise<APIGat
 
   const prisma = getPrismaClient();
   try {
+    const queryParams = event.queryStringParameters || {};
+    const page = parseInt(queryParams.page || '1', 10);
+    const limit = parseInt(queryParams.limit || '20', 10);
+    const offset = (page - 1) * limit;
+
+    const where = { status: 'APPROVED' as const };
+    const total = await prisma.provider_ads.count({ where });
+
     const ads = await prisma.provider_ads.findMany({
-      where: { status: 'APPROVED' },
+      where,
       include: {
         providers: { select: { commercial_name: true } },
       },
       orderBy: { priority_order: 'asc' },
+      take: limit,
+      skip: offset,
     });
 
     const result = ads.map((ad) => ({
@@ -65,7 +75,7 @@ export async function getAdminAds(event: APIGatewayProxyEventV2): Promise<APIGat
       providerName: ad.providers?.commercial_name ?? 'Admin',
     }));
 
-    return successResponse(result);
+    return paginatedResponse(result, total, page, limit);
   } catch (error: any) {
     console.error('Error getAdminAds:', error);
     return internalErrorResponse('Error al obtener anuncios');

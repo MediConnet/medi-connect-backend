@@ -1,6 +1,6 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResult } from 'aws-lambda';
 import { getPrismaClient } from '../shared/prisma';
-import { successResponse, errorResponse, internalErrorResponse, notFoundResponse } from '../shared/response';
+import { successResponse, errorResponse, internalErrorResponse, notFoundResponse, paginatedResponse } from '../shared/response';
 import { logger } from '../shared/logger';
 import { requireRole } from '../shared/auth';
 import { enum_roles } from '../generated/prisma/client';
@@ -33,24 +33,37 @@ export async function getConsultationPrices(event: APIGatewayProxyEventV2): Prom
       return errorResponse('Provider no encontrado', 404);
     }
 
+    // Paginación
+    const queryParams = event.queryStringParameters || {};
+    const page = parseInt(queryParams.page || '1', 10);
+    const limit = parseInt(queryParams.limit || '20', 10);
+    const offset = (page - 1) * limit;
+
+    const whereClause = { 
+      provider_id: provider.id,
+      // No filtrar por is_active ya que ahora hacemos eliminación física
+    };
+
     // Obtener tipos de consulta con sus precios
-    const consultationPrices = await prisma.consultation_prices.findMany({
-      where: { 
-        provider_id: provider.id,
-        // No filtrar por is_active ya que ahora hacemos eliminación física
-      },
-      include: {
-        specialties: {
-          select: {
-            id: true,
-            name: true,
+    const [consultationPrices, total] = await Promise.all([
+      prisma.consultation_prices.findMany({
+        where: whereClause,
+        include: {
+          specialties: {
+            select: {
+              id: true,
+              name: true,
+            },
           },
         },
-      },
-      orderBy: {
-        created_at: 'desc',
-      },
-    });
+        orderBy: {
+          created_at: 'desc',
+        },
+        skip: offset,
+        take: limit,
+      }),
+      prisma.consultation_prices.count({ where: whereClause }),
+    ]);
 
     // Formatear respuesta
     const formattedPrices = consultationPrices.map((cp) => ({
@@ -67,7 +80,7 @@ export async function getConsultationPrices(event: APIGatewayProxyEventV2): Prom
 
     console.log(`✅ [DOCTORS] Retornando ${formattedPrices.length} tipos de consulta`);
     
-    return successResponse(formattedPrices);
+    return paginatedResponse(formattedPrices, total, page, limit);
   } catch (error: any) {
     console.error('❌ [DOCTORS] Error al obtener tipos de consulta:', error.message);
     logger.error('Error getting consultation prices', error);

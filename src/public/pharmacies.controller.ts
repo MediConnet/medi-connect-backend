@@ -6,6 +6,7 @@ import { getPrismaClient } from "../shared/prisma";
 import {
   errorResponse,
   internalErrorResponse,
+  paginatedResponse,
   successResponse,
 } from "../shared/response";
 import { extractIdFromPath } from "../shared/validators";
@@ -62,11 +63,22 @@ export async function getPharmacyBrands(
     const prisma = getPrismaClient();
 
     try {
-      const chains = await prisma.pharmacy_chains.findMany({
-        where: { is_active: true },
-        select: { id: true, name: true, logo_url: true },
-        orderBy: { name: "asc" },
-      });
+      const queryParams = event.queryStringParameters || {};
+      const page = parseInt(queryParams.page || '1', 10);
+      const limit = parseInt(queryParams.limit || '20', 10);
+      const offset = (page - 1) * limit;
+
+      const chainWhere = { is_active: true };
+      const [chains, total] = await Promise.all([
+        prisma.pharmacy_chains.findMany({
+          where: chainWhere,
+          select: { id: true, name: true, logo_url: true },
+          orderBy: { name: "asc" },
+          skip: offset,
+          take: limit,
+        }),
+        prisma.pharmacy_chains.count({ where: chainWhere }),
+      ]);
 
       if (chains.length > 0) {
         const brands = chains.map((chain) => ({
@@ -75,7 +87,7 @@ export async function getPharmacyBrands(
           logo: chain.logo_url || "",
           color: "#002F87",
         }));
-        return successResponse(brands, 200, event);
+        return paginatedResponse(brands, total, page, limit, 200, event);
       }
     } catch (prismaError: any) {
       console.log("⚠️ Error consultando pharmacy_chains:", prismaError.message);
@@ -97,25 +109,37 @@ async function getPharmacyBrandsFallback(
   console.log("⚠️ Ejecutando fallback con providers...");
 
   try {
-    const pharmacies = await prisma.providers.findMany({
-      where: {
-        service_categories: { slug: "pharmacy" },
-        verification_status: enum_verification.APPROVED,
-        users: { is_active: true },
-        provider_branches: { some: { is_active: true } },
-      },
-      select: {
-        id: true,
-        commercial_name: true,
-        logo_url: true,
-        provider_branches: {
-          where: { is_main: true, is_active: true },
-          take: 1,
-          select: { image_url: true },
+    const queryParams = event.queryStringParameters || {};
+    const page = parseInt(queryParams.page || '1', 10);
+    const limit = parseInt(queryParams.limit || '20', 10);
+    const offset = (page - 1) * limit;
+
+    const where = {
+      service_categories: { slug: "pharmacy" },
+      verification_status: enum_verification.APPROVED,
+      users: { is_active: true },
+      provider_branches: { some: { is_active: true } },
+    };
+
+    const [pharmacies, total] = await Promise.all([
+      prisma.providers.findMany({
+        where,
+        select: {
+          id: true,
+          commercial_name: true,
+          logo_url: true,
+          provider_branches: {
+            where: { is_main: true, is_active: true },
+            take: 1,
+            select: { image_url: true },
+          },
         },
-      },
-      orderBy: { commercial_name: "asc" },
-    });
+        orderBy: { commercial_name: "asc" },
+        skip: offset,
+        take: limit,
+      }),
+      prisma.providers.count({ where }),
+    ]);
 
     const uniqueBrandsMap = new Map();
     pharmacies.forEach((pharmacy: any) => {
@@ -133,7 +157,7 @@ async function getPharmacyBrandsFallback(
     });
 
     const brands = Array.from(uniqueBrandsMap.values());
-    return successResponse(brands, 200, event);
+    return paginatedResponse(brands, total, page, limit, 200, event);
   } catch (error: any) {
     console.error("❌ Fallback error:", error.message);
     throw error;
@@ -282,19 +306,7 @@ export async function getPharmacyBranches(
       `✅ [PUBLIC PHARMACIES] Se encontraron ${formattedBranches.length} sucursales (total: ${total})`,
     );
 
-    return successResponse(
-      {
-        branches: formattedBranches,
-        pagination: {
-          page,
-          limit,
-          total,
-          totalPages: Math.ceil(total / limit),
-        },
-      },
-      200,
-      event,
-    );
+    return paginatedResponse(formattedBranches, total, page, limit, 200, event);
   } catch (error: any) {
     console.error("❌ Error branches:", error.message);
     return internalErrorResponse("Failed to fetch pharmacy branches", event);
@@ -435,19 +447,7 @@ export async function getAllPharmacies(
       };
     });
 
-    return successResponse(
-      {
-        pharmacies: formattedPharmacies,
-        pagination: {
-          page,
-          limit,
-          total,
-          totalPages: Math.ceil(total / limit),
-        },
-      },
-      200,
-      event,
-    );
+    return paginatedResponse(formattedPharmacies, total, page, limit, 200, event);
   } catch (error: any) {
     console.error(
       "❌ [PUBLIC PHARMACIES] Error al listar farmacias:",

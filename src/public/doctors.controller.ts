@@ -5,7 +5,7 @@ import { logger } from "../shared/logger";
 import { getPrismaClient } from "../shared/prisma";
 import {
   errorResponse,
-  internalErrorResponse,
+  internalErrorResponse, paginatedResponse,
   successResponse,
 } from "../shared/response";
 
@@ -140,6 +140,7 @@ export async function getAllDoctors(
     const specialtyId = queryParams.specialtyId;
     const cityParam = queryParams.city;
 
+    // Build DB-level where clause
     const where: any = {
       verification_status: enum_verification.APPROVED,
       category_id: 1,
@@ -159,7 +160,53 @@ export async function getAllDoctors(
       };
     }
 
-    const allDoctors = await prisma.providers.findMany({
+    // Add DB-level text search for basic matching
+    if (searchQuery.trim().length > 0) {
+      const searchTerm = searchQuery.trim();
+      const searchConditions: any[] = [
+        { commercial_name: { contains: searchTerm, mode: 'insensitive' } },
+        { description: { contains: searchTerm, mode: 'insensitive' } },
+        {
+          provider_branches: {
+            some: {
+              OR: [
+                { address_text: { contains: searchTerm, mode: 'insensitive' } },
+                { name: { contains: searchTerm, mode: 'insensitive' } },
+                { cities: { name: { contains: searchTerm, mode: 'insensitive' } } },
+              ],
+            },
+          },
+        },
+      ];
+      // Only add clinic name search if user relation exists
+      where.AND = [
+        ...(where.AND || []),
+        { OR: searchConditions },
+      ];
+    }
+
+    // Add city filter at DB level
+    if (cityParam && cityParam.trim().length > 0) {
+      const cityCondition: any = {
+        provider_branches: {
+          some: {
+            cities: {
+              name: { contains: cityParam.trim(), mode: 'insensitive' },
+            },
+          },
+        },
+      };
+      where.AND = [
+        ...(where.AND || []),
+        cityCondition,
+      ];
+    }
+
+    // Count total matching records
+    const total = await prisma.providers.count({ where });
+
+    // Fetch paginated results with DB-level filters
+    const doctors = await prisma.providers.findMany({
       where,
       include: {
         users: {
@@ -204,15 +251,19 @@ export async function getAllDoctors(
       orderBy: {
         commercial_name: "asc",
       },
+      skip: offset,
+      take: limit,
     });
 
-    let filteredDoctors = allDoctors;
+    // Apply accent-insensitive in-memory filter as a supplement
+    // (DB-level contains is accent-sensitive; this catches edge cases)
+    let filteredDoctors = doctors;
 
     if (searchQuery.trim().length > 0 || cityParam) {
       const term = normalizeText(searchQuery);
       const cityTerm = normalizeText(cityParam);
 
-      filteredDoctors = allDoctors.filter((doc) => {
+      filteredDoctors = doctors.filter((doc) => {
         const name = normalizeText(doc.commercial_name);
         const description = normalizeText(doc.description);
 
@@ -243,28 +294,13 @@ export async function getAllDoctors(
       });
     }
 
-    const total = filteredDoctors.length;
-    const paginatedDoctors = filteredDoctors.slice(offset, offset + limit);
-
-    const formattedDoctors = paginatedDoctors.map(mapDoctorData);
+    const formattedDoctors = filteredDoctors.map(mapDoctorData);
 
     console.log(
-      `✅ [PUBLIC DOCTORS] Retornando ${formattedDoctors.length} de ${total} doctores.`,
+      `✅ [PUBLIC DOCTORS] Retornando ${filteredDoctors.length} de ${total} doctores.`,
     );
 
-    return successResponse(
-      {
-        doctors: formattedDoctors,
-        pagination: {
-          page,
-          limit,
-          total,
-          totalPages: Math.ceil(total / limit),
-        },
-      },
-      200,
-      event,
-    );
+    return paginatedResponse(formattedDoctors, total, page, limit, 200, event);
   } catch (error: any) {
     console.error(
       "❌ [PUBLIC DOCTORS] Error al listar médicos:",
@@ -420,25 +456,37 @@ export async function getDoctorConsultationPrices(
 
     console.log(`✅ [PUBLIC DOCTORS] Doctor encontrado: ${doctor.commercial_name}`);
 
+    const queryParams = event.queryStringParameters || {};
+    const page = parseInt(queryParams.page || '1', 10);
+    const limit = parseInt(queryParams.limit || '20', 10);
+    const offset = (page - 1) * limit;
+
+    const consultationWhere = {
+      provider_id: doctorId,
+      is_active: true,
+    };
+
     // Obtener tipos de consulta activos del médico
-    const consultationPrices = await prisma.consultation_prices.findMany({
-      where: {
-        provider_id: doctorId,
-        is_active: true,
-      },
-      include: {
-        specialties: {
-          select: {
-            id: true,
-            name: true,
+    const [consultationPrices, total] = await Promise.all([
+      prisma.consultation_prices.findMany({
+        where: consultationWhere,
+        include: {
+          specialties: {
+            select: {
+              id: true,
+              name: true,
+            },
           },
         },
-      },
-      orderBy: [
-        { specialty_id: "asc" },
-        { price: "asc" },
-      ],
-    });
+        orderBy: [
+          { specialty_id: "asc" },
+          { price: "asc" },
+        ],
+        skip: offset,
+        take: limit,
+      }),
+      prisma.consultation_prices.count({ where: consultationWhere }),
+    ]);
 
     console.log(`📊 [PUBLIC DOCTORS] Encontrados ${consultationPrices.length} tipos de consulta`);
 
@@ -477,7 +525,7 @@ export async function getDoctorConsultationPrices(
       console.log(`📋 [PUBLIC DOCTORS] Datos:`, JSON.stringify(formattedPrices, null, 2));
     }
 
-    return successResponse(formattedPrices, 200, event);
+    return paginatedResponse(formattedPrices, total, page, limit, 200, event);
   } catch (error: any) {
     console.error(
       "❌ [PUBLIC DOCTORS] Error al obtener tipos de consulta:",

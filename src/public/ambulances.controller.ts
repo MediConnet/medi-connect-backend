@@ -5,6 +5,7 @@ import { getPrismaClient } from "../shared/prisma";
 import {
   errorResponse,
   internalErrorResponse,
+  paginatedResponse,
   successResponse,
 } from "../shared/response";
 import { extractIdFromPath } from "../shared/validators";
@@ -112,7 +113,7 @@ export async function getAllAmbulances(
     const limit = parseInt(queryParams.limit || "20", 10);
     const offset = (page - 1) * limit;
 
-    // Filtros base
+    // Build DB-level where clause
     const where: any = {
       category_id: 4,
       verification_status: enum_verification.APPROVED,
@@ -126,7 +127,53 @@ export async function getAllAmbulances(
       },
     };
 
-    const allAmbulances = await prisma.providers.findMany({
+    // Add DB-level text search
+    if (searchQuery.trim().length > 0) {
+      const searchTerm = searchQuery.trim();
+      where.AND = [
+        {
+          OR: [
+            { commercial_name: { contains: searchTerm, mode: 'insensitive' } },
+            { description: { contains: searchTerm, mode: 'insensitive' } },
+            {
+              provider_branches: {
+                some: {
+                  OR: [
+                    { name: { contains: searchTerm, mode: 'insensitive' } },
+                    { address_text: { contains: searchTerm, mode: 'insensitive' } },
+                    { coverage_area: { contains: searchTerm, mode: 'insensitive' } },
+                    { cities: { name: { contains: searchTerm, mode: 'insensitive' } } },
+                  ],
+                },
+              },
+            },
+          ],
+        },
+      ];
+    }
+
+    // Add city filter at DB level
+    if (cityParam && cityParam.trim().length > 0) {
+      const cityCondition = {
+        provider_branches: {
+          some: {
+            cities: {
+              name: { contains: cityParam.trim(), mode: 'insensitive' },
+            },
+          },
+        },
+      };
+      where.AND = [
+        ...(where.AND || []),
+        cityCondition,
+      ];
+    }
+
+    // Count total matching records
+    const total = await prisma.providers.count({ where });
+
+    // Fetch paginated results with DB-level filters
+    const ambulances = await prisma.providers.findMany({
       where,
       include: {
         users: {
@@ -146,15 +193,18 @@ export async function getAllAmbulances(
       orderBy: {
         commercial_name: "asc",
       },
+      skip: offset,
+      take: limit,
     });
 
-    let filteredAmbulances = allAmbulances;
+    // Apply accent-insensitive in-memory filter as a supplement
+    let filteredAmbulances = ambulances;
 
     if (searchQuery.trim().length > 0 || cityParam.trim().length > 0) {
       const term = normalizeText(searchQuery);
       const cityTerm = normalizeText(cityParam);
 
-      filteredAmbulances = allAmbulances.filter((doc) => {
+      filteredAmbulances = ambulances.filter((doc) => {
         const mainBranch =
           doc.provider_branches.find((b) => b.is_main) ||
           doc.provider_branches[0];
@@ -196,31 +246,13 @@ export async function getAllAmbulances(
       });
     }
 
-    const total = filteredAmbulances.length;
-    const paginatedAmbulances = filteredAmbulances.slice(
-      offset,
-      offset + limit,
-    );
-
-    const formattedAmbulances = paginatedAmbulances.map(mapAmbulanceData);
+    const formattedAmbulances = filteredAmbulances.map(mapAmbulanceData);
 
     console.log(
-      `✅ [PUBLIC AMBULANCES] Retornando ${formattedAmbulances.length} de ${total} ambulancias.`,
+      `✅ [PUBLIC AMBULANCES] Retornando ${filteredAmbulances.length} de ${total} ambulancias.`,
     );
 
-    return successResponse(
-      {
-        ambulances: formattedAmbulances,
-        pagination: {
-          page,
-          limit,
-          total,
-          totalPages: Math.ceil(total / limit),
-        },
-      },
-      200,
-      event,
-    );
+    return paginatedResponse(formattedAmbulances, total, page, limit, 200, event);
   } catch (error: any) {
     console.error(
       "❌ [PUBLIC AMBULANCES] Error al listar ambulancias:",

@@ -5,6 +5,7 @@ import { getPrismaClient } from "../shared/prisma";
 import {
   errorResponse,
   internalErrorResponse,
+  paginatedResponse,
   successResponse,
 } from "../shared/response";
 import { extractIdFromPath } from "../shared/validators";
@@ -40,22 +41,26 @@ export async function getNotifications(
 
     const queryParams = event.queryStringParameters || {};
     const unreadOnly = queryParams.unread === "true";
-    const limit = parseInt(queryParams.limit || "50", 10);
-    const offset = parseInt(queryParams.offset || "0", 10);
+    const page = parseInt(queryParams.page || '1', 10);
+    const limit = parseInt(queryParams.limit || '20', 10);
+    const offset = (page - 1) * limit;
 
     const where: any = { patient_id: patient.id };
     if (unreadOnly) {
       where.is_read = false;
     }
 
-    const notifications = await prisma.notifications.findMany({
-      where,
-      orderBy: {
-        created_at: "desc",
-      },
-      take: limit,
-      skip: offset,
-    });
+    const [notifications, total] = await Promise.all([
+      prisma.notifications.findMany({
+        where,
+        orderBy: {
+          created_at: "desc",
+        },
+        take: limit,
+        skip: offset,
+      }),
+      prisma.notifications.count({ where }),
+    ]);
 
     console.log(
       `✅ [PATIENTS] Se encontraron ${notifications.length} notificaciones`,
@@ -71,7 +76,7 @@ export async function getNotifications(
       created_at: notif.created_at || new Date(),
     }));
 
-    return successResponse(formattedNotifications, 200, event);
+    return paginatedResponse(formattedNotifications, total, page, limit, 200, event);
   } catch (error: any) {
     console.error(
       "❌ [PATIENTS] Error al obtener notificaciones:",

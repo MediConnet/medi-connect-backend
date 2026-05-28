@@ -1,7 +1,7 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResult } from 'aws-lambda';
 import { randomUUID } from 'crypto';
 import { getPrismaClient } from '../shared/prisma';
-import { successResponse, errorResponse, internalErrorResponse, notFoundResponse } from '../shared/response';
+import { successResponse, errorResponse, internalErrorResponse, notFoundResponse, paginatedResponse } from '../shared/response';
 import { logger } from '../shared/logger';
 import { getAuthContext } from '../shared/auth';
 import { PAYOUT_TYPE_CLINIC } from '../shared/constants';
@@ -14,6 +14,11 @@ export async function getClinicPayments(event: APIGatewayProxyEventV2): Promise<
   console.log('✅ [CLINICS] GET /api/clinics/payments - Obteniendo pagos recibidos');
   
   const prisma = getPrismaClient();
+  const queryParams = event.queryStringParameters || {};
+
+  const page = parseInt(queryParams.page || '1', 10);
+  const limit = parseInt(queryParams.limit || '20', 10);
+  const offset = (page - 1) * limit;
 
   try {
     // Obtener contexto de autenticación
@@ -31,12 +36,16 @@ export async function getClinicPayments(event: APIGatewayProxyEventV2): Promise<
       return notFoundResponse('Clinic not found');
     }
 
+    const where = {
+      provider_id: clinic.id,
+      payout_type: PAYOUT_TYPE_CLINIC,
+    };
+
+    const total = await prisma.payouts.count({ where });
+
     // Obtener payouts de la clínica (ligero: sin includes pesados para evitar timeouts)
     const payouts = await prisma.payouts.findMany({
-      where: {
-        provider_id: clinic.id,
-        payout_type: PAYOUT_TYPE_CLINIC,
-      },
+      where,
       select: {
         id: true,
         total_amount: true,
@@ -47,7 +56,8 @@ export async function getClinicPayments(event: APIGatewayProxyEventV2): Promise<
       orderBy: {
         created_at: 'desc',
       },
-      take: 50,
+      skip: offset,
+      take: limit,
     });
 
     const payoutIds = payouts.map((p) => p.id);
@@ -107,8 +117,8 @@ export async function getClinicPayments(event: APIGatewayProxyEventV2): Promise<
       };
     });
 
-    console.log(`✅ [CLINICS] ${mappedPayouts.length} pagos obtenidos`);
-    return successResponse(mappedPayouts);
+    console.log(`✅ [CLINICS] ${mappedPayouts.length} pagos obtenidos (total: ${total})`);
+    return paginatedResponse(mappedPayouts, total, page, limit);
   } catch (error: any) {
     console.error('❌ [CLINICS] Error al obtener pagos:', error.message);
     logger.error('Error getting clinic payments', error);
@@ -341,6 +351,11 @@ export async function getDoctorPayments(event: APIGatewayProxyEventV2): Promise<
   console.log('✅ [CLINICS] GET /api/clinics/doctors/payments - Obteniendo pagos a médicos');
   
   const prisma = getPrismaClient();
+  const queryParams = event.queryStringParameters || {};
+
+  const page = parseInt(queryParams.page || '1', 10);
+  const limit = parseInt(queryParams.limit || '20', 10);
+  const offset = (page - 1) * limit;
 
   try {
     const authContext = await getAuthContext(event);
@@ -367,11 +382,15 @@ export async function getDoctorPayments(event: APIGatewayProxyEventV2): Promise<
     ).map((p) => p.id);
 
     if (payoutIds.length === 0) {
-      return successResponse([]);
+      return paginatedResponse([], 0, page, limit);
     }
 
+    const where = { payout_id: { in: payoutIds } };
+
+    const total = await prisma.clinic_payment_distributions.count({ where });
+
     const distributions = await prisma.clinic_payment_distributions.findMany({
-      where: { payout_id: { in: payoutIds } },
+      where,
       include: {
         clinic_doctors: {
           include: {
@@ -383,7 +402,8 @@ export async function getDoctorPayments(event: APIGatewayProxyEventV2): Promise<
         payouts: true,
       },
       orderBy: { created_at: 'desc' },
-      take: 500,
+      skip: offset,
+      take: limit,
     });
 
     // Obtener nombres de doctores desde providers
@@ -434,8 +454,8 @@ export async function getDoctorPayments(event: APIGatewayProxyEventV2): Promise<
       };
     });
 
-    console.log(`✅ [CLINICS] ${mappedPayments.length} pagos a médicos obtenidos`);
-    return successResponse(mappedPayments);
+    console.log(`✅ [CLINICS] ${mappedPayments.length} pagos a médicos obtenidos (total: ${total})`);
+    return paginatedResponse(mappedPayments, total, page, limit);
   } catch (error: any) {
     console.error('❌ [CLINICS] Error al obtener pagos a médicos:', error.message);
     logger.error('Error getting doctor payments', error);
@@ -507,6 +527,11 @@ export async function getPaymentDistribution(event: APIGatewayProxyEventV2): Pro
   console.log('✅ [CLINICS] GET /api/clinics/payments/:id/distribution - Obteniendo distribución');
   
   const prisma = getPrismaClient();
+  const queryParams = event.queryStringParameters || {};
+
+  const page = parseInt(queryParams.page || '1', 10);
+  const limit = parseInt(queryParams.limit || '20', 10);
+  const offset = (page - 1) * limit;
 
   try {
     const authContext = await getAuthContext(event);
@@ -538,9 +563,13 @@ export async function getPaymentDistribution(event: APIGatewayProxyEventV2): Pro
       return notFoundResponse('Payment not found');
     }
 
+    const where = { payout_id: paymentId };
+
+    const total = await prisma.clinic_payment_distributions.count({ where });
+
     // Obtener distribuciones
     const distributions = await prisma.clinic_payment_distributions.findMany({
-      where: { payout_id: paymentId },
+      where,
       include: {
         clinic_doctors: {
           include: {
@@ -552,9 +581,10 @@ export async function getPaymentDistribution(event: APIGatewayProxyEventV2): Pro
           }
         },
       },
+      skip: offset,
+      take: limit,
     });
 
-    const totalDistributed = distributions.reduce((sum: number, d) => sum + Number(d.amount), 0);
     const netAmount = Number(payout.total_amount || 0);
 
     // Obtener nombres de doctores desde providers
@@ -574,31 +604,23 @@ export async function getPaymentDistribution(event: APIGatewayProxyEventV2): Pro
     
     const providerNameMap = new Map(providers.map(p => [p.user_id, p.commercial_name]));
 
-    const result = {
-      clinicPaymentId: paymentId,
-      totalReceived: netAmount,
-      distributions: distributions.map((d) => {
-        const doctorName = d.clinic_doctors?.user_id 
-          ? providerNameMap.get(d.clinic_doctors.user_id) || 'Doctor'
-          : 'Doctor';
-        
-        return {
-          doctorId: d.doctor_id,
-          doctorName: doctorName,
-          amount: Number(d.amount),
-          percentage: Number(d.percentage || 0),
-          status: d.status,
-          paymentId: d.id,
-        };
-      }),
-      totalDistributed,
-      remaining: netAmount - totalDistributed,
-      createdAt: distributions[0]?.created_at?.toISOString() || new Date().toISOString(),
-      updatedAt: distributions[0]?.updated_at?.toISOString() || new Date().toISOString(),
-    };
+    const mappedDistributions = distributions.map((d) => {
+      const doctorName = d.clinic_doctors?.user_id 
+        ? providerNameMap.get(d.clinic_doctors.user_id) || 'Doctor'
+        : 'Doctor';
+      
+      return {
+        doctorId: d.doctor_id,
+        doctorName: doctorName,
+        amount: Number(d.amount),
+        percentage: Number(d.percentage || 0),
+        status: d.status,
+        paymentId: d.id,
+      };
+    });
 
-    console.log(`✅ [CLINICS] Distribución de pago ${paymentId} obtenida`);
-    return successResponse(result);
+    console.log(`✅ [CLINICS] Distribución de pago ${paymentId} obtenida (${mappedDistributions.length} distribuciones, total: ${total})`);
+    return paginatedResponse(mappedDistributions, total, page, limit);
   } catch (error: any) {
     console.error('❌ [CLINICS] Error al obtener distribución:', error.message);
     logger.error('Error getting payment distribution', error);

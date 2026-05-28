@@ -4,7 +4,7 @@ import { enum_roles } from '../generated/prisma/client';
 import { AuthContext, requireRole } from '../shared/auth';
 import { logger } from '../shared/logger';
 import { getPrismaClient } from '../shared/prisma';
-import { errorResponse, internalErrorResponse, notFoundResponse, successResponse } from '../shared/response';
+import { errorResponse, internalErrorResponse, notFoundResponse, paginatedResponse, successResponse } from '../shared/response';
 import { parseBody, createReceptionMessageSchema, markReceptionMessagesReadSchema } from '../shared/validators';
 
 // GET /api/clinics/reception/messages
@@ -46,6 +46,12 @@ export async function getReceptionMessages(event: APIGatewayProxyEventV2): Promi
       where.doctor_id = queryParams.doctorId;
     }
 
+    const page = parseInt(queryParams.page || '1', 10);
+    const limit = parseInt(queryParams.limit || '20', 10);
+    const offset = (page - 1) * limit;
+
+    const total = await prisma.reception_messages.count({ where });
+
     // Obtener mensajes
     const messages = await prisma.reception_messages.findMany({
       where,
@@ -60,6 +66,8 @@ export async function getReceptionMessages(event: APIGatewayProxyEventV2): Promi
       orderBy: {
         created_at: 'asc', // ⭐ Más antiguos primero
       },
+      skip: offset,
+      take: limit,
     });
 
     // Obtener nombres de doctores desde providers
@@ -100,8 +108,8 @@ export async function getReceptionMessages(event: APIGatewayProxyEventV2): Promi
       };
     });
 
-    console.log(`✅ [CLINICS] Mensajes obtenidos exitosamente (${messagesData.length} mensajes)`);
-    return successResponse(messagesData);
+    console.log(`✅ [CLINICS] Mensajes obtenidos exitosamente (${messagesData.length} mensajes, total: ${total})`);
+    return paginatedResponse(messagesData, total, page, limit);
   } catch (error: any) {
     console.error(`❌ [CLINICS] Error al obtener mensajes:`, error.message);
     logger.error('Error getting reception messages', error);

@@ -4,7 +4,7 @@ import { enum_roles } from '../generated/prisma/client';
 import { AuthContext, requireRole } from '../shared/auth';
 import { logger } from '../shared/logger';
 import { getPrismaClient } from '../shared/prisma';
-import { errorResponse, internalErrorResponse, notFoundResponse, successResponse } from '../shared/response';
+import { errorResponse, internalErrorResponse, notFoundResponse, paginatedResponse, successResponse } from '../shared/response';
 import { parseBody, createProductSchema, updateProductSchema, extractIdFromPath } from '../shared/validators';
 
 // GET /api/pharmacies/products - Listar productos
@@ -34,20 +34,31 @@ export async function getProducts(event: APIGatewayProxyEventV2): Promise<APIGat
       });
     }
 
-    // Obtener productos del catálogo
-    const products = await prisma.provider_catalog.findMany({
-      where: {
-        provider_id: provider.id,
-        type: 'product', // Solo productos
-      },
-      orderBy: {
-        name: 'asc',
-      },
-    });
+    const queryParams = event.queryStringParameters || {};
+    const page = parseInt(queryParams.page || '1', 10);
+    const limit = parseInt(queryParams.limit || '20', 10);
+    const offset = (page - 1) * limit;
+
+    const where = {
+      provider_id: provider.id,
+      type: 'product' as const,
+    };
+
+    const [products, total] = await Promise.all([
+      prisma.provider_catalog.findMany({
+        where,
+        orderBy: {
+          name: 'asc',
+        },
+        skip: offset,
+        take: limit,
+      }),
+      prisma.provider_catalog.count({ where }),
+    ]);
 
     console.log(`✅ [PHARMACIES] Productos obtenidos exitosamente (${products.length} productos)`);
-    return successResponse({
-      products: products.map(p => ({
+    return paginatedResponse(
+      products.map(p => ({
         id: p.id,
         name: p.name,
         description: p.description || null,
@@ -56,8 +67,10 @@ export async function getProducts(event: APIGatewayProxyEventV2): Promise<APIGat
         image_url: p.image_url || null,
         type: p.type || 'product',
       })),
-      total: products.length,
-    });
+      total,
+      page,
+      limit,
+    );
   } catch (error: any) {
     console.error(`❌ [PHARMACIES] Error al obtener productos:`, error.message);
     logger.error('Error getting products', error);

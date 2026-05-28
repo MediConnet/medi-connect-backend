@@ -3,7 +3,7 @@ import { randomUUID } from 'crypto';
 import { enum_roles } from '../generated/prisma/client';
 import { AuthContext, requireRole } from '../shared/auth';
 import { getPrismaClient } from '../shared/prisma';
-import { errorResponse, internalErrorResponse, successResponse } from '../shared/response';
+import { errorResponse, internalErrorResponse, paginatedResponse, successResponse } from '../shared/response';
 import { uploadImageToCloudinary, isBase64Image } from '../shared/cloudinary';
 
 async function autoExpireAds() {
@@ -201,46 +201,56 @@ export async function getPublicAds(event: APIGatewayProxyEventV2): Promise<APIGa
   await autoExpireAds();
   console.log('📢 [ADS] Obteniendo carrusel de anuncios públicos...');
   const prisma = getPrismaClient();
+  const queryParams = event.queryStringParameters || {};
+  const page = parseInt(queryParams.page || '1', 10);
+  const limit = parseInt(queryParams.limit || '10', 10);
+  const offset = (page - 1) * limit;
 
   try {
     const now = new Date();
 
-    const ads = await prisma.provider_ads.findMany({
-      where: {
-        status: 'APPROVED',
-        is_active: true,
-        start_date: { lte: now },
-        OR: [
-          { end_date: null },
-          { end_date: { gt: now } }
-        ]
-      },
-      orderBy: [
-        { priority_order: 'asc' }, 
-        { start_date: 'desc' } 
+    const where = {
+      status: 'APPROVED' as const,
+      is_active: true,
+      start_date: { lte: now },
+      OR: [
+        { end_date: null },
+        { end_date: { gt: now } }
       ],
-      select: {
-        id: true,
-        badge_text: true,
-        title: true,
-        subtitle: true,
-        image_url: true,
-        action_text: true,
-        bg_color_hex: true,
-        accent_color_hex: true,
-        target_screen: true,
-        target_id: true,
-        start_date: true,
-        end_date: true,
-        providers: {
-          select: {
-            logo_url: true,
-            commercial_name: true 
+    };
+
+    const [ads, total] = await Promise.all([
+      prisma.provider_ads.findMany({
+        where,
+        orderBy: [
+          { priority_order: 'asc' }, 
+          { start_date: 'desc' } 
+        ],
+        select: {
+          id: true,
+          badge_text: true,
+          title: true,
+          subtitle: true,
+          image_url: true,
+          action_text: true,
+          bg_color_hex: true,
+          accent_color_hex: true,
+          target_screen: true,
+          target_id: true,
+          start_date: true,
+          end_date: true,
+          providers: {
+            select: {
+              logo_url: true,
+              commercial_name: true 
+            }
           }
-        }
-      },
-      take: 10 
-    });
+        },
+        skip: offset,
+        take: limit,
+      }),
+      prisma.provider_ads.count({ where }),
+    ]);
 
     // Mapeo para el Frontend (React Native)
     const formattedAds = ads.map(ad => {
@@ -271,7 +281,7 @@ export async function getPublicAds(event: APIGatewayProxyEventV2): Promise<APIGa
         };
     });
 
-    return successResponse(formattedAds);
+    return paginatedResponse(formattedAds, total, page, limit);
 
   } catch (error: any) {
     console.error('❌ [ADS] Error fetching public ads:', error);
@@ -282,25 +292,37 @@ export async function getPublicAds(event: APIGatewayProxyEventV2): Promise<APIGa
 // --- 2b. GET /api/ads/active o /api/public/ads - Estructura para app de pacientes ---
 export async function getActiveAds(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   const prisma = getPrismaClient();
+  const queryParams = event.queryStringParameters || {};
+  const page = parseInt(queryParams.page || '1', 10);
+  const limit = parseInt(queryParams.limit || '20', 10);
+  const offset = (page - 1) * limit;
+
   try {
     const now = new Date();
-    const ads = await prisma.provider_ads.findMany({
-      where: {
-        status: 'APPROVED',
-        is_active: true,
-        start_date: { lte: now },
-        OR: [{ end_date: null }, { end_date: { gt: now } }],
-      },
-      include: {
-        providers: {
-          include: {
-            service_categories: { select: { slug: true } },
+
+    const where = {
+      status: 'APPROVED' as const,
+      is_active: true,
+      start_date: { lte: now },
+      OR: [{ end_date: null }, { end_date: { gt: now } }],
+    };
+
+    const [ads, total] = await Promise.all([
+      prisma.provider_ads.findMany({
+        where,
+        include: {
+          providers: {
+            include: {
+              service_categories: { select: { slug: true } },
+            },
           },
         },
-      },
-      orderBy: [{ priority_order: 'asc' }, { start_date: 'desc' }],
-      take: 20,
-    });
+        orderBy: [{ priority_order: 'asc' }, { start_date: 'desc' }],
+        skip: offset,
+        take: limit,
+      }),
+      prisma.provider_ads.count({ where }),
+    ]);
 
     const data = ads.map(ad => ({
       id: ad.id,
@@ -315,7 +337,7 @@ export async function getActiveAds(event: APIGatewayProxyEventV2): Promise<APIGa
       serviceType: ad.providers?.service_categories?.slug || 'doctor',
     }));
 
-    return successResponse(data);
+    return paginatedResponse(data, total, page, limit);
   } catch (error: any) {
     console.error('Error getActiveAds:', error);
     return internalErrorResponse('Error fetching active ads');
@@ -347,6 +369,10 @@ export async function getMyAds(event: APIGatewayProxyEventV2): Promise<APIGatewa
     if (dateFrom) dateFilter.gte = dateFrom;
     if (dateTo) dateFilter.lte = dateTo;
 
+    const page = parseInt(queryParams.page || '1', 10);
+    const limit = parseInt(queryParams.limit || '20', 10);
+    const offset = (page - 1) * limit;
+
     const where: any = {
       provider_id: provider.id,
       ...statusFilter,
@@ -355,12 +381,17 @@ export async function getMyAds(event: APIGatewayProxyEventV2): Promise<APIGatewa
       where.start_date = dateFilter;
     }
 
-    const ads = await prisma.provider_ads.findMany({
-      where,
-      orderBy: { start_date: 'desc' },
-    });
+    const [ads, total] = await Promise.all([
+      prisma.provider_ads.findMany({
+        where,
+        orderBy: { start_date: 'desc' },
+        skip: offset,
+        take: limit,
+      }),
+      prisma.provider_ads.count({ where }),
+    ]);
 
-    return successResponse(ads);
+    return paginatedResponse(ads, total, page, limit);
   } catch (error) {
     console.error('Error getMyAds:', error);
     return internalErrorResponse('Error fetching my ads');

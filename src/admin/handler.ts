@@ -4,7 +4,7 @@ import { ad_status, enum_roles, enum_verification } from '../generated/prisma/cl
 import { requireRole } from '../shared/auth';
 import { logger } from '../shared/logger';
 import { getPrismaClient } from '../shared/prisma';
-import { errorResponse, internalErrorResponse, notFoundResponse, successResponse } from '../shared/response';
+import { errorResponse, internalErrorResponse, notFoundResponse, paginatedResponse, successResponse } from '../shared/response';
 import { parseBody } from '../shared/validators';
 import { createPharmacyChain, deletePharmacyChain, getPharmacyChains, updatePharmacyChain } from './pharmacy-chains.controller';
 import { getAdminAds, createAdminAd, updateAdminAd, deleteAdminAd, toggleAdminAd } from './ads.controller';
@@ -565,8 +565,9 @@ async function getRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayPro
 
   const queryParams = event.queryStringParameters || {};
   const status = queryParams.status; // 'PENDING', 'APPROVED', 'REJECTED'
-  const limit = parseInt(queryParams.limit || '50', 10);
-  const offset = parseInt(queryParams.offset || '0', 10);
+  const page = parseInt(queryParams.page || '1', 10);
+  const limit = parseInt(queryParams.limit || '20', 10);
+  const offset = (page - 1) * limit;
 
   const prisma = getPrismaClient();
 
@@ -577,23 +578,6 @@ async function getRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayPro
                              'PENDING';
 
   console.log(`🔍 [GET_REQUESTS] Buscando providers con status: ${verificationStatus}`);
-
-  // Primero, verificar cuántos providers hay en total y cuántos con cada estado
-  const allProviders = await prisma.providers.findMany({
-    select: {
-      id: true,
-      verification_status: true,
-      commercial_name: true,
-    },
-  });
-  
-  console.log(`📊 [GET_REQUESTS] Total de providers en BD: ${allProviders.length}`);
-  const statusCounts = allProviders.reduce((acc: Record<string, number>, p: typeof allProviders[0]) => {
-    const status = p.verification_status || 'NULL';
-    acc[status] = (acc[status] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
-  console.log(`📊 [GET_REQUESTS] Distribución de estados:`, statusCounts);
 
   // Buscar usando el string directamente, incluyendo null como PENDING
   const whereClause = verificationStatus === 'PENDING'
@@ -606,6 +590,10 @@ async function getRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayPro
     : {
         verification_status: verificationStatus,
       };
+
+  // Obtener total para paginación
+  const total = await prisma.providers.count({ where: whereClause });
+  console.log(`📊 [GET_REQUESTS] Total providers con status ${verificationStatus}: ${total}`);
 
   const providers = await prisma.providers.findMany({
     where: whereClause,
@@ -700,11 +688,11 @@ async function getRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayPro
     };
   });
 
-    console.log(`✅ [GET_REQUESTS] Retornando ${requests.length} solicitudes`);
+    console.log(`✅ [GET_REQUESTS] Retornando ${requests.length} solicitudes (página ${page}/${Math.ceil(total / limit)}, total ${total})`);
     console.log(`🔍 [GET_REQUESTS] IDs de providers encontrados:`, providers.map((p: typeof providers[0]) => ({ id: p.id, name: p.commercial_name, status: p.verification_status })));
   
   // Agregar headers de no-caché para evitar caché del navegador
-  const response = successResponse(requests, 200, event);
+  const response = paginatedResponse(requests, total, page, limit, 200, event);
   if (response.headers) {
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate';
     response.headers['Pragma'] = 'no-cache';
@@ -792,8 +780,9 @@ async function getAdRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayP
 
   const queryParams = event.queryStringParameters || {};
   const status = queryParams.status; // 'PENDING', 'APPROVED', 'REJECTED'
-  const limit = parseInt(queryParams.limit || '50', 10);
-  const offset = parseInt(queryParams.offset || '0', 10);
+  const page = parseInt(queryParams.page || '1', 10);
+  const limit = parseInt(queryParams.limit || '20', 10);
+  const offset = (page - 1) * limit;
 
   const prisma = getPrismaClient();
 
@@ -803,6 +792,9 @@ async function getAdRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayP
                    'PENDING';
 
   console.log(`🔍 [GET_AD_REQUESTS] Buscando anuncios con status: ${adStatus}`);
+
+  const total = await prisma.provider_ads.count({ where: { status: adStatus } });
+  console.log(`📊 [GET_AD_REQUESTS] Total anuncios con status ${adStatus}: ${total}`);
 
   // Obtener anuncios con información del proveedor
   const ads = await prisma.provider_ads.findMany({
@@ -884,8 +876,8 @@ async function getAdRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayP
     };
   });
 
-  console.log(`✅ [GET_AD_REQUESTS] Retornando ${adRequests.length} solicitudes de anuncios`);
-  return successResponse(adRequests);
+  console.log(`✅ [GET_AD_REQUESTS] Retornando ${adRequests.length} solicitudes de anuncios (página ${page}/${Math.ceil(total / limit)}, total ${total})`);
+  return paginatedResponse(adRequests, total, page, limit);
 }
 
 async function getProviderRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
@@ -917,8 +909,9 @@ async function getHistory(event: APIGatewayProxyEventV2): Promise<APIGatewayProx
 
   const queryParams = event.queryStringParameters || {};
   const status = queryParams.status; // Opcional: 'APPROVED' o 'REJECTED' para filtrar
-  const limit = parseInt(queryParams.limit || '50', 10);
-  const offset = parseInt(queryParams.offset || '0', 10);
+  const page = parseInt(queryParams.page || '1', 10);
+  const limit = parseInt(queryParams.limit || '20', 10);
+  const offset = (page - 1) * limit;
   const search = queryParams.search?.trim(); // Búsqueda por nombre, email o ciudad
 
   const prisma = getPrismaClient();
@@ -952,6 +945,9 @@ async function getHistory(event: APIGatewayProxyEventV2): Promise<APIGatewayProx
       },
     ],
   } : statusFilter;
+
+  const total = await prisma.providers.count({ where: whereClause });
+  console.log(`📊 [GET_HISTORY] Total registros: ${total}`);
 
   console.log(`🔍 [GET_HISTORY] Buscando providers con status: ${whereClause.verification_status.in.join(', ')}`);
   if (search) {
@@ -1045,11 +1041,11 @@ async function getHistory(event: APIGatewayProxyEventV2): Promise<APIGatewayProx
   const approvedCount = history.filter(h => h.status === 'APPROVED').length;
   const rejectedCount = history.filter(h => h.status === 'REJECTED').length;
   
-  console.log(`✅ [GET_HISTORY] Retornando ${history.length} registros del historial`);
+  console.log(`✅ [GET_HISTORY] Retornando ${history.length} registros del historial (página ${page}/${Math.ceil(total / limit)}, total ${total})`);
   console.log(`📊 [GET_HISTORY] Distribución: ${approvedCount} aprobados, ${rejectedCount} rechazados`);
   
   // Agregar headers de no-caché para evitar caché del navegador
-  const response = successResponse(history, 200, event);
+  const response = paginatedResponse(history, total, page, limit, 200, event);
   if (response.headers) {
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate';
     response.headers['Pragma'] = 'no-cache';
@@ -1213,17 +1209,19 @@ async function getActivity(event: APIGatewayProxyEventV2): Promise<APIGatewayPro
     // Ordenar actividades de la más reciente a la más antigua
     activities.sort((a, b) => b.timestamp - a.timestamp);
 
-    // Si no hay actividades, retornar array vacío
-    if (activities.length === 0) {
-      console.log('ℹ️ [GET_ACTIVITY] No hay actividades registradas');
-      return successResponse([]);
-    }
+    // Paginación
+    const queryParams = event.queryStringParameters || {};
+    const page = parseInt(queryParams.page || '1', 10);
+    const limit = parseInt(queryParams.limit || '20', 10);
+    const total = activities.length;
+    const startIndex = (page - 1) * limit;
+    const paginatedActivities = activities.slice(startIndex, startIndex + limit);
 
     // Remover campo auxiliar timestamp antes de retornar
-    const resultData = activities.map(({ timestamp, ...rest }) => rest);
+    const resultData = paginatedActivities.map(({ timestamp, ...rest }) => rest);
 
-    console.log(`✅ [GET_ACTIVITY] Retornando ${resultData.length} actividades reales de la plataforma`);
-    return successResponse(resultData);
+    console.log(`✅ [GET_ACTIVITY] Retornando ${resultData.length} actividades (página ${page}, total: ${total})`);
+    return paginatedResponse(resultData, total, page, limit);
   } catch (error: any) {
     console.error('❌ [GET_ACTIVITY] Error consultando actividad:', error.message);
     return successResponse([]); // Retornar vacío en vez de fallar para asegurar robustez
