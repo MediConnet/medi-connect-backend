@@ -96,7 +96,7 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
         console.log(`✅ [CLINICS] Provider encontrado: ${provider.commercial_name}, categoría: ${provider.service_categories?.slug}`);
         
         // Si el provider tiene categoría "clinic" pero no hay registro en clinics, crear uno básico
-        if (provider.service_categories?.slug === 'clinic') {
+        if (provider.service_categories?.slug === 'clinic' || provider.service_categories?.slug === 'clinica') {
           console.log('💡 [CLINICS] Provider es clínica pero no hay registro en tabla clinics. Creando registro básico...');
           
           try {

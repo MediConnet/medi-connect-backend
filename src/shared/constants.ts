@@ -49,7 +49,8 @@ export const TYPE_TO_SLUG: Record<string, string> = {
   laboratory: "laboratory",
   ambulance: "ambulance",
   supplies: "supplies",
-  clinic: "clinic",
+  clinic: "clinica",
+  clinica: "clinica",
 };
 
 // ── User-facing role string → enum_roles ──

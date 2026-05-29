@@ -453,6 +453,7 @@ async function getDashboardStats(event: APIGatewayProxyEventV2): Promise<APIGate
     totalLaboratories,
     totalAmbulances,
     totalSupplies,
+    totalClinicas,
   ] = await Promise.all([
     prisma.users.count(),
     prisma.cities.count(),
@@ -505,10 +506,18 @@ async function getDashboardStats(event: APIGatewayProxyEventV2): Promise<APIGate
         verification_status: 'APPROVED',
       },
     }),
+    prisma.providers.count({
+      where: {
+        service_categories: {
+          slug: 'clinica',
+        },
+        verification_status: 'APPROVED',
+      },
+    }),
   ]);
 
   // Calcular total de servicios
-  const totalServices = totalDoctors + totalPharmacies + totalLaboratories + totalAmbulances + totalSupplies;
+  const totalServices = totalDoctors + totalPharmacies + totalLaboratories + totalAmbulances + totalSupplies + totalClinicas;
 
   // Por ahora, los trends son "0%" ya que no tenemos datos históricos
   // En el futuro se puede calcular comparando con el mes anterior
@@ -543,6 +552,7 @@ async function getDashboardStats(event: APIGatewayProxyEventV2): Promise<APIGate
       laboratories: totalLaboratories,
       ambulances: totalAmbulances,
       supplies: totalSupplies,
+      clinicas: totalClinicas,
     },
     recentActivity: await compileRecentActivity(prisma, 5),
   };
@@ -1449,7 +1459,7 @@ async function approveRequest(event: APIGatewayProxyEventV2): Promise<APIGateway
       type = "insumo";
       title = "¡Nueva tienda de insumos médicos! 📦";
       body = `${providerName} se ha unido a DOCALINK. Ya puedes consultar su catálogo de productos y equipos médicos.`;
-    } else if (categorySlug === "clinic") {
+    } else if (categorySlug === "clinic" || categorySlug === "clinica") {
       type = "cita";
       title = "¡Nueva clínica disponible! 🏥";
       body = `La clínica ${providerName} se ha unido a DOCALINK. Ya puedes agendar citas en sus consultorios.`;

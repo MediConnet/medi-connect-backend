@@ -627,3 +627,143 @@ export async function getPaymentDistribution(event: APIGatewayProxyEventV2): Pro
     return internalErrorResponse('Failed to get payment distribution');
   }
 }
+
+/**
+ * GET /api/clinics/admin/payments
+ * Obtener pagos pendientes a clínicas (vista de administrador)
+ */
+export async function getAdminClinicPaymentsList(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  console.log('✅ [CLINICS] GET /api/clinics/admin/payments - Obteniendo pagos a clínicas');
+  
+  const prisma = getPrismaClient();
+  const queryParams = event.queryStringParameters || {};
+  const page = parseInt(queryParams.page || '1', 10);
+  const limit = parseInt(queryParams.limit || '20', 10);
+  const offset = (page - 1) * limit;
+
+  try {
+    const where = {
+      payout_type: PAYOUT_TYPE_CLINIC,
+      status: 'pending',
+    };
+
+    const [payouts, total] = await Promise.all([
+      prisma.payouts.findMany({
+        where,
+        include: {
+          payments: {
+            include: {
+              appointments: {
+                include: {
+                  patients: {
+                    select: {
+                      users: { select: { email: true } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          clinic_payment_distributions: true,
+        },
+        orderBy: { created_at: 'desc' },
+        skip: offset,
+        take: limit,
+      }),
+      prisma.payouts.count({ where }),
+    ]);
+
+    const clinicIds = payouts.map(p => p.provider_id).filter((id): id is string => id !== null);
+    const clinics = await prisma.clinics.findMany({
+      where: { id: { in: clinicIds } },
+      select: { id: true, name: true },
+    });
+    
+    const clinicMap = new Map(clinics.map(c => [c.id, c.name]));
+
+    const mappedPayouts = payouts.map((payout) => {
+      const clinicName = payout.provider_id ? clinicMap.get(payout.provider_id) || 'Clínica' : 'Clínica';
+      const totalAmount = payout.payments.reduce((sum: number, p) => sum + Number(p.amount_total || 0), 0);
+      const appCommission = payout.payments.reduce((sum: number, p) => sum + Number(p.platform_fee || 0), 0);
+      const distributedAmount = payout.clinic_payment_distributions?.reduce(
+        (sum: number, d) => sum + Number(d.amount), 0
+      ) || 0;
+
+      return {
+        id: payout.id,
+        clinicId: payout.provider_id,
+        clinicName,
+        totalAmount,
+        appCommission,
+        netAmount: Number(payout.total_amount || 0),
+        status: payout.status || 'pending',
+        paymentDate: payout.paid_at?.toISOString() || null,
+        createdAt: payout.created_at?.toISOString(),
+        appointments: payout.payments.map((p) => ({
+          id: p.appointment_id,
+          doctorId: p.appointments?.provider_id,
+          doctorName: 'Doctor',
+          patientName: p.appointments?.patients?.users?.email || 'Paciente',
+          amount: Number(p.amount_total || 0),
+          date: p.appointments?.scheduled_for?.toISOString() || p.created_at?.toISOString(),
+        })),
+        isDistributed: distributedAmount > 0,
+        distributedAmount,
+        remainingAmount: Number(payout.total_amount || 0) - distributedAmount,
+      };
+    });
+
+    console.log(`✅ [CLINICS] ${mappedPayouts.length} pagos a clínicas obtenidos (página ${page}, total: ${total})`);
+    return paginatedResponse(mappedPayouts, total, page, limit);
+  } catch (error: any) {
+    console.error('❌ [CLINICS] Error al obtener pagos a clínicas:', error.message);
+    logger.error('Error getting clinic payments', error);
+    return internalErrorResponse('Failed to get clinic payments');
+  }
+}
+
+/**
+ * POST /api/clinics/admin/payments/:clinicPaymentId/mark-paid
+ * Marcar pago a clínica como pagado (vista de administrador)
+ */
+export async function markAdminClinicPaymentPaid(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  console.log('✅ [CLINICS] POST /api/clinics/admin/payments/:clinicPaymentId/mark-paid');
+  
+  const prisma = getPrismaClient();
+
+  try {
+    const pathParts = event.requestContext.http.path.split('/');
+    const clinicPaymentId = pathParts[pathParts.length - 2];
+
+    if (!clinicPaymentId) {
+      return errorResponse('clinicPaymentId es requerido', 400);
+    }
+
+    const payout = await prisma.payouts.update({
+      where: { id: clinicPaymentId },
+      data: {
+        status: 'paid',
+        paid_at: new Date(),
+      },
+    });
+
+    await prisma.payments.updateMany({
+      where: { payout_id: clinicPaymentId },
+      data: {
+        status: 'paid',
+        paid_at: new Date(),
+      },
+    });
+
+    console.log(`✅ [CLINICS] Pago a clínica ${clinicPaymentId} marcado como pagado`);
+    return successResponse({
+      id: payout.id,
+      status: payout.status,
+      paymentDate: payout.paid_at?.toISOString(),
+    });
+  } catch (error: any) {
+    console.error('❌ [CLINICS] Error al marcar pago a clínica como pagado:', error.message);
+    logger.error('Error marking clinic payment as paid', error);
+    return internalErrorResponse('Failed to mark clinic payment as paid');
+  }
+}

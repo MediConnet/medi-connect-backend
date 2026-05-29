@@ -10,7 +10,20 @@ import { getDoctorSchedule, updateDoctorSchedule } from './schedules.controller'
 import { getClinicSchedule, updateClinicSchedule } from './clinic-schedules.controller';
 import { getClinicNotifications, getUnreadCount, markNotificationAsRead, markAllAsRead } from './notifications.controller';
 import { getReceptionMessages, createReceptionMessage, markReceptionMessagesRead } from './reception-messages.controller';
-import { getClinicPayments, getClinicPaymentDetail, distributePayment, getDoctorPayments, payDoctor, getPaymentDistribution } from './payments.controller';
+import { getClinicPayments, getClinicPaymentDetail, distributePayment, getDoctorPayments, payDoctor, getPaymentDistribution, getAdminClinicPaymentsList, markAdminClinicPaymentPaid } from './payments.controller';
+import {
+  getClinicInfo as getDoctorClinicInfo,
+  getClinicProfile as getDoctorClinicProfile,
+  updateClinicProfile as updateDoctorClinicProfile,
+  getClinicAppointments as getDoctorClinicAppointments,
+  updateClinicAppointmentStatus as updateDoctorClinicAppointmentStatus,
+  getReceptionMessages as getDoctorReceptionMessages,
+  createReceptionMessage as createDoctorReceptionMessage,
+  markReceptionMessagesAsRead as markDoctorReceptionMessagesAsRead,
+  getDateBlocks as getDoctorDateBlocks,
+  requestDateBlock as requestDoctorDateBlock,
+  getClinicNotifications as getDoctorClinicNotifications,
+} from './doctor-associated.controller';
 import { extractIdFromPath } from '../shared/validators';
 
 export async function handler(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
@@ -228,6 +241,61 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
 
     if (path.startsWith('/api/clinics/doctors/') && path.endsWith('/pay')) {
       if (method === 'POST') return await payDoctor(event);
+    }
+
+    // --- Rutas de Admin para Pagos a Clínicas ---
+    // POST /api/clinics/admin/payments/:clinicPaymentId/mark-paid
+    if (path.startsWith('/api/clinics/admin/payments/') && path.endsWith('/mark-paid')) {
+      if (method === 'POST') return await markAdminClinicPaymentPaid(event);
+    }
+
+    // GET /api/clinics/admin/payments
+    if (path === '/api/clinics/admin/payments') {
+      if (method === 'GET') return await getAdminClinicPaymentsList(event);
+    }
+
+    // --- Rutas de Médico Asociado (doctor-side clinic operations) ---
+    // GET /api/clinics/doctors/me/info
+    if (path === '/api/clinics/doctors/me/info') {
+      if (method === 'GET') return await getDoctorClinicInfo(event);
+    }
+
+    // GET/PUT /api/clinics/doctors/me/profile
+    if (path === '/api/clinics/doctors/me/profile') {
+      if (method === 'GET') return await getDoctorClinicProfile(event);
+      if (method === 'PUT') return await updateDoctorClinicProfile(event);
+    }
+
+    // GET /api/clinics/doctors/me/appointments
+    if (path === '/api/clinics/doctors/me/appointments' || path.startsWith('/api/clinics/doctors/me/appointments?')) {
+      if (method === 'GET') return await getDoctorClinicAppointments(event);
+    }
+
+    // PATCH /api/clinics/doctors/me/appointments/:id/status
+    if (path.startsWith('/api/clinics/doctors/me/appointments/') && path.endsWith('/status')) {
+      if (method === 'PATCH') return await updateDoctorClinicAppointmentStatus(event);
+    }
+
+    // GET/POST /api/clinics/doctors/me/messages
+    if (path === '/api/clinics/doctors/me/messages' || path.startsWith('/api/clinics/doctors/me/messages?')) {
+      if (method === 'GET') return await getDoctorReceptionMessages(event);
+      if (method === 'POST') return await createDoctorReceptionMessage(event);
+    }
+
+    // PATCH /api/clinics/doctors/me/messages/read
+    if (path === '/api/clinics/doctors/me/messages/read') {
+      if (method === 'PATCH') return await markDoctorReceptionMessagesAsRead(event);
+    }
+
+    // GET/POST /api/clinics/doctors/me/date-blocks
+    if (path === '/api/clinics/doctors/me/date-blocks' || path.startsWith('/api/clinics/doctors/me/date-blocks?')) {
+      if (method === 'GET') return await getDoctorDateBlocks(event);
+      if (method === 'POST') return await requestDoctorDateBlock(event);
+    }
+
+    // GET /api/clinics/doctors/me/notifications
+    if (path === '/api/clinics/doctors/me/notifications' || path.startsWith('/api/clinics/doctors/me/notifications?')) {
+      if (method === 'GET') return await getDoctorClinicNotifications(event);
     }
 
     // Si no coincide ninguna ruta

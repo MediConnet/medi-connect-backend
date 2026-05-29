@@ -125,7 +125,7 @@ async function createProviderProfile(prisma: any, userId: string, body: any) {
     laboratory: 'commission_laboratory',
     ambulance: 'commission_ambulance',
     supplies: 'commission_supplies',
-    clinic: 'commission_clinic',
+    clinica: 'commission_clinic',
   };
   const commissionField = commissionFieldMap[categorySlug] || 'commission_doctor';
   const settings = await prisma.admin_settings.findFirst();
@@ -262,7 +262,7 @@ async function createProviderProfile(prisma: any, userId: string, body: any) {
   }
 
   // Lógica Clínicas
-  if (body.type === "clinic") {
+  if (body.type === "clinic" || body.type === "clinica") {
     await prisma.clinics.create({
       data: {
         id: randomUUID(),
@@ -591,7 +591,7 @@ export async function register(
           });
         }
 
-        if (body.type === "clinic") {
+        if (body.type === "clinic" || body.type === "clinica") {
           const existingClinic = await prisma.clinics.findFirst({
             where: { user_id: existingUser.id },
             select: { id: true },
@@ -862,7 +862,7 @@ export async function login(
             commercialName: clinic.name,
             logoUrl: clinic.logo_url,
           };
-          serviceType = "clinic";
+          serviceType = "clinica";
         } else {
           const typeToSlug: Record<string, string> = {
             doctor: "doctor",
@@ -871,7 +871,8 @@ export async function login(
             laboratory: "laboratory",
             ambulance: "ambulance",
             supplies: "supplies",
-            clinic: "clinic",
+            clinic: "clinica",
+            clinica: "clinica",
           };
 
           let provider: any = null;
