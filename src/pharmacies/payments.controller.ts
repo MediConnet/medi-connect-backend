@@ -3,7 +3,7 @@ import { enum_roles } from '../generated/prisma/client';
 import { AuthContext, requireRole } from '../shared/auth';
 import { logger } from '../shared/logger';
 import { getPrismaClient } from '../shared/prisma';
-import { errorResponse, internalErrorResponse, successResponse } from '../shared/response';
+import { errorResponse, internalErrorResponse, paginatedResponse, successResponse } from '../shared/response';
 
 // GET /api/pharmacies/payments - Obtener pagos e ingresos
 export async function getPayments(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
@@ -19,6 +19,9 @@ export async function getPayments(event: APIGatewayProxyEventV2): Promise<APIGat
   const prisma = getPrismaClient();
   const queryParams = event.queryStringParameters || {};
   const userId = queryParams.userId || authContext.user.id;
+  const page = parseInt(queryParams.page || '1', 10);
+  const limit = parseInt(queryParams.limit || '20', 10);
+  const offset = (page - 1) * limit;
 
   try {
     // Buscar provider
@@ -54,38 +57,59 @@ export async function getPayments(event: APIGatewayProxyEventV2): Promise<APIGat
       });
     }
 
+    const paymentWhere = {
+      appointment_id: { in: appointmentIds },
+    };
+
     // Obtener pagos
-    const payments = await prisma.payments.findMany({
-      where: {
-        appointment_id: { in: appointmentIds },
-      },
-      include: {
-        appointments: {
-          include: {
-            patients: {
-              select: {
-                id: true,
-                full_name: true,
+    const [payments, total] = await Promise.all([
+      prisma.payments.findMany({
+        where: paymentWhere,
+        include: {
+          appointments: {
+            include: {
+              patients: {
+                select: {
+                  id: true,
+                  full_name: true,
+                },
               },
             },
           },
         },
-      },
-      orderBy: {
-        created_at: 'desc',
-      },
-    });
+        orderBy: {
+          created_at: 'desc',
+        },
+        skip: offset,
+        take: limit,
+      }),
+      prisma.payments.count({ where: paymentWhere }),
+    ]);
 
-    // Calcular totales
-    const totalIncome = payments
-      .filter(p => p.status === 'completed')
-      .reduce((sum, p) => sum + Number(p.provider_amount || 0), 0);
-    
-    const totalPending = payments
-      .filter(p => p.status === 'pending')
-      .reduce((sum, p) => sum + Number(p.provider_amount || 0), 0);
-    
-    const totalCompleted = payments.filter(p => p.status === 'completed').length;
+    // Total de pagos (sin paginar) para los agregados
+    const [allPaymentsAgg] = await Promise.all([
+      prisma.payments.aggregate({
+        where: {
+          ...paymentWhere,
+          status: 'completed',
+        },
+        _sum: { provider_amount: true },
+        _count: true,
+      }),
+    ]);
+
+    const totalIncome = Number(allPaymentsAgg._sum.provider_amount || 0);
+
+    const pendingAgg = await prisma.payments.aggregate({
+      where: {
+        ...paymentWhere,
+        status: 'pending',
+      },
+      _sum: { provider_amount: true },
+    });
+    const totalPending = Number(pendingAgg._sum.provider_amount || 0);
+
+    const totalCompleted = allPaymentsAgg._count || 0;
 
     // Agrupar por mes (últimos 6 meses)
     const monthlyIncome: Array<{ month: string; income: number }> = [];
@@ -93,18 +117,20 @@ export async function getPayments(event: APIGatewayProxyEventV2): Promise<APIGat
     for (let i = 5; i >= 0; i--) {
       const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-      const monthIncome = payments
-        .filter(p => {
-          if (!p.created_at || p.status !== 'completed') return false;
-          const paymentDate = new Date(p.created_at);
-          return paymentDate.getFullYear() === date.getFullYear() &&
-                 paymentDate.getMonth() === date.getMonth();
-        })
-        .reduce((sum, p) => sum + Number(p.provider_amount || 0), 0);
-      
+      const result = await prisma.payments.aggregate({
+        where: {
+          ...paymentWhere,
+          status: 'completed',
+          created_at: {
+            gte: new Date(date.getFullYear(), date.getMonth(), 1),
+            lt: new Date(date.getFullYear(), date.getMonth() + 1, 1),
+          },
+        },
+        _sum: { provider_amount: true },
+      });
       monthlyIncome.push({
         month: monthKey,
-        income: monthIncome,
+        income: Number(result._sum.provider_amount || 0),
       });
     }
 
@@ -126,6 +152,12 @@ export async function getPayments(event: APIGatewayProxyEventV2): Promise<APIGat
       totalPending: Number(totalPending.toFixed(2)),
       totalCompleted,
       monthlyIncome,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
     });
   } catch (error: any) {
     console.error(`❌ [PHARMACIES] Error al obtener pagos:`, error.message);

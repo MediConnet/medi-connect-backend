@@ -2,7 +2,7 @@ import { APIGatewayProxyEventV2, APIGatewayProxyResult } from 'aws-lambda';
 import { enum_roles } from '../generated/prisma/client';
 import { AuthContext, requireRole } from '../shared/auth';
 import { getPrismaClient } from '../shared/prisma';
-import { internalErrorResponse, successResponse } from '../shared/response';
+import { internalErrorResponse, paginatedResponse, successResponse } from '../shared/response';
 
 /**
  * GET /api/laboratories/reviews
@@ -21,6 +21,10 @@ export async function getLaboratoryReviews(
 
   const authContext = authResult as AuthContext;
   const prisma = getPrismaClient();
+  const queryParams = event.queryStringParameters || {};
+  const page = parseInt(queryParams.page || '1', 10);
+  const limit = parseInt(queryParams.limit || '20', 10);
+  const offset = (page - 1) * limit;
 
   try {
     // Buscar el provider del usuario autenticado
@@ -48,37 +52,45 @@ export async function getLaboratoryReviews(
     const branchIds = branches.map((b) => b.id);
     console.log('🔍 [LABORATORIES] Branch IDs:', branchIds);
 
+    const where = { branch_id: { in: branchIds } };
+
     // Obtener reseñas de todas las sucursales del provider
-    const reviews = await prisma.reviews.findMany({
-      where: { branch_id: { in: branchIds } },
-      include: {
-        patients: {
-          select: {
-            id: true,
-            full_name: true,
-            users: {
-              select: {
-                profile_picture_url: true,
+    const [reviews, total, ratingAgg] = await Promise.all([
+      prisma.reviews.findMany({
+        where,
+        include: {
+          patients: {
+            select: {
+              id: true,
+              full_name: true,
+              users: {
+                select: {
+                  profile_picture_url: true,
+                },
               },
             },
           },
-        },
-        provider_branches: {
-          select: {
-            id: true,
-            name: true,
+          provider_branches: {
+            select: {
+              id: true,
+              name: true,
+            },
           },
         },
-      },
-      orderBy: {
-        created_at: 'desc',
-      },
-    });
+        orderBy: {
+          created_at: 'desc',
+        },
+        skip: offset,
+        take: limit,
+      }),
+      prisma.reviews.count({ where }),
+      prisma.reviews.aggregate({
+        where,
+        _avg: { rating: true },
+      }),
+    ]);
 
-    // Calcular promedio de calificaciones
-    const averageRating = reviews.length > 0
-      ? reviews.reduce((sum, r) => sum + (r.rating || 0), 0) / reviews.length
-      : 0;
+    const averageRating = ratingAgg._avg.rating || 0;
 
     console.log(`✅ [LABORATORIES] Reseñas obtenidas exitosamente (${reviews.length} reseñas)`);
 
@@ -92,8 +104,14 @@ export async function getLaboratoryReviews(
         date: review.created_at,
         branchName: review.provider_branches?.name || null,
       })),
-      averageRating: Number(averageRating.toFixed(2)),
-      totalReviews: reviews.length,
+      averageRating: Number(Number(averageRating).toFixed(2)),
+      totalReviews: total,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
     }, 200, event);
   } catch (error: any) {
     console.error('❌ [LABORATORIES] Error al obtener reseñas:', error.message);

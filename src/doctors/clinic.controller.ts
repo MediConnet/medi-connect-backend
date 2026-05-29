@@ -2,7 +2,7 @@ import { APIGatewayProxyEventV2, APIGatewayProxyResult } from "aws-lambda";
 import { randomUUID } from "crypto";
 import { AuthContext, requireAuth } from "../shared/auth";
 import { getPrismaClient } from "../shared/prisma";
-import { errorResponse, successResponse } from "../shared/response";
+import { errorResponse, successResponse, paginatedResponse } from "../shared/response";
 
 /**
  * GET /api/doctors/clinic-info
@@ -321,19 +321,31 @@ export async function getClinicAppointments(
       return successResponse([]);
     }
 
-    const appointments = await prisma.appointments.findMany({
-      where: {
-        provider_id: provider.id,
-        clinic_id: doctorAssociation.clinic_id,
-        status: {
-          in: ["CONFIRMED", "COMPLETED", "NO_SHOW"],
+    const queryParams = event.queryStringParameters || {};
+    const page = parseInt(queryParams.page || '1', 10);
+    const limit = parseInt(queryParams.limit || '20', 10);
+    const offset = (page - 1) * limit;
+
+    const whereClause = {
+      provider_id: provider.id,
+      clinic_id: doctorAssociation.clinic_id,
+      status: {
+        in: ["CONFIRMED", "COMPLETED", "NO_SHOW"],
+      },
+    };
+
+    const [appointments, total] = await Promise.all([
+      prisma.appointments.findMany({
+        where: whereClause,
+        include: {
+          patients: true,
         },
-      },
-      include: {
-        patients: true,
-      },
-      orderBy: [{ scheduled_for: "asc" }],
-    });
+        orderBy: [{ scheduled_for: "asc" }],
+        skip: offset,
+        take: limit,
+      }),
+      prisma.appointments.count({ where: whereClause }),
+    ]);
 
     const formattedAppointments = appointments.map((apt) => {
       const scheduledFor = apt.scheduled_for
@@ -352,7 +364,7 @@ export async function getClinicAppointments(
       };
     });
 
-    return successResponse(formattedAppointments);
+    return paginatedResponse(formattedAppointments, total, page, limit);
   } catch (error: any) {
     console.error("Error getting clinic appointments:", error);
     return errorResponse(error.message || "Error al obtener citas", 500);
@@ -488,17 +500,29 @@ export async function getReceptionMessages(
 
     const doctorName = provider?.commercial_name || "Doctor";
 
-    const messages = await prisma.reception_messages.findMany({
-      where: {
-        doctor_id: doctorAssociation.id,
-      },
-      include: {
-        clinics: true,
-      },
-      orderBy: {
-        created_at: "desc",
-      },
-    });
+    const queryParams = event.queryStringParameters || {};
+    const page = parseInt(queryParams.page || '1', 10);
+    const limit = parseInt(queryParams.limit || '20', 10);
+    const offset = (page - 1) * limit;
+
+    const whereClause = {
+      doctor_id: doctorAssociation.id,
+    };
+
+    const [messages, total] = await Promise.all([
+      prisma.reception_messages.findMany({
+        where: whereClause,
+        include: {
+          clinics: true,
+        },
+        orderBy: {
+          created_at: "desc",
+        },
+        skip: offset,
+        take: limit,
+      }),
+      prisma.reception_messages.count({ where: whereClause }),
+    ]);
 
     const formattedMessages = messages.map((msg) => ({
       id: msg.id,
@@ -514,7 +538,7 @@ export async function getReceptionMessages(
           : doctorName,
     }));
 
-    return successResponse(formattedMessages);
+    return paginatedResponse(formattedMessages, total, page, limit);
   } catch (error: any) {
     console.error("Error getting reception messages:", error);
     return errorResponse(error.message || "Error al obtener mensajes", 500);
@@ -676,14 +700,26 @@ export async function getDateBlocks(
       return errorResponse("No estás asociado a ninguna clínica", 404);
     }
 
-    const dateBlocks = await prisma.date_block_requests.findMany({
-      where: {
-        doctor_id: doctorAssociation.id,
-      },
-      orderBy: {
-        created_at: "desc",
-      },
-    });
+    const queryParams = event.queryStringParameters || {};
+    const page = parseInt(queryParams.page || '1', 10);
+    const limit = parseInt(queryParams.limit || '20', 10);
+    const offset = (page - 1) * limit;
+
+    const whereClause = {
+      doctor_id: doctorAssociation.id,
+    };
+
+    const [dateBlocks, total] = await Promise.all([
+      prisma.date_block_requests.findMany({
+        where: whereClause,
+        orderBy: {
+          created_at: "desc",
+        },
+        skip: offset,
+        take: limit,
+      }),
+      prisma.date_block_requests.count({ where: whereClause }),
+    ]);
 
     const formattedBlocks = dateBlocks.map((block) => ({
       id: block.id,
@@ -699,7 +735,7 @@ export async function getDateBlocks(
       rejectionReason: null,
     }));
 
-    return successResponse(formattedBlocks);
+    return paginatedResponse(formattedBlocks, total, page, limit);
   } catch (error: any) {
     console.error("Error getting date blocks:", error);
     return errorResponse(
@@ -847,16 +883,28 @@ export async function getBlockedSlots(event: APIGatewayProxyEventV2): Promise<AP
 
     const branchIds = provider.provider_branches.map((b) => b.id);
 
+    const queryParams = event.queryStringParameters || {};
+    const page = parseInt(queryParams.page || '1', 10);
+    const limit = parseInt(queryParams.limit || '20', 10);
+    const offset = (page - 1) * limit;
+
+    const whereClause = {
+      branch_id: { in: branchIds },
+    };
+
     // Obtener todos los blocked_slots del médico
-    const blockedSlots = await prisma.blocked_slots.findMany({
-      where: {
-        branch_id: { in: branchIds },
-      },
-      orderBy: [
-        { date: 'asc' },
-        { start_time: 'asc' },
-      ],
-    });
+    const [blockedSlots, total] = await Promise.all([
+      prisma.blocked_slots.findMany({
+        where: whereClause,
+        orderBy: [
+          { date: 'asc' },
+          { start_time: 'asc' },
+        ],
+        skip: offset,
+        take: limit,
+      }),
+      prisma.blocked_slots.count({ where: whereClause }),
+    ]);
 
     const formattedSlots = blockedSlots.map((slot) => ({
       id: slot.id,
@@ -868,7 +916,7 @@ export async function getBlockedSlots(event: APIGatewayProxyEventV2): Promise<AP
       createdAt: slot.created_at,
     }));
 
-    return successResponse(formattedSlots);
+    return paginatedResponse(formattedSlots, total, page, limit);
   } catch (error: any) {
     console.error('Error getting blocked slots:', error);
     return errorResponse(error.message || 'Error al obtener horarios bloqueados', 500);

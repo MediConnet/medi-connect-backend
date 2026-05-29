@@ -3,7 +3,7 @@ import { enum_appt_status, enum_roles } from '../generated/prisma/client';
 import { AuthContext, requireRole } from '../shared/auth';
 import { logger } from '../shared/logger';
 import { getPrismaClient } from '../shared/prisma';
-import { errorResponse, internalErrorResponse, notFoundResponse, successResponse } from '../shared/response';
+import { errorResponse, internalErrorResponse, notFoundResponse, paginatedResponse, successResponse } from '../shared/response';
 import { parseBody, updateOrderStatusSchema, extractIdFromPath } from '../shared/validators';
 import { emitToUser } from '../shared/realtime';
 
@@ -37,8 +37,9 @@ export async function getOrders(event: APIGatewayProxyEventV2): Promise<APIGatew
 
     // Filtros opcionales
     const status = queryParams.status;
-    const limit = queryParams.limit ? parseInt(queryParams.limit) : 50;
-    const offset = queryParams.offset ? parseInt(queryParams.offset) : 0;
+    const page = parseInt(queryParams.page || '1', 10);
+    const limit = parseInt(queryParams.limit || '20', 10);
+    const offset = (page - 1) * limit;
 
     // Construir where clause
     const where: any = {
@@ -59,54 +60,55 @@ export async function getOrders(event: APIGatewayProxyEventV2): Promise<APIGatew
     }
 
     // Obtener pedidos (appointments)
-    const orders = await prisma.appointments.findMany({
-      where,
-      include: {
-        patients: {
-          select: {
-            id: true,
-            full_name: true,
-            phone: true,
-            users: {
-              select: {
-                email: true,
+    const [orders, total] = await Promise.all([
+      prisma.appointments.findMany({
+        where,
+        include: {
+          patients: {
+            select: {
+              id: true,
+              full_name: true,
+              phone: true,
+              users: {
+                select: {
+                  email: true,
+                },
               },
             },
           },
-        },
-        provider_branches: {
-          select: {
-            id: true,
-            name: true,
-            address_text: true,
-            phone_contact: true,
+          provider_branches: {
+            select: {
+              id: true,
+              name: true,
+              address_text: true,
+              phone_contact: true,
+            },
+          },
+          payments: {
+            select: {
+              id: true,
+              amount_total: true,
+              provider_amount: true,
+              status: true,
+            },
+            take: 1,
+            orderBy: {
+              created_at: 'desc',
+            },
           },
         },
-        payments: {
-          select: {
-            id: true,
-            amount_total: true,
-            provider_amount: true,
-            status: true,
-          },
-          take: 1,
-          orderBy: {
-            created_at: 'desc',
-          },
+        orderBy: {
+          scheduled_for: 'desc',
         },
-      },
-      orderBy: {
-        scheduled_for: 'desc',
-      },
-      take: limit,
-      skip: offset,
-    });
-
-    const total = await prisma.appointments.count({ where });
+        take: limit,
+        skip: offset,
+      }),
+      prisma.appointments.count({ where }),
+    ]);
 
     console.log(`✅ [PHARMACIES] Pedidos obtenidos exitosamente (${orders.length} de ${total})`);
-    return successResponse({
-      orders: orders.map(order => ({
+    return paginatedResponse(
+      orders.map(order => ({
         id: order.id,
         scheduledFor: order.scheduled_for,
         status: order.status,
@@ -131,9 +133,9 @@ export async function getOrders(event: APIGatewayProxyEventV2): Promise<APIGatew
         } : null,
       })),
       total,
+      page,
       limit,
-      offset,
-    });
+    );
   } catch (error: any) {
     console.error(`❌ [PHARMACIES] Error al obtener pedidos:`, error.message);
     logger.error('Error getting orders', error);

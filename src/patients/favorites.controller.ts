@@ -2,7 +2,7 @@ import { APIGatewayProxyEventV2, APIGatewayProxyResult } from 'aws-lambda';
 import { AuthContext, requireAuth } from '../shared/auth';
 import { logger } from '../shared/logger';
 import { getPrismaClient } from '../shared/prisma';
-import { errorResponse, internalErrorResponse, notFoundResponse, successResponse } from '../shared/response';
+import { errorResponse, internalErrorResponse, notFoundResponse, paginatedResponse, successResponse } from '../shared/response';
 import { parseBody, extractIdFromPath } from '../shared/validators';
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
@@ -34,40 +34,52 @@ export async function getFavorites(event: APIGatewayProxyEventV2): Promise<APIGa
       return successResponse([]);
     }
 
+    const queryParams = event.queryStringParameters || {};
+    const page = parseInt(queryParams.page || '1', 10);
+    const limit = parseInt(queryParams.limit || '20', 10);
+    const offset = (page - 1) * limit;
+
+    const where = { patient_id: patient.id };
+
     // Obtener favoritos
-    const favorites = await prisma.patient_favorites.findMany({
-      where: { patient_id: patient.id },
-      include: {
-        provider_branches: {
-          include: {
-            providers: {
-              select: {
-                id: true,
-                commercial_name: true,
-                logo_url: true,
-                service_categories: {
-                  select: {
-                    name: true,
-                    slug: true,
+    const [favorites, total] = await Promise.all([
+      prisma.patient_favorites.findMany({
+        where,
+        include: {
+          provider_branches: {
+            include: {
+              providers: {
+                select: {
+                  id: true,
+                  commercial_name: true,
+                  logo_url: true,
+                  service_categories: {
+                    select: {
+                      name: true,
+                      slug: true,
+                    },
                   },
                 },
               },
-            },
-            cities: {
-              select: {
-                name: true,
+              cities: {
+                select: {
+                  name: true,
+                },
               },
             },
           },
         },
-      },
-      orderBy: {
-        created_at: 'desc',
-      },
-    });
+        orderBy: {
+          created_at: 'desc',
+        },
+        skip: offset,
+        take: limit,
+      }),
+      prisma.patient_favorites.count({ where }),
+    ]);
 
     console.log(`✅ [PATIENTS] Se encontraron ${favorites.length} favoritos`);
-    return successResponse(
+    return paginatedResponse(
       favorites.map(fav => ({
         id: fav.id,
         branch: fav.provider_branches ? {
@@ -84,7 +96,10 @@ export async function getFavorites(event: APIGatewayProxyEventV2): Promise<APIGa
           city: fav.provider_branches.cities?.name || null,
         } : null,
         createdAt: fav.created_at,
-      }))
+      })),
+      total,
+      page,
+      limit,
     );
   } catch (error: any) {
     console.error('❌ [PATIENTS] Error al obtener favoritos:', error.message);

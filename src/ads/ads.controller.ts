@@ -3,8 +3,24 @@ import { randomUUID } from 'crypto';
 import { enum_roles } from '../generated/prisma/client';
 import { AuthContext, requireRole } from '../shared/auth';
 import { getPrismaClient } from '../shared/prisma';
-import { errorResponse, internalErrorResponse, successResponse } from '../shared/response';
+import { errorResponse, internalErrorResponse, paginatedResponse, successResponse } from '../shared/response';
 import { uploadImageToCloudinary, isBase64Image } from '../shared/cloudinary';
+
+async function autoExpireAds() {
+  try {
+    const prisma = getPrismaClient();
+    const now = new Date();
+    await prisma.provider_ads.updateMany({
+      where: {
+        is_active: true,
+        end_date: { lte: now },
+      },
+      data: { is_active: false },
+    });
+  } catch (e) {
+    console.error('Error auto-expiring ads:', e);
+  }
+}
 
 // Interface del formulario Frontend
 interface CreateAdBody {
@@ -182,48 +198,59 @@ export async function createAdRequest(event: APIGatewayProxyEventV2): Promise<AP
 // --- 2. FUNCIÓN PÚBLICA PARA EL CARRUSEL (GET) ---
 // Endpoint: GET /api/public/ads
 export async function getPublicAds(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  await autoExpireAds();
   console.log('📢 [ADS] Obteniendo carrusel de anuncios públicos...');
   const prisma = getPrismaClient();
+  const queryParams = event.queryStringParameters || {};
+  const page = parseInt(queryParams.page || '1', 10);
+  const limit = parseInt(queryParams.limit || '10', 10);
+  const offset = (page - 1) * limit;
 
   try {
     const now = new Date();
 
-    const ads = await prisma.provider_ads.findMany({
-      where: {
-        status: 'APPROVED',
-        is_active: true,
-        start_date: { lte: now },
-        OR: [
-          { end_date: null },
-          { end_date: { gt: now } }
-        ]
-      },
-      orderBy: [
-        { priority_order: 'asc' }, 
-        { start_date: 'desc' } 
+    const where = {
+      status: 'APPROVED' as const,
+      is_active: true,
+      start_date: { lte: now },
+      OR: [
+        { end_date: null },
+        { end_date: { gt: now } }
       ],
-      select: {
-        id: true,
-        badge_text: true,
-        title: true,
-        subtitle: true,
-        image_url: true,
-        action_text: true,
-        bg_color_hex: true,
-        accent_color_hex: true,
-        target_screen: true,
-        target_id: true,
-        start_date: true,
-        end_date: true,
-        providers: {
-          select: {
-            logo_url: true,
-            commercial_name: true 
+    };
+
+    const [ads, total] = await Promise.all([
+      prisma.provider_ads.findMany({
+        where,
+        orderBy: [
+          { priority_order: 'asc' }, 
+          { start_date: 'desc' } 
+        ],
+        select: {
+          id: true,
+          badge_text: true,
+          title: true,
+          subtitle: true,
+          image_url: true,
+          action_text: true,
+          bg_color_hex: true,
+          accent_color_hex: true,
+          target_screen: true,
+          target_id: true,
+          start_date: true,
+          end_date: true,
+          providers: {
+            select: {
+              logo_url: true,
+              commercial_name: true 
+            }
           }
-        }
-      },
-      take: 10 
-    });
+        },
+        skip: offset,
+        take: limit,
+      }),
+      prisma.provider_ads.count({ where }),
+    ]);
 
     // Mapeo para el Frontend (React Native)
     const formattedAds = ads.map(ad => {
@@ -254,7 +281,7 @@ export async function getPublicAds(event: APIGatewayProxyEventV2): Promise<APIGa
         };
     });
 
-    return successResponse(formattedAds);
+    return paginatedResponse(formattedAds, total, page, limit);
 
   } catch (error: any) {
     console.error('❌ [ADS] Error fetching public ads:', error);
@@ -265,25 +292,37 @@ export async function getPublicAds(event: APIGatewayProxyEventV2): Promise<APIGa
 // --- 2b. GET /api/ads/active o /api/public/ads - Estructura para app de pacientes ---
 export async function getActiveAds(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   const prisma = getPrismaClient();
+  const queryParams = event.queryStringParameters || {};
+  const page = parseInt(queryParams.page || '1', 10);
+  const limit = parseInt(queryParams.limit || '20', 10);
+  const offset = (page - 1) * limit;
+
   try {
     const now = new Date();
-    const ads = await prisma.provider_ads.findMany({
-      where: {
-        status: 'APPROVED',
-        is_active: true,
-        start_date: { lte: now },
-        OR: [{ end_date: null }, { end_date: { gt: now } }],
-      },
-      include: {
-        providers: {
-          include: {
-            service_categories: { select: { slug: true } },
+
+    const where = {
+      status: 'APPROVED' as const,
+      is_active: true,
+      start_date: { lte: now },
+      OR: [{ end_date: null }, { end_date: { gt: now } }],
+    };
+
+    const [ads, total] = await Promise.all([
+      prisma.provider_ads.findMany({
+        where,
+        include: {
+          providers: {
+            include: {
+              service_categories: { select: { slug: true } },
+            },
           },
         },
-      },
-      orderBy: [{ priority_order: 'asc' }, { start_date: 'desc' }],
-      take: 20,
-    });
+        orderBy: [{ priority_order: 'asc' }, { start_date: 'desc' }],
+        skip: offset,
+        take: limit,
+      }),
+      prisma.provider_ads.count({ where }),
+    ]);
 
     const data = ads.map(ad => ({
       id: ad.id,
@@ -298,15 +337,123 @@ export async function getActiveAds(event: APIGatewayProxyEventV2): Promise<APIGa
       serviceType: ad.providers?.service_categories?.slug || 'doctor',
     }));
 
-    return successResponse(data);
+    return paginatedResponse(data, total, page, limit);
   } catch (error: any) {
     console.error('Error getActiveAds:', error);
     return internalErrorResponse('Error fetching active ads');
   }
 }
 
-// --- 3. FUNCIÓN DE CONSULTA PROPIA (GET) ---
+// --- 3. FUNCIÓN DE LISTADO COMPLETO CON FILTROS (GET /api/ads?mode=all) ---
+export async function getMyAds(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  await autoExpireAds();
+  const authResult = await requireRole(event, [
+    enum_roles.provider, enum_roles.pharmacy, enum_roles.lab, enum_roles.ambulance, enum_roles.supplies
+  ]);
+  if ('statusCode' in authResult) return authResult;
+  const { user } = authResult as AuthContext;
+  const prisma = getPrismaClient();
+
+  try {
+    const provider = await prisma.providers.findFirst({ where: { user_id: user.id } });
+    if (!provider) return successResponse([]);
+
+    const queryParams = event.queryStringParameters || {};
+    const statusFilter = queryParams.status && queryParams.status !== 'all'
+      ? { status: queryParams.status as any }
+      : {};
+    const dateFrom = queryParams.dateFrom ? new Date(queryParams.dateFrom) : null;
+    const dateTo = queryParams.dateTo ? new Date(queryParams.dateTo + 'T23:59:59.999Z') : null;
+
+    const dateFilter: any = {};
+    if (dateFrom) dateFilter.gte = dateFrom;
+    if (dateTo) dateFilter.lte = dateTo;
+
+    const page = parseInt(queryParams.page || '1', 10);
+    const limit = parseInt(queryParams.limit || '20', 10);
+    const offset = (page - 1) * limit;
+
+    const where: any = {
+      provider_id: provider.id,
+      ...statusFilter,
+    };
+    if (dateFrom || dateTo) {
+      where.start_date = dateFilter;
+    }
+
+    const [ads, total] = await Promise.all([
+      prisma.provider_ads.findMany({
+        where,
+        orderBy: { start_date: 'desc' },
+        skip: offset,
+        take: limit,
+      }),
+      prisma.provider_ads.count({ where }),
+    ]);
+
+    return paginatedResponse(ads, total, page, limit);
+  } catch (error) {
+    console.error('Error getMyAds:', error);
+    return internalErrorResponse('Error fetching my ads');
+  }
+}
+
+// --- 4. FUNCIÓN DE ACTUALIZACIÓN PROPIA (PUT /api/ads/:id) ---
+export async function updateMyAd(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  const authResult = await requireRole(event, [
+    enum_roles.provider, enum_roles.pharmacy, enum_roles.lab, enum_roles.ambulance, enum_roles.supplies
+  ]);
+  if ('statusCode' in authResult) return authResult;
+  const { user } = authResult as AuthContext;
+
+  const path = event.requestContext.http.path;
+  const id = path.split('/').pop() || '';
+  if (!id) return errorResponse('ID de anuncio no proporcionado', 400);
+
+  const prisma = getPrismaClient();
+
+  try {
+    const provider = await prisma.providers.findFirst({ where: { user_id: user.id } });
+    if (!provider) return errorResponse('Perfil de proveedor no encontrado', 404);
+
+    const existing = await prisma.provider_ads.findUnique({ where: { id } });
+    if (!existing) return errorResponse('Anuncio no encontrado', 404);
+    if (existing.provider_id !== provider.id) return errorResponse('No tienes permiso para editar este anuncio', 403);
+    if (existing.status !== 'PENDING') return errorResponse('Solo puedes editar anuncios con estado Pendiente', 400);
+
+    const body = JSON.parse(event.body || '{}');
+    const { badge_text, discount_title, description, button_text, image_url, start_date, end_date } = body;
+
+    let finalImageUrl = existing.image_url;
+    if (image_url && isBase64Image(image_url)) {
+      finalImageUrl = await uploadImageToCloudinary(image_url, 'ads');
+    } else if (image_url !== undefined) {
+      finalImageUrl = image_url;
+    }
+
+    const updated = await prisma.provider_ads.update({
+      where: { id },
+      data: {
+        ...(badge_text !== undefined && { badge_text }),
+        ...(discount_title !== undefined && { title: discount_title }),
+        ...(description !== undefined && { subtitle: description }),
+        ...(button_text !== undefined && { action_text: button_text }),
+        ...(finalImageUrl !== existing.image_url && { image_url: finalImageUrl }),
+        ...(start_date !== undefined && { start_date: new Date(start_date) }),
+        ...(end_date !== undefined && { end_date: end_date ? new Date(end_date) : null }),
+      },
+    });
+
+    return successResponse({ message: 'Anuncio actualizado correctamente', ad: updated });
+  } catch (error) {
+    console.error('Error updateMyAd:', error);
+    return internalErrorResponse('Error al actualizar el anuncio');
+  }
+}
+
+// --- 5. FUNCIÓN DE CONSULTA PROPIA (GET /api/ads) ---
 export async function getMyAd(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  await autoExpireAds();
   const authResult = await requireRole(event, [
     enum_roles.provider, enum_roles.pharmacy, enum_roles.lab, enum_roles.ambulance, enum_roles.supplies
   ]);

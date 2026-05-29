@@ -2,7 +2,7 @@ import { APIGatewayProxyEventV2, APIGatewayProxyResult } from 'aws-lambda';
 import { randomUUID } from 'crypto';
 import { AuthContext, requireAuth } from '../shared/auth';
 import { getPrismaClient } from '../shared/prisma';
-import { successResponse, errorResponse, internalErrorResponse, notFoundResponse } from '../shared/response';
+import { successResponse, errorResponse, internalErrorResponse, notFoundResponse, paginatedResponse } from '../shared/response';
 import { logger } from '../shared/logger';
 
 /**
@@ -34,20 +34,30 @@ export async function getProducts(event: APIGatewayProxyEventV2): Promise<APIGat
       });
     }
 
-    // Obtener productos del proveedor
-    const products = await prisma.provider_catalog.findMany({
-      where: {
-        provider_id: provider.id,
-      },
-      orderBy: {
-        created_at: 'desc',
-      },
-    });
+    // Parámetros de paginación
+    const queryParams = event.queryStringParameters || {};
+    const page = parseInt(queryParams.page || '1', 10);
+    const limit = parseInt(queryParams.limit || '20', 10);
+    const offset = (page - 1) * limit;
+
+    const where = { provider_id: provider.id };
+
+    const [products, total] = await Promise.all([
+      prisma.provider_catalog.findMany({
+        where,
+        orderBy: {
+          created_at: 'desc',
+        },
+        skip: offset,
+        take: limit,
+      }),
+      prisma.provider_catalog.count({ where }),
+    ]);
 
     console.log(`✅ [SUPPLIES] ${products.length} productos encontrados`);
 
-    return successResponse({
-      products: products.map(p => ({
+    return paginatedResponse(
+      products.map(p => ({
         id: p.id,
         name: p.name,
         description: p.description,
@@ -59,7 +69,10 @@ export async function getProducts(event: APIGatewayProxyEventV2): Promise<APIGat
         createdAt: p.created_at,
         updatedAt: p.updated_at,
       })),
-    });
+      total,
+      page,
+      limit,
+    );
   } catch (error: any) {
     console.error('❌ [SUPPLIES] Error al listar productos:', error.message);
     logger.error('Error getting products', error);

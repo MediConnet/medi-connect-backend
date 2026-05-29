@@ -2,7 +2,7 @@ import { APIGatewayProxyEventV2, APIGatewayProxyResult } from "aws-lambda";
 import { AuthContext, requireAuth } from "../shared/auth";
 import { enum_verification } from "../generated/prisma/client";
 import { getPrismaClient } from "../shared/prisma";
-import { errorResponse, successResponse } from "../shared/response";
+import { errorResponse, paginatedResponse, successResponse } from "../shared/response";
 import { uploadImageToCloudinary, isBase64Image } from "../shared/cloudinary";
 
 /**
@@ -343,6 +343,11 @@ export async function getAmbulanceReviews(
       );
     }
 
+    const queryParams = event.queryStringParameters || {};
+    const page = parseInt(queryParams.page || '1', 10);
+    const limit = parseInt(queryParams.limit || '20', 10);
+    const offset = (page - 1) * limit;
+
     const prisma = getPrismaClient();
 
     const provider = await prisma.providers.findFirst({
@@ -361,20 +366,27 @@ export async function getAmbulanceReviews(
 
     const branchIds = branches.map((b) => b.id);
 
+    const where = { branch_id: { in: branchIds } };
+
     // Obtener reseñas de todas las sucursales
-    const reviews = await prisma.reviews.findMany({
-      where: { branch_id: { in: branchIds } },
-      include: {
-        patients: {
-          select: {
-            full_name: true,
+    const [reviews, total] = await Promise.all([
+      prisma.reviews.findMany({
+        where,
+        include: {
+          patients: {
+            select: {
+              full_name: true,
+            },
           },
         },
-      },
-      orderBy: {
-        created_at: "desc",
-      },
-    });
+        orderBy: {
+          created_at: "desc",
+        },
+        skip: offset,
+        take: limit,
+      }),
+      prisma.reviews.count({ where }),
+    ]);
 
     const formattedReviews = reviews.map((review) => ({
       id: review.id,
@@ -384,7 +396,7 @@ export async function getAmbulanceReviews(
       date: review.created_at,
     }));
 
-    return successResponse(formattedReviews);
+    return paginatedResponse(formattedReviews, total, page, limit);
   } catch (error: any) {
     console.error("Error getting ambulance reviews:", error);
     return errorResponse(error.message || "Error al obtener reseñas", 500);

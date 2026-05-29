@@ -73,6 +73,35 @@ export function successResponse<T>(data: T, statusCode: number = 200, event?: AP
   };
 }
 
+/**
+ * Success response with pagination metadata.
+ * Returns { success: true, data: { data: T[], pagination: PaginationMeta } }
+ */
+export function paginatedResponse<T>(
+  data: T[],
+  total: number,
+  page: number,
+  limit: number,
+  statusCode: number = 200,
+  event?: APIGatewayProxyEventV2
+): APIGatewayProxyResult {
+  return {
+    ...successResponse(
+      {
+        data,
+        pagination: {
+          total,
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit),
+        },
+      },
+      statusCode,
+      event
+    ),
+  };
+}
+
 export function errorResponse(
   message: string,
   statusCode: number = 400,

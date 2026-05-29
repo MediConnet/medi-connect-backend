@@ -24,8 +24,9 @@ export async function getUsers(event: APIGatewayProxyEventV2): Promise<APIGatewa
     const queryParams = event.queryStringParameters || {};
     const roleFilter = queryParams.role; // 'admin', 'provider', 'patient', etc.
     const searchQuery = queryParams.search; // Buscar por nombre o email
-    const limit = parseInt(queryParams.limit || '100', 10);
-    const offset = parseInt(queryParams.offset || '0', 10);
+    const page = parseInt(queryParams.page || '1', 10);
+    const limit = parseInt(queryParams.limit || '20', 10);
+    const offset = (page - 1) * limit;
 
     // Construir filtros
     const where: any = {};
@@ -210,14 +211,9 @@ export async function getUsers(event: APIGatewayProxyEventV2): Promise<APIGatewa
       return mappedUser;
     });
 
-    // Obtener total de usuarios para paginación
-    // NOTA: Este count incluye TODOS los usuarios, pero en la práctica
-    // solo mostramos los que tienen providers aprobados, clínicas, pacientes o son admin
-    const totalUsers = await prisma.users.count({ where });
-
     // Debug final
     const clinicsInResponse = mappedUsers.filter(u => u.clinic).length;
-    console.log(`✅ [ADMIN] ${mappedUsers.length} usuarios mapeados (total en BD: ${totalUsers}, filtrados: ${filteredUsers.length})`);
+    console.log(`✅ [ADMIN] ${mappedUsers.length} usuarios mapeados (total filtrados: ${filteredUsers.length})`);
     console.log(`🏥 [ADMIN] ${clinicsInResponse} clínicas en la respuesta`);
     
     if (clinicsInResponse > 0) {
@@ -228,10 +224,13 @@ export async function getUsers(event: APIGatewayProxyEventV2): Promise<APIGatewa
     }
 
     return successResponse({
-      users: mappedUsers,
-      total: filteredUsers.length, // ✅ Usar el total filtrado, no el total de BD
-      limit,
-      offset,
+      data: mappedUsers,
+      pagination: {
+        total: filteredUsers.length,
+        page,
+        limit,
+        totalPages: Math.ceil(filteredUsers.length / limit),
+      },
     });
   } catch (error: any) {
     console.error('❌ [ADMIN] Error al obtener usuarios:', error.message);

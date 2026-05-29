@@ -3,7 +3,7 @@ import { randomUUID } from 'crypto';
 import { enum_roles } from '../generated/prisma/client';
 import { requireRole } from '../shared/auth';
 import { getPrismaClient } from '../shared/prisma';
-import { errorResponse, internalErrorResponse, successResponse } from '../shared/response';
+import { errorResponse, internalErrorResponse, paginatedResponse, successResponse } from '../shared/response';
 
 function extractId(path: string, prefix: string): string {
   const after = path.slice(path.indexOf(prefix) + prefix.length);
@@ -16,12 +16,21 @@ export async function getSpecialties(event: APIGatewayProxyEventV2): Promise<API
 
   const prisma = getPrismaClient();
   try {
-    const specialties = await prisma.specialties.findMany({
-      orderBy: { name: 'asc' },
-      
-    });
+    const queryParams = event.queryStringParameters || {};
+    const page = parseInt(queryParams.page || '1', 10);
+    const limit = parseInt(queryParams.limit || '20', 10);
+    const offset = (page - 1) * limit;
 
-    return successResponse(specialties);
+    const [specialties, total] = await Promise.all([
+      prisma.specialties.findMany({
+        orderBy: { name: 'asc' },
+        skip: offset,
+        take: limit,
+      }),
+      prisma.specialties.count(),
+    ]);
+
+    return paginatedResponse(specialties, total, page, limit);
   } catch (error: any) {
     console.error('Error getSpecialties:', error);
     return internalErrorResponse('Error al obtener especialidades');

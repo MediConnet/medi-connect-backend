@@ -3,7 +3,7 @@ import { APIGatewayProxyEventV2, APIGatewayProxyResult } from 'aws-lambda';
 import { enum_appt_status, enum_payment_method, enum_roles } from '../generated/prisma/client';
 import { AuthContext, requireRole } from '../shared/auth';
 import { getPrismaClient } from '../shared/prisma';
-import { errorResponse, successResponse } from '../shared/response';
+import { errorResponse, successResponse, paginatedResponse } from '../shared/response';
 import { parseBody, updateAppointmentStatusSchema } from '../shared/validators';
 import { emitToUser } from '../shared/realtime';
 
@@ -25,10 +25,7 @@ export async function getAppointments(event: APIGatewayProxyEventV2): Promise<AP
 
     if (!provider) {
       console.log('⚠️ [DOCTORS] Provider no encontrado para este usuario');
-      return successResponse({
-        appointments: [],
-        pagination: { limit: 50, offset: 0, total: 0 },
-      });
+      return paginatedResponse([], 0, 1, 50);
     }
 
     const queryParams = event.queryStringParameters || {};
@@ -39,8 +36,9 @@ export async function getAppointments(event: APIGatewayProxyEventV2): Promise<AP
       statusFilter = queryParams.status as enum_appt_status;
     }
 
+    const page = parseInt(queryParams.page || '1', 10);
     const limit = parseInt(queryParams.limit || '50', 10);
-    const offset = parseInt(queryParams.offset || '0', 10);
+    const offset = (page - 1) * limit;
 
     const whereClause = {
       provider_id: provider.id,
@@ -144,14 +142,7 @@ export async function getAppointments(event: APIGatewayProxyEventV2): Promise<AP
       };
     });
 
-    return successResponse({
-      appointments: formattedAppointments,
-      pagination: {
-        limit,
-        offset,
-        total,
-      },
-    });
+    return paginatedResponse(formattedAppointments, total, page, limit);
 
   } catch (error) {
     console.error('❌ [DOCTORS] Error getting appointments:', error);

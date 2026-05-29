@@ -4,7 +4,7 @@ import { enum_roles } from '../generated/prisma/client';
 import { AuthContext, requireRole } from '../shared/auth';
 import { logger } from '../shared/logger';
 import { getPrismaClient } from '../shared/prisma';
-import { errorResponse, internalErrorResponse, notFoundResponse, successResponse } from '../shared/response';
+import { errorResponse, internalErrorResponse, notFoundResponse, paginatedResponse, successResponse } from '../shared/response';
 import { parseBody, inviteDoctorSchema, updateDoctorStatusSchema, updateDoctorOfficeSchema, extractIdFromPath } from '../shared/validators';
 import { randomBytes } from 'crypto';
 
@@ -92,6 +92,12 @@ export async function getDoctors(event: APIGatewayProxyEventV2): Promise<APIGate
       where.is_active = false;
     }
 
+    const page = parseInt(queryParams.page || '1', 10);
+    const limit = parseInt(queryParams.limit || '20', 10);
+    const offset = (page - 1) * limit;
+
+    const total = await prisma.clinic_doctors.count({ where });
+
     // Obtener médicos con relaciones
     const doctors = await prisma.clinic_doctors.findMany({
       where,
@@ -106,9 +112,11 @@ export async function getDoctors(event: APIGatewayProxyEventV2): Promise<APIGate
       orderBy: {
         created_at: 'desc',
       },
+      skip: offset,
+      take: limit,
     });
 
-    console.log(`✅ [CLINICS] Médicos obtenidos exitosamente (${doctors.length} médicos)`);
+    console.log(`✅ [CLINICS] Médicos obtenidos exitosamente (${doctors.length} médicos, total: ${total})`);
     
     // Mapear médicos a formato de respuesta
     const doctorsData = await Promise.all(doctors.map(async (doctor) => {
@@ -132,7 +140,7 @@ export async function getDoctors(event: APIGatewayProxyEventV2): Promise<APIGate
       };
     }));
 
-    return successResponse(doctorsData);
+    return paginatedResponse(doctorsData, total, page, limit);
   } catch (error: any) {
     console.error(`❌ [CLINICS] Error al obtener médicos:`, error.message);
     logger.error('Error getting doctors', error);

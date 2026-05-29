@@ -6,6 +6,7 @@ import { getPrismaClient } from "../shared/prisma";
 import {
   errorResponse,
   internalErrorResponse,
+  paginatedResponse,
   successResponse,
 } from "../shared/response";
 import { createProviderReviewSchema, parseBody } from "../shared/validators";
@@ -24,6 +25,10 @@ export async function getProviderReviews(
 
   const prisma = getPrismaClient();
   const path = event.rawPath || event.requestContext.http.path;
+  const queryParams = event.queryStringParameters || {};
+  const page = parseInt(queryParams.page || '1', 10);
+  const limit = parseInt(queryParams.limit || '20', 10);
+  const offset = (page - 1) * limit;
 
   try {
     const pathParts = path.split("/");
@@ -54,39 +59,44 @@ export async function getProviderReviews(
       branch.id,
     );
 
-    // Obtener reseñas de la sucursal
-    const reviews = await prisma.reviews.findMany({
-      where: {
-        branch_id: branch.id,
-      },
-      include: {
-        patients: {
-          select: {
-            id: true,
-            full_name: true,
-            users: {
-              select: {
-                profile_picture_url: true,
+    const where = { branch_id: branch.id };
+
+    const [reviews, total, ratingAgg] = await Promise.all([
+      prisma.reviews.findMany({
+        where,
+        include: {
+          patients: {
+            select: {
+              id: true,
+              full_name: true,
+              users: {
+                select: {
+                  profile_picture_url: true,
+                },
               },
             },
           },
-        },
-        provider_branches: {
-          select: {
-            id: true,
-            name: true,
+          provider_branches: {
+            select: {
+              id: true,
+              name: true,
+            },
           },
         },
-      },
-      orderBy: {
-        created_at: "desc",
-      },
-    });
+        orderBy: {
+          created_at: "desc",
+        },
+        skip: offset,
+        take: limit,
+      }),
+      prisma.reviews.count({ where }),
+      prisma.reviews.aggregate({
+        where,
+        _avg: { rating: true },
+      }),
+    ]);
 
-    const averageRating =
-      reviews.length > 0
-        ? reviews.reduce((sum, r) => sum + (r.rating || 0), 0) / reviews.length
-        : 0;
+    const averageRating = ratingAgg._avg.rating || 0;
 
     console.log(
       `✅ [PUBLIC REVIEWS] Reseñas obtenidas exitosamente (${reviews.length} reseñas)`,
@@ -114,8 +124,14 @@ export async function getProviderReviews(
               }
             : null,
         })),
-        averageRating: Number(averageRating.toFixed(2)),
-        totalReviews: reviews.length,
+        averageRating: Number(Number(averageRating).toFixed(2)),
+        totalReviews: total,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
       },
       200,
       event,

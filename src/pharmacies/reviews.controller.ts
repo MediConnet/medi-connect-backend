@@ -3,7 +3,7 @@ import { enum_roles } from "../generated/prisma/client";
 import { AuthContext, requireRole } from "../shared/auth";
 import { logger } from "../shared/logger";
 import { getPrismaClient } from "../shared/prisma";
-import { internalErrorResponse, successResponse } from "../shared/response";
+import { internalErrorResponse, paginatedResponse, successResponse } from "../shared/response";
 
 // GET /api/pharmacies/reviews - Listar reseñas (solo para providers / Panel de Farmacia)
 export async function getReviews(
@@ -25,6 +25,9 @@ export async function getReviews(
   const prisma = getPrismaClient();
   const queryParams = event.queryStringParameters || {};
   const userId = queryParams.userId || authContext.user.id;
+  const page = parseInt(queryParams.page || '1', 10);
+  const limit = parseInt(queryParams.limit || '20', 10);
+  const offset = (page - 1) * limit;
 
   try {
     // Buscar provider
@@ -43,40 +46,47 @@ export async function getReviews(
       });
     }
 
-    const reviews = await prisma.reviews.findMany({
-      where: {
-        provider_branches: {
-          provider_id: provider.id,
-        },
+    const where = {
+      provider_branches: {
+        provider_id: provider.id,
       },
-      include: {
-        patients: {
-          select: {
-            id: true,
-            full_name: true,
-            users: {
-              select: {
-                profile_picture_url: true,
+    };
+    const [reviews, total, ratingAgg] = await Promise.all([
+      prisma.reviews.findMany({
+        where,
+        include: {
+          patients: {
+            select: {
+              id: true,
+              full_name: true,
+              users: {
+                select: {
+                  profile_picture_url: true,
+                },
               },
             },
           },
-        },
-        provider_branches: {
-          select: {
-            id: true,
-            name: true,
+          provider_branches: {
+            select: {
+              id: true,
+              name: true,
+            },
           },
         },
-      },
-      orderBy: {
-        created_at: "desc",
-      },
-    });
+        orderBy: {
+          created_at: "desc",
+        },
+        skip: offset,
+        take: limit,
+      }),
+      prisma.reviews.count({ where }),
+      prisma.reviews.aggregate({
+        where,
+        _avg: { rating: true },
+      }),
+    ]);
 
-    const averageRating =
-      reviews.length > 0
-        ? reviews.reduce((sum, r) => sum + (r.rating || 0), 0) / reviews.length
-        : 0;
+    const averageRating = ratingAgg._avg.rating || 0;
 
     console.log(
       `✅ [PHARMACIES] Reseñas obtenidas exitosamente (${reviews.length} reseñas)`,
@@ -101,8 +111,14 @@ export async function getReviews(
             }
           : null,
       })),
-      averageRating: Number(averageRating.toFixed(2)),
-      totalReviews: reviews.length,
+      averageRating: Number(Number(averageRating).toFixed(2)),
+      totalReviews: total,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
     });
   } catch (error: any) {
     console.error(`❌ [PHARMACIES] Error al obtener reseñas:`, error.message);

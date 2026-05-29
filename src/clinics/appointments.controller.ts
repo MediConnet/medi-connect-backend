@@ -3,7 +3,7 @@ import { enum_roles } from '../generated/prisma/client';
 import { AuthContext, requireRole } from '../shared/auth';
 import { logger } from '../shared/logger';
 import { getPrismaClient } from '../shared/prisma';
-import { errorResponse, internalErrorResponse, notFoundResponse, successResponse } from '../shared/response';
+import { errorResponse, internalErrorResponse, notFoundResponse, paginatedResponse, successResponse } from '../shared/response';
 import { parseBody, updateAppointmentStatusClinicSchema, updateReceptionStatusSchema, extractIdFromPath } from '../shared/validators';
 import { notifyAppointmentCancelled, notifyAppointmentConfirmed } from '../shared/notifications';
 import { emitToUser } from '../shared/realtime';
@@ -32,11 +32,11 @@ async function getDoctorData(providerId: string, prisma: any) {
 
 // GET /api/clinics/appointments
 export async function getAppointments(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('✅ [CLINICS] GET /api/clinics/appointments - Obteniendo citas de la clínica');
+  console.log('? [CLINICS] GET /api/clinics/appointments - Obteniendo citas de la cl�nica');
   
   const authResult = await requireRole(event, [enum_roles.provider]);
   if ('statusCode' in authResult) {
-    console.error('❌ [CLINICS] GET /api/clinics/appointments - Error de autenticación/autorización');
+    console.error('? [CLINICS] GET /api/clinics/appointments - Error de autenticaci�n/autorizaci�n');
     return authResult;
   }
 
@@ -44,22 +44,26 @@ export async function getAppointments(event: APIGatewayProxyEventV2): Promise<AP
   const prisma = getPrismaClient();
   const queryParams = event.queryStringParameters || {};
 
+  const page = parseInt(queryParams.page || '1', 10);
+  const limit = parseInt(queryParams.limit || '50', 10);
+  const offset = (page - 1) * limit;
+
   try {
-    // Buscar clínica del usuario autenticado
+    // Buscar cl�nica del usuario autenticado
     const clinic = await prisma.clinics.findFirst({
       where: { user_id: authContext.user.id },
     });
 
     if (!clinic) {
-      console.error('❌ [CLINICS] Clínica no encontrada');
+      console.error('? [CLINICS] Cl�nica no encontrada');
       return notFoundResponse('Clinic not found');
     }
 
     // Construir filtros
     const where: any = { clinic_id: clinic.id };
 
-    // ⭐ Si no hay parámetros, devolver TODAS las citas (para gráficos)
-    // Los filtros son opcionales y se aplican solo si se envían
+    // ? Si no hay par�metros, devolver TODAS las citas (para gr�ficos)
+    // Los filtros son opcionales y se aplican solo si se env�an
 
     if (queryParams.date) {
       const date = new Date(queryParams.date);
@@ -115,6 +119,8 @@ export async function getAppointments(event: APIGatewayProxyEventV2): Promise<AP
     }
 
     // Obtener citas con relaciones
+    const total = await prisma.appointments.count({ where });
+
     const appointments = await prisma.appointments.findMany({
       where,
       include: {
@@ -141,9 +147,11 @@ export async function getAppointments(event: APIGatewayProxyEventV2): Promise<AP
       orderBy: {
         scheduled_for: 'desc',
       },
+      skip: offset,
+      take: limit,
     });
 
-    // Obtener información de médicos desde providers
+    // Obtener informaci�n de m�dicos desde providers
     const providerIds = appointments
       .map(apt => apt.provider_id)
       .filter((id): id is string => id !== null);
@@ -169,7 +177,7 @@ export async function getAppointments(event: APIGatewayProxyEventV2): Promise<AP
         })
       : [];
 
-    // Crear mapa para búsqueda rápida
+    // Crear mapa para b�squeda r�pida
     const providerDataMap = new Map(providersData.map(p => [p.id, {
       name: p.commercial_name,
       specialty: p.provider_specialties[0]?.specialties.name || null
@@ -185,43 +193,46 @@ export async function getAppointments(event: APIGatewayProxyEventV2): Promise<AP
       return 'scheduled';
     };
 
-    console.log(`✅ [CLINICS] Citas obtenidas exitosamente (${appointments.length} citas)`);
-    return successResponse(
+    console.log(`? [CLINICS] Citas obtenidas exitosamente (${appointments.length} citas, total: ${total})`);
+    return paginatedResponse(
       appointments.map((apt) => {
         const scheduledFor = apt.scheduled_for ? new Date(apt.scheduled_for) : null;
         
-        // Obtener información del doctor desde el mapa
+        // Obtener informaci?n del doctor desde el mapa
         const doctorData = apt.provider_id ? providerDataMap.get(apt.provider_id) : null;
         
         // Formatear fecha y hora
         const date = scheduledFor ? scheduledFor.toISOString().split('T')[0] : null; // YYYY-MM-DD
         const time = scheduledFor 
-          ? `${String(scheduledFor.getHours()).padStart(2, '0')}:${String(scheduledFor.getMinutes()).padStart(2, '0')}` 
+          ? `${String(scheduledFor.getHours()).padStart(2, '0')}:${String(scheduledFor.getMinutes()).padStart(2, '0')}`
           : null; // HH:mm
 
         return {
           id: apt.id,
           clinicId: apt.clinic_id || null,
-          doctorId: apt.provider_id || null, // ⭐ provider_id como doctorId
-          doctorName: doctorData?.name || 'Médico', // ⭐ REQUERIDO para gráficos
-          doctorSpecialty: doctorData?.specialty || null, // ⭐ REQUERIDO para gráficos
+          doctorId: apt.provider_id || null, // ? provider_id como doctorId
+          doctorName: doctorData?.name || 'M�dico', // ? REQUERIDO para gr�ficos
+          doctorSpecialty: doctorData?.specialty || null, // ? REQUERIDO para gr�ficos
           patientId: apt.patient_id || null,
           patientName: apt.patients?.full_name || 'Paciente',
           patientPhone: apt.patients?.phone || null,
           patientEmail: apt.patients?.users?.email || null,
-          date: date, // ⭐ Formato: YYYY-MM-DD
-          time: time, // ⭐ Formato: HH:mm
+          date: date, // ? Formato: YYYY-MM-DD
+          time: time, // ? Formato: HH:mm
           reason: apt.reason || null,
-          status: normalizeStatus(apt.status), // ⭐ Valores: scheduled, confirmed, attended, cancelled, no_show
+          status: normalizeStatus(apt.status), // ? Valores: scheduled, confirmed, attended, cancelled, no_show
           receptionStatus: apt.reception_status || null,
           receptionNotes: apt.reception_notes || null,
-          createdAt: null, // ⚠️ appointments no tiene created_at en el schema
-          updatedAt: null, // ⚠️ appointments no tiene updated_at en el schema
+          createdAt: null, // ?? appointments no tiene created_at en el schema
+          updatedAt: null, // ?? appointments no tiene updated_at en el schema
         };
-      })
+      }),
+      total,
+      page,
+      limit,
     );
   } catch (error: any) {
-    console.error(`❌ [CLINICS] Error al obtener citas:`, error.message);
+    console.error(`? [CLINICS] Error al obtener citas:`, error.message);
     logger.error('Error getting appointments', error);
     return internalErrorResponse('Failed to get appointments');
   }
@@ -229,11 +240,11 @@ export async function getAppointments(event: APIGatewayProxyEventV2): Promise<AP
 
 // PATCH /api/clinics/appointments/:appointmentId/status
 export async function updateAppointmentStatus(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('✅ [CLINICS] PATCH /api/clinics/appointments/{id}/status - Actualizando estado de cita');
+  console.log('? [CLINICS] PATCH /api/clinics/appointments/{id}/status - Actualizando estado de cita');
   
   const authResult = await requireRole(event, [enum_roles.provider]);
   if ('statusCode' in authResult) {
-    console.error('❌ [CLINICS] PATCH /api/clinics/appointments/{id}/status - Error de autenticación/autorización');
+    console.error('? [CLINICS] PATCH /api/clinics/appointments/{id}/status - Error de autenticaci�n/autorizaci�n');
     return authResult;
   }
 
@@ -244,17 +255,17 @@ export async function updateAppointmentStatus(event: APIGatewayProxyEventV2): Pr
     const appointmentId = extractIdFromPath(event.requestContext.http.path, '/api/clinics/appointments/', '/status');
     const body = parseBody(event.body, updateAppointmentStatusClinicSchema);
 
-    // Buscar clínica del usuario autenticado
+    // Buscar cl�nica del usuario autenticado
     const clinic = await prisma.clinics.findFirst({
       where: { user_id: authContext.user.id },
     });
 
     if (!clinic) {
-      console.error('❌ [CLINICS] Clínica no encontrada');
+      console.error('? [CLINICS] Cl�nica no encontrada');
       return notFoundResponse('Clinic not found');
     }
 
-    // Verificar que la cita pertenece a la clínica
+    // Verificar que la cita pertenece a la cl�nica
     const appointment = await prisma.appointments.findFirst({
       where: {
         id: appointmentId,
@@ -263,7 +274,7 @@ export async function updateAppointmentStatus(event: APIGatewayProxyEventV2): Pr
     });
 
     if (!appointment) {
-      console.error(`❌ [CLINICS] Cita no encontrada: ${appointmentId}`);
+      console.error(`? [CLINICS] Cita no encontrada: ${appointmentId}`);
       return notFoundResponse('Appointment not found');
     }
 
@@ -316,7 +327,7 @@ export async function updateAppointmentStatus(event: APIGatewayProxyEventV2): Pr
       // do not block response
     }
 
-    // Enviar notificaciones según el estado (no bloquea la respuesta)
+    // Enviar notificaciones seg�n el estado (no bloquea la respuesta)
     if (body.status === 'cancelled' || body.status === 'no_show') {
       // Obtener datos completos para notificaciones
       const appointmentWithDetails = await prisma.appointments.findFirst({
@@ -355,14 +366,14 @@ export async function updateAppointmentStatus(event: APIGatewayProxyEventV2): Pr
             })
           : null;
         
-        // Enviar notificaciones de cancelación (no bloquea la respuesta)
+        // Enviar notificaciones de cancelaci�n (no bloquea la respuesta)
         notifyAppointmentCancelled(
           appointmentWithDetails,
           appointmentWithDetails.clinics,
           doctor,
           appointmentWithDetails.patients
         ).catch(err => {
-          console.error('❌ [CLINICS] Error en notificaciones de cancelación:', err);
+          console.error('? [CLINICS] Error en notificaciones de cancelaci�n:', err);
         });
       }
     }
@@ -408,19 +419,19 @@ export async function updateAppointmentStatus(event: APIGatewayProxyEventV2): Pr
           doctor,
           appointmentWithDetails.patients
         ).catch(err => {
-          console.error('❌ [CLINICS] Error en notificaciones de confirmación:', err);
+          console.error('? [CLINICS] Error en notificaciones de confirmaci�n:', err);
         });
       }
     }
 
-    console.log(`✅ [CLINICS] Estado de cita actualizado: ${appointmentId} -> ${body.status}`);
+    console.log(`? [CLINICS] Estado de cita actualizado: ${appointmentId} -> ${body.status}`);
     return successResponse({
       id: updatedAppointment.id,
       status: body.status,
       updatedAt: updatedAppointment.scheduled_for?.toISOString() || null,
     });
   } catch (error: any) {
-    console.error(`❌ [CLINICS] Error al actualizar estado de cita:`, error.message);
+    console.error(`? [CLINICS] Error al actualizar estado de cita:`, error.message);
     logger.error('Error updating appointment status', error);
     if (error.message.includes('Validation error') || error.message.includes('Invalid path format')) {
       return errorResponse(error.message, 400);
@@ -431,16 +442,21 @@ export async function updateAppointmentStatus(event: APIGatewayProxyEventV2): Pr
 
 // GET /api/clinics/reception/today
 export async function getTodayReception(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('✅ [CLINICS] GET /api/clinics/reception/today - Obteniendo citas del día para recepción');
+  console.log('? [CLINICS] GET /api/clinics/reception/today - Obteniendo citas del d�a para recepci�n');
   
   const authResult = await requireRole(event, [enum_roles.provider]);
   if ('statusCode' in authResult) {
-    console.error('❌ [CLINICS] GET /api/clinics/reception/today - Error de autenticación/autorización');
+    console.error('? [CLINICS] GET /api/clinics/reception/today - Error de autenticaci�n/autorizaci�n');
     return authResult;
   }
 
   const authContext = authResult as AuthContext;
   const prisma = getPrismaClient();
+  const queryParams = event.queryStringParameters || {};
+
+  const page = parseInt(queryParams.page || '1', 10);
+  const limit = parseInt(queryParams.limit || '20', 10);
+  const offset = (page - 1) * limit;
 
   try {
     // Buscar clínica del usuario autenticado
@@ -459,14 +475,18 @@ export async function getTodayReception(event: APIGatewayProxyEventV2): Promise<
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
-    const appointments = await prisma.appointments.findMany({
-      where: {
-        clinic_id: clinic.id,
-        scheduled_for: {
-          gte: today,
-          lt: tomorrow,
-        },
+    const where = {
+      clinic_id: clinic.id,
+      scheduled_for: {
+        gte: today,
+        lt: tomorrow,
       },
+    };
+
+    const total = await prisma.appointments.count({ where });
+
+    const appointments = await prisma.appointments.findMany({
+      where,
       include: {
         providers: {
           select: {
@@ -491,22 +511,27 @@ export async function getTodayReception(event: APIGatewayProxyEventV2): Promise<
       orderBy: {
         scheduled_for: 'asc',
       },
+      skip: offset,
+      take: limit,
     });
 
-    console.log(`✅ [CLINICS] Citas del día obtenidas exitosamente (${appointments.length} citas)`);
-    return successResponse(
+    console.log(`✅ [CLINICS] Citas del día obtenidas exitosamente (${appointments.length} citas, total: ${total})`);
+    return paginatedResponse(
       appointments.map((apt) => {
         const scheduledFor = apt.scheduled_for ? new Date(apt.scheduled_for) : null;
         return {
           id: apt.id,
           time: scheduledFor ? `${String(scheduledFor.getHours()).padStart(2, '0')}:${String(scheduledFor.getMinutes()).padStart(2, '0')}` : null,
           patientName: apt.patients?.full_name || 'Paciente',
-          doctorName: apt.providers?.commercial_name || 'Médico',
+          doctorName: apt.providers?.commercial_name || 'M�dico',
           doctorSpecialty: apt.providers?.provider_specialties[0]?.specialties.name || null,
           receptionStatus: apt.reception_status || null,
           receptionNotes: apt.reception_notes || null,
         };
-      })
+      }),
+      total,
+      page,
+      limit,
     );
   } catch (error: any) {
     console.error(`❌ [CLINICS] Error al obtener citas del día:`, error.message);
@@ -517,11 +542,11 @@ export async function getTodayReception(event: APIGatewayProxyEventV2): Promise<
 
 // PATCH /api/clinics/appointments/:appointmentId/reception
 export async function updateReceptionStatus(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('✅ [CLINICS] PATCH /api/clinics/appointments/{id}/reception - Actualizando estado de recepción');
+  console.log('? [CLINICS] PATCH /api/clinics/appointments/{id}/reception - Actualizando estado de recepci�n');
   
   const authResult = await requireRole(event, [enum_roles.provider]);
   if ('statusCode' in authResult) {
-    console.error('❌ [CLINICS] PATCH /api/clinics/appointments/{id}/reception - Error de autenticación/autorización');
+    console.error('? [CLINICS] PATCH /api/clinics/appointments/{id}/reception - Error de autenticaci�n/autorizaci�n');
     return authResult;
   }
 
@@ -532,17 +557,17 @@ export async function updateReceptionStatus(event: APIGatewayProxyEventV2): Prom
     const appointmentId = extractIdFromPath(event.requestContext.http.path, '/api/clinics/appointments/', '/reception');
     const body = parseBody(event.body, updateReceptionStatusSchema);
 
-    // Buscar clínica del usuario autenticado
+    // Buscar cl�nica del usuario autenticado
     const clinic = await prisma.clinics.findFirst({
       where: { user_id: authContext.user.id },
     });
 
     if (!clinic) {
-      console.error('❌ [CLINICS] Clínica no encontrada');
+      console.error('? [CLINICS] Cl�nica no encontrada');
       return notFoundResponse('Clinic not found');
     }
 
-    // Verificar que la cita pertenece a la clínica
+    // Verificar que la cita pertenece a la cl�nica
     const appointment = await prisma.appointments.findFirst({
       where: {
         id: appointmentId,
@@ -551,11 +576,11 @@ export async function updateReceptionStatus(event: APIGatewayProxyEventV2): Prom
     });
 
     if (!appointment) {
-      console.error(`❌ [CLINICS] Cita no encontrada: ${appointmentId}`);
+      console.error(`? [CLINICS] Cita no encontrada: ${appointmentId}`);
       return notFoundResponse('Appointment not found');
     }
 
-    // Actualizar estado de recepción
+    // Actualizar estado de recepci�n
     const updateData: any = {
       reception_status: body.receptionStatus,
     };
@@ -568,7 +593,7 @@ export async function updateReceptionStatus(event: APIGatewayProxyEventV2): Prom
       data: updateData,
     });
 
-    console.log(`✅ [CLINICS] Estado de recepción actualizado: ${appointmentId}`);
+    console.log(`? [CLINICS] Estado de recepci�n actualizado: ${appointmentId}`);
     return successResponse({
       id: updatedAppointment.id,
       receptionStatus: updatedAppointment.reception_status,
@@ -576,7 +601,7 @@ export async function updateReceptionStatus(event: APIGatewayProxyEventV2): Prom
       updatedAt: updatedAppointment.scheduled_for?.toISOString() || null,
     });
   } catch (error: any) {
-    console.error(`❌ [CLINICS] Error al actualizar estado de recepción:`, error.message);
+    console.error(`? [CLINICS] Error al actualizar estado de recepci�n:`, error.message);
     logger.error('Error updating reception status', error);
     if (error.message.includes('Validation error') || error.message.includes('Invalid path format')) {
       return errorResponse(error.message, 400);

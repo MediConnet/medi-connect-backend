@@ -1,6 +1,6 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResult } from 'aws-lambda';
 import { errorResponse } from '../shared/response';
-import { createAdRequest, getMyAd, getPublicAds } from './ads.controller';
+import { createAdRequest, getMyAd, getMyAds, getPublicAds, updateMyAd } from './ads.controller';
 
 export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> => {
   try {
@@ -29,8 +29,18 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
     }
 
     // GET /api/ads -> Obtener mi anuncio (estado y detalles)
+    // GET /api/ads?mode=all&status=PENDING&dateFrom=...&dateTo=... -> Listado completo con filtros
     if (method === 'GET') {
+      const queryParams = event.queryStringParameters || {};
+      if (queryParams.mode === 'all') {
+        return await getMyAds(event);
+      }
       return await getMyAd(event);
+    }
+
+    // PUT /api/ads/:id -> Editar mi anuncio (solo si está PENDING)
+    if (method === 'PUT' && path.match(/^\/api\/ads\/[^/]+$/)) {
+      return await updateMyAd(event);
     }
 
     return errorResponse('Ruta no encontrada en el módulo de Anuncios', 404);

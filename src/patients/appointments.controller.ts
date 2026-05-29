@@ -9,6 +9,7 @@ import {
   errorResponse,
   internalErrorResponse,
   notFoundResponse,
+  paginatedResponse,
   successResponse,
 } from "../shared/response";
 import {
@@ -376,81 +377,85 @@ export async function getAppointments(
 
     const queryParams = event.queryStringParameters || {};
     const status = queryParams.status;
-    const limit = parseInt(queryParams.limit || "50", 10);
-    const offset = parseInt(queryParams.offset || "0", 10);
+    const page = parseInt(queryParams.page || '1', 10);
+    const limit = parseInt(queryParams.limit || '20', 10);
+    const offset = (page - 1) * limit;
 
     const where: any = { patient_id: patient.id };
     if (status) {
       where.status = status.toUpperCase();
     }
 
-    const appointments = await prisma.appointments.findMany({
-      where,
-      include: {
-        providers: {
-          include: {
-            service_categories: { select: { name: true, slug: true } },
+    const [appointments, total] = await Promise.all([
+      prisma.appointments.findMany({
+        where,
+        include: {
+          providers: {
+            include: {
+              service_categories: { select: { name: true, slug: true } },
+            },
           },
-        },
-        provider_branches: {
-          include: {
-            cities: { select: { name: true } },
+          provider_branches: {
+            include: {
+              cities: { select: { name: true } },
+            },
           },
+          specialties: true,
         },
-        specialties: true,
-      },
-      orderBy: { scheduled_for: "desc" },
-      take: limit,
-      skip: offset,
+        orderBy: { scheduled_for: "desc" },
+        take: limit,
+        skip: offset,
+      }),
+      prisma.appointments.count({ where }),
+    ]);
+
+    const formattedAppointments = appointments.map((apt) => {
+      const aptWithRelations = apt as any;
+      const creationDate =
+        aptWithRelations.createdAt || aptWithRelations.created_at;
+
+      return {
+        id: apt.id,
+        scheduledFor: apt.scheduled_for,
+        status: apt.status,
+        reason: apt.reason,
+        notes: apt.reception_notes || null,
+        isPaid: apt.is_paid || false,
+        cost: apt.cost,
+        createdAt: creationDate,
+        paymentMethod: aptWithRelations.payment_method,
+        specialty: aptWithRelations.specialties
+          ? {
+              id: aptWithRelations.specialties.id,
+              name: aptWithRelations.specialties.name,
+            }
+          : null,
+        provider: aptWithRelations.providers
+          ? {
+              id: aptWithRelations.providers.id,
+              name: aptWithRelations.providers.commercial_name,
+              logoUrl: aptWithRelations.providers.logo_url,
+              category:
+                aptWithRelations.providers.service_categories?.name || null,
+            }
+          : null,
+        branch: aptWithRelations.provider_branches
+          ? {
+              id: aptWithRelations.provider_branches.id,
+              name: aptWithRelations.provider_branches.name,
+              address: aptWithRelations.provider_branches.address_text,
+              city: aptWithRelations.provider_branches.cities?.name,
+              phone: aptWithRelations.provider_branches.phone_contact,
+              email: aptWithRelations.provider_branches.email_contact,
+              google_maps_url: aptWithRelations.provider_branches.google_maps_url || null,
+              latitude: aptWithRelations.provider_branches.latitude ? Number(aptWithRelations.provider_branches.latitude) : null,
+              longitude: aptWithRelations.provider_branches.longitude ? Number(aptWithRelations.provider_branches.longitude) : null,
+            }
+          : null,
+      };
     });
 
-    return successResponse(
-      appointments.map((apt) => {
-        const aptWithRelations = apt as any;
-        const creationDate =
-          aptWithRelations.createdAt || aptWithRelations.created_at;
-
-        return {
-          id: apt.id,
-          scheduledFor: apt.scheduled_for,
-          status: apt.status,
-          reason: apt.reason,
-          notes: apt.reception_notes || null,
-          isPaid: apt.is_paid || false,
-          cost: apt.cost,
-          createdAt: creationDate,
-          paymentMethod: aptWithRelations.payment_method,
-          specialty: aptWithRelations.specialties
-            ? {
-                id: aptWithRelations.specialties.id,
-                name: aptWithRelations.specialties.name,
-              }
-            : null,
-          provider: aptWithRelations.providers
-            ? {
-                id: aptWithRelations.providers.id,
-                name: aptWithRelations.providers.commercial_name,
-                logoUrl: aptWithRelations.providers.logo_url,
-                category:
-                  aptWithRelations.providers.service_categories?.name || null,
-              }
-            : null,
-          branch: aptWithRelations.provider_branches
-            ? {
-                id: aptWithRelations.provider_branches.id,
-                name: aptWithRelations.provider_branches.name,
-                address: aptWithRelations.provider_branches.address_text,
-                city: aptWithRelations.provider_branches.cities?.name,
-                phone: aptWithRelations.provider_branches.phone_contact,
-                email: aptWithRelations.provider_branches.email_contact,
-                google_maps_url: aptWithRelations.provider_branches.google_maps_url || null,
-                latitude: aptWithRelations.provider_branches.latitude ? Number(aptWithRelations.provider_branches.latitude) : null,
-                longitude: aptWithRelations.provider_branches.longitude ? Number(aptWithRelations.provider_branches.longitude) : null,
-              }
-            : null,
-        };
-      }),
-    );
+    return paginatedResponse(formattedAppointments, total, page, limit);
   } catch (error: any) {
     logger.error("Error getting patient appointments", error);
     return internalErrorResponse("Failed to get appointments");

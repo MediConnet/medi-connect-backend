@@ -6,6 +6,7 @@ import {
   errorResponse,
   internalErrorResponse,
   notFoundResponse,
+  paginatedResponse,
   successResponse,
 } from "../shared/response";
 import { extractIdFromPath } from "../shared/validators";
@@ -40,8 +41,9 @@ export async function getMedicalHistory(
     }
 
     const queryParams = event.queryStringParameters || {};
-    const limit = parseInt(queryParams.limit || "50", 10);
-    const offset = parseInt(queryParams.offset || "0", 10);
+    const page = parseInt(queryParams.page || '1', 10);
+    const limit = parseInt(queryParams.limit || '20', 10);
+    const offset = (page - 1) * limit;
     const search = queryParams.search?.trim();
 
     const whereClause: any = { patient_id: patient.id };
@@ -70,33 +72,36 @@ export async function getMedicalHistory(
     }
 
     // Obtener historial médico
-    const history = await prisma.medical_history.findMany({
-      where: whereClause,
-      include: {
-        providers: {
-          select: {
-            id: true,
-            commercial_name: true,
-            logo_url: true,
-            service_categories: {
-              select: {
-                name: true,
+    const [history, total] = await Promise.all([
+      prisma.medical_history.findMany({
+        where: whereClause,
+        include: {
+          providers: {
+            select: {
+              id: true,
+              commercial_name: true,
+              logo_url: true,
+              service_categories: {
+                select: {
+                  name: true,
+                },
               },
             },
           },
         },
-      },
-      orderBy: {
-        date: "desc",
-      },
-      take: limit,
-      skip: offset,
-    });
+        orderBy: {
+          date: "desc",
+        },
+        take: limit,
+        skip: offset,
+      }),
+      prisma.medical_history.count({ where: whereClause }),
+    ]);
 
     console.log(
       `✅ [PATIENTS] Se encontraron ${history.length} registros de historial`,
     );
-    return successResponse(
+    return paginatedResponse(
       history.map((record) => ({
         id: record.id,
         date: record.date,
@@ -116,6 +121,9 @@ export async function getMedicalHistory(
           : null,
         createdAt: record.created_at,
       })),
+      total,
+      page,
+      limit,
     );
   } catch (error: any) {
     console.error(

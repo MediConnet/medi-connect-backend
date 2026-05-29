@@ -8,6 +8,7 @@ import { getPrismaClient } from "../shared/prisma";
 import {
   errorResponse,
   internalErrorResponse,
+  paginatedResponse,
   successResponse,
 } from "../shared/response";
 import { parseBody } from "../shared/validators";
@@ -322,6 +323,9 @@ export async function getSupplyStores(
 ): Promise<APIGatewayProxyResult> {
   const queryParams = event.queryStringParameters || {};
   const searchQuery = queryParams.q || "";
+  const page = parseInt(queryParams.page || '1', 10);
+  const limit = parseInt(queryParams.limit || '20', 10);
+  const offset = (page - 1) * limit;
 
   console.log(`✅ [SUPPLIES] Listando tiendas. Búsqueda: "${searchQuery}"`);
 
@@ -336,25 +340,32 @@ export async function getSupplyStores(
       return errorResponse("Categoría de insumos no encontrada", 404);
     }
 
-    const allProviders = await prisma.providers.findMany({
-      where: {
-        category_id: suppliesCategory.id,
-        verification_status: enum_verification.APPROVED,
-      },
-      include: {
-        provider_branches: {
-          where: { is_active: true, is_main: true },
-          take: 1,
-          include: {
-            provider_schedules: {
-              where: { is_active: true },
-              orderBy: { day_of_week: "asc" },
+    const where = {
+      category_id: suppliesCategory.id,
+      verification_status: enum_verification.APPROVED,
+    };
+
+    const [allProviders, total] = await Promise.all([
+      prisma.providers.findMany({
+        where,
+        include: {
+          provider_branches: {
+            where: { is_active: true, is_main: true },
+            take: 1,
+            include: {
+              provider_schedules: {
+                where: { is_active: true },
+                orderBy: { day_of_week: "asc" },
+              },
+              cities: true,
             },
-            cities: true,
           },
         },
-      },
-    });
+        skip: offset,
+        take: limit,
+      }),
+      prisma.providers.count({ where }),
+    ]);
 
     let filteredProviders = allProviders;
 
@@ -399,7 +410,7 @@ export async function getSupplyStores(
       };
     });
 
-    return successResponse(formattedStores);
+    return paginatedResponse(formattedStores, total, page, limit);
   } catch (error: any) {
     console.error("❌ [SUPPLIES] Error getting supply stores:", error);
     return internalErrorResponse("Error al obtener tiendas de insumos");
@@ -504,6 +515,11 @@ export async function getMySupplyStoreReviews(
       return errorResponse("No autorizado. Debe ser proveedor", 403);
     }
 
+    const queryParams = event.queryStringParameters || {};
+    const page = parseInt(queryParams.page || '1', 10);
+    const limit = parseInt(queryParams.limit || '20', 10);
+    const offset = (page - 1) * limit;
+
     const prisma = getPrismaClient();
 
     // Buscar el provider del usuario autenticado
@@ -532,36 +548,44 @@ export async function getMySupplyStoreReviews(
     const branchIds = branches.map((b) => b.id);
     console.log("🔍 [SUPPLIES] Branch IDs:", branchIds);
 
-    const reviews = await prisma.reviews.findMany({
-      where: { branch_id: { in: branchIds } },
-      include: {
-        patients: {
-          select: {
-            id: true,
-            full_name: true,
-            users: {
-              select: {
-                profile_picture_url: true,
+    const where = { branch_id: { in: branchIds } };
+
+    const [reviews, total, ratingAgg] = await Promise.all([
+      prisma.reviews.findMany({
+        where,
+        include: {
+          patients: {
+            select: {
+              id: true,
+              full_name: true,
+              users: {
+                select: {
+                  profile_picture_url: true,
+                },
               },
             },
           },
-        },
-        provider_branches: {
-          select: {
-            id: true,
-            name: true,
+          provider_branches: {
+            select: {
+              id: true,
+              name: true,
+            },
           },
         },
-      },
-      orderBy: {
-        created_at: "desc",
-      },
-    });
+        orderBy: {
+          created_at: "desc",
+        },
+        skip: offset,
+        take: limit,
+      }),
+      prisma.reviews.count({ where }),
+      prisma.reviews.aggregate({
+        where,
+        _avg: { rating: true },
+      }),
+    ]);
 
-    const averageRating =
-      reviews.length > 0
-        ? reviews.reduce((sum, r) => sum + (r.rating || 0), 0) / reviews.length
-        : 0;
+    const averageRating = ratingAgg._avg.rating || 0;
 
     console.log(
       `✅ [SUPPLIES] Reseñas obtenidas exitosamente (${reviews.length} reseñas)`,
@@ -577,8 +601,14 @@ export async function getMySupplyStoreReviews(
         date: review.created_at,
         branchName: review.provider_branches?.name || null,
       })),
-      averageRating: Number(averageRating.toFixed(2)),
-      totalReviews: reviews.length,
+      averageRating: Number(Number(averageRating).toFixed(2)),
+      totalReviews: total,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
     });
   } catch (error: any) {
     console.error("❌ [SUPPLIES] Error al obtener reseñas:", error.message);

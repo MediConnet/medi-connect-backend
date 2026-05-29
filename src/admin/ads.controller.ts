@@ -4,7 +4,23 @@ import { enum_roles } from '../generated/prisma/client';
 import { requireRole } from '../shared/auth';
 import { isBase64Image, uploadImageToCloudinary } from '../shared/cloudinary';
 import { getPrismaClient } from '../shared/prisma';
-import { errorResponse, internalErrorResponse, successResponse } from '../shared/response';
+import { errorResponse, internalErrorResponse, paginatedResponse, successResponse } from '../shared/response';
+
+async function autoExpireAds() {
+  try {
+    const prisma = getPrismaClient();
+    const now = new Date();
+    await prisma.provider_ads.updateMany({
+      where: {
+        is_active: true,
+        end_date: { lte: now },
+      },
+      data: { is_active: false },
+    });
+  } catch (e) {
+    console.error('Error auto-expiring ads (admin):', e);
+  }
+}
 
 function extractId(path: string, prefix: string): string {
   const after = path.slice(path.indexOf(prefix) + prefix.length);
@@ -16,17 +32,28 @@ function extractId(path: string, prefix: string): string {
  * Lista todos los anuncios APPROVED (propios del admin y de proveedores)
  */
 export async function getAdminAds(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  await autoExpireAds();
   const authResult = await requireRole(event, [enum_roles.admin]);
   if ('statusCode' in authResult) return authResult;
 
   const prisma = getPrismaClient();
   try {
+    const queryParams = event.queryStringParameters || {};
+    const page = parseInt(queryParams.page || '1', 10);
+    const limit = parseInt(queryParams.limit || '20', 10);
+    const offset = (page - 1) * limit;
+
+    const where = { status: 'APPROVED' as const };
+    const total = await prisma.provider_ads.count({ where });
+
     const ads = await prisma.provider_ads.findMany({
-      where: { status: 'APPROVED' },
+      where,
       include: {
         providers: { select: { commercial_name: true } },
       },
       orderBy: { priority_order: 'asc' },
+      take: limit,
+      skip: offset,
     });
 
     const result = ads.map((ad) => ({
@@ -48,7 +75,7 @@ export async function getAdminAds(event: APIGatewayProxyEventV2): Promise<APIGat
       providerName: ad.providers?.commercial_name ?? 'Admin',
     }));
 
-    return successResponse(result);
+    return paginatedResponse(result, total, page, limit);
   } catch (error: any) {
     console.error('Error getAdminAds:', error);
     return internalErrorResponse('Error al obtener anuncios');
