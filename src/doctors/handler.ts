@@ -25,10 +25,12 @@ import {
   requestDateBlock,
   updateClinicAppointmentStatus,
   updateClinicProfile,
+} from "./clinic.controller";
+import {
   getBlockedSlots,
   createBlockedSlot,
   deleteBlockedSlot,
-} from "./clinic.controller";
+} from "./blocked-slots.controller";
 import { 
   getConsultationPrices, 
   createConsultationPrice,

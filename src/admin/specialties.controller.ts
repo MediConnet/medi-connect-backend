@@ -17,19 +17,28 @@ export async function getSpecialties(event: APIGatewayProxyEventV2): Promise<API
   const prisma = getPrismaClient();
   try {
     const queryParams = event.queryStringParameters || {};
-    const page = parseInt(queryParams.page || '1', 10);
-    const limit = parseInt(queryParams.limit || '20', 10);
+    const page = Math.max(1, parseInt(queryParams.page || '1', 10));
+    const limit = Math.max(1, Math.min(100, parseInt(queryParams.limit || '20', 10)));
     const offset = (page - 1) * limit;
+    const search = queryParams.search || '';
+
+    console.log(`🔍 [getSpecialties] page=${page}, limit=${limit}, offset=${offset}, search="${search}"`);
+
+    const where = search
+      ? { name: { contains: search, mode: 'insensitive' as const } }
+      : {};
 
     const [specialties, total] = await Promise.all([
       prisma.specialties.findMany({
+        where,
         orderBy: { name: 'asc' },
         skip: offset,
         take: limit,
       }),
-      prisma.specialties.count(),
+      prisma.specialties.count({ where }),
     ]);
 
+    console.log(`✅ [getSpecialties] total=${total}, returned=${specialties.length}`);
     return paginatedResponse(specialties, total, page, limit);
   } catch (error: any) {
     console.error('Error getSpecialties:', error);

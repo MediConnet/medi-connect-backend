@@ -60,6 +60,7 @@ const getTargetScreenBySlug = (slug?: string): string => {
     case 'supplies':
       return 'InsumoDetail';
     case 'clinic':
+    case 'clinica':
       return 'Home'; // Fallback si no hay ClinicDetail
     default:
       return 'Home';

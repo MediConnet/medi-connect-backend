@@ -147,10 +147,10 @@ async function main() {
 
   const clinicCategory = await findOrCreate<service_categories>(
     prisma.service_categories,
-    { slug: 'clinic' },
+    { slug: 'clinica' },
     {
       name: 'Clínica',
-      slug: 'clinic',
+      slug: 'clinica',
       default_color_hex: '#14b8a6',
       allows_booking: true,
     }

@@ -22,6 +22,7 @@ import {
 } from "./provider-reviews.controller";
 import { getCities } from "./public.controller";
 import { getPublicSpecialties } from "./specialties.controller";
+import { getClinics, getClinicById, getClinicSpecialties, getClinicDoctors } from "./clinics.controller";
 
 export async function handler(
   event: APIGatewayProxyEventV2,
@@ -136,6 +137,32 @@ export async function handler(
     // GET /api/public/pharmacies - Listar todas las farmacias (alternativa)
     if (path === "/api/public/pharmacies" && method === "GET") {
       return await getAllPharmacies(event);
+    }
+
+    // --- RUTAS PÚBLICAS DE CLÍNICAS ---
+
+    // GET /api/public/clinics
+    if (path === "/api/public/clinics" && method === "GET") {
+      return await getClinics(event);
+    }
+
+    // GET /api/public/clinics/{id}/specialties
+    if (path.startsWith("/api/public/clinics/") && path.endsWith("/specialties") && method === "GET") {
+      return await getClinicSpecialties(event);
+    }
+
+    // GET /api/public/clinics/{id}/doctors
+    if (path.startsWith("/api/public/clinics/") && path.endsWith("/doctors") && method === "GET") {
+      return await getClinicDoctors(event);
+    }
+
+    // GET /api/public/clinics/{id}
+    if (path.startsWith("/api/public/clinics/") && method === "GET") {
+      const pathParts = path.split("/");
+      const lastPart = pathParts[pathParts.length - 1];
+      if (lastPart !== "clinics" && lastPart !== "specialties" && lastPart !== "doctors") {
+        return await getClinicById(event);
+      }
     }
 
     // --- RUTAS PÚBLICAS DE AMBULANCIAS ---

@@ -453,6 +453,7 @@ async function getDashboardStats(event: APIGatewayProxyEventV2): Promise<APIGate
     totalLaboratories,
     totalAmbulances,
     totalSupplies,
+    totalClinicas,
   ] = await Promise.all([
     prisma.users.count(),
     prisma.cities.count(),
@@ -505,10 +506,18 @@ async function getDashboardStats(event: APIGatewayProxyEventV2): Promise<APIGate
         verification_status: 'APPROVED',
       },
     }),
+    prisma.providers.count({
+      where: {
+        service_categories: {
+          slug: 'clinica',
+        },
+        verification_status: 'APPROVED',
+      },
+    }),
   ]);
 
   // Calcular total de servicios
-  const totalServices = totalDoctors + totalPharmacies + totalLaboratories + totalAmbulances + totalSupplies;
+  const totalServices = totalDoctors + totalPharmacies + totalLaboratories + totalAmbulances + totalSupplies + totalClinicas;
 
   // Por ahora, los trends son "0%" ya que no tenemos datos históricos
   // En el futuro se puede calcular comparando con el mes anterior
@@ -543,6 +552,7 @@ async function getDashboardStats(event: APIGatewayProxyEventV2): Promise<APIGate
       laboratories: totalLaboratories,
       ambulances: totalAmbulances,
       supplies: totalSupplies,
+      clinicas: totalClinicas,
     },
     recentActivity: await compileRecentActivity(prisma, 5),
   };
@@ -678,7 +688,7 @@ async function getRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayPro
       status: provider.verification_status === 'APPROVED' ? 'APPROVED' :
               provider.verification_status === 'REJECTED' ? 'REJECTED' :
               'PENDING',
-      rejectionReason: (provider as any).rejection_reason || null,
+      rejectionReason: (provider as any)?.rejection_reason || null,
       phone: branch?.phone_contact || '',           // ✅ Desde provider_branches.phone_contact
       whatsapp: branch?.phone_contact || '',     // ✅ Mismo teléfono para whatsapp
       city: city?.name || 'Sin ciudad',
@@ -760,7 +770,7 @@ async function getRequestDetail(event: APIGatewayProxyEventV2): Promise<APIGatew
       status: provider.verification_status === enum_verification.APPROVED ? enum_verification.APPROVED :
               provider.verification_status === enum_verification.REJECTED ? enum_verification.REJECTED :
               enum_verification.PENDING,
-    rejectionReason: (provider as any).rejection_reason || null,
+    rejectionReason: (provider as any)?.rejection_reason || null,
     phone: branch?.phone_contact || '',           // ✅ Desde provider_branches.phone_contact
     whatsapp: branch?.phone_contact || '',     // ✅ Mismo teléfono para whatsapp
     city: city?.name || 'Sin ciudad',
@@ -779,28 +789,62 @@ async function getAdRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayP
   }
 
   const queryParams = event.queryStringParameters || {};
-  const status = queryParams.status; // 'PENDING', 'APPROVED', 'REJECTED'
-  const page = parseInt(queryParams.page || '1', 10);
-  const limit = parseInt(queryParams.limit || '20', 10);
+  const status = queryParams.status; // 'PENDING', 'APPROVED', 'REJECTED', or undefined for all
+  const page = Math.max(1, parseInt(queryParams.page || '1', 10));
+  const limit = Math.max(1, Math.min(100, parseInt(queryParams.limit || '20', 10)));
   const offset = (page - 1) * limit;
+  const search = queryParams.search || '';
+  const serviceType = queryParams.serviceType || '';
+  const dateFrom = queryParams.dateFrom || '';
+  const dateTo = queryParams.dateTo || '';
 
   const prisma = getPrismaClient();
 
-  // Determinar el estado a filtrar (por defecto PENDING para notificaciones)
-  const adStatus = status === 'APPROVED' ? 'APPROVED' :
-                   status === 'REJECTED' ? 'REJECTED' :
-                   'PENDING';
+  console.log(`🔍 [GET_AD_REQUESTS] Params: status=${status || 'all'}, page=${page}, limit=${limit}, search="${search}", serviceType="${serviceType}", dateFrom="${dateFrom}", dateTo="${dateTo}"`);
 
-  console.log(`🔍 [GET_AD_REQUESTS] Buscando anuncios con status: ${adStatus}`);
+  // Construir filtros dinámicamente
+  const filters: any[] = [];
 
-  const total = await prisma.provider_ads.count({ where: { status: adStatus } });
-  console.log(`📊 [GET_AD_REQUESTS] Total anuncios con status ${adStatus}: ${total}`);
+  // Filtro de estado
+  if (status === 'APPROVED' || status === 'REJECTED' || status === 'PENDING') {
+    filters.push({ status: status as 'APPROVED' | 'REJECTED' | 'PENDING' });
+  }
+
+  // Filtro de búsqueda sobre provider name/email
+  if (search) {
+    filters.push({
+      providers: {
+        OR: [
+          { commercial_name: { contains: search, mode: 'insensitive' as const } },
+          { users: { email: { contains: search, mode: 'insensitive' as const } } },
+        ],
+      },
+    });
+  }
+
+  // Filtro por tipo de servicio
+  if (serviceType) {
+    filters.push({ providers: { service_categories: { slug: serviceType } } });
+  }
+
+  // Filtro por rango de fechas (start_date)
+  if (dateFrom || dateTo) {
+    const dateFilter: any = {};
+    if (dateFrom) dateFilter.gte = new Date(dateFrom);
+    if (dateTo) dateFilter.lte = new Date(dateTo + 'T23:59:59.999Z');
+    filters.push({ start_date: dateFilter });
+  }
+
+  const where = filters.length > 0 ? { AND: filters } : {};
+
+  console.log(`🔍 [GET_AD_REQUESTS] Filters:`, JSON.stringify(where));
+
+  const total = await prisma.provider_ads.count({ where });
+  console.log(`📊 [GET_AD_REQUESTS] Total anuncios: ${total}`);
 
   // Obtener anuncios con información del proveedor
   const ads = await prisma.provider_ads.findMany({
-    where: {
-      status: adStatus,
-    },
+    where,
     include: {
       providers: {
         include: {
@@ -852,12 +896,12 @@ async function getAdRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayP
       providerId: ad.provider_id || '',
       providerName: provider?.commercial_name || 'Sin nombre',
       providerEmail: provider?.users?.email || '',
-      serviceType: serviceType as 'doctor' | 'pharmacy' | 'laboratory' | 'ambulance' | 'supplies',
+      serviceType: serviceType as 'doctor' | 'pharmacy' | 'laboratory' | 'ambulance' | 'supplies' | 'clinica',
       submissionDate: submissionDate,
       status: ad.status as 'PENDING' | 'APPROVED' | 'REJECTED',
-      rejectionReason: (provider as any).rejection_reason || null,
-      approvedAt: ad.status === 'APPROVED' ? submissionDate : undefined,
-      rejectedAt: ad.status === 'REJECTED' ? submissionDate : undefined,
+      rejectionReason: (provider as any)?.rejection_reason || null,
+      approvedAt: undefined, // provider_ads no tiene campo de fecha de aprobación
+      rejectedAt: undefined, // provider_ads no tiene campo de fecha de rechazo
       hasActiveAd: hasActiveAd,
       adContent: {
         label: ad.badge_text || '',
@@ -876,6 +920,7 @@ async function getAdRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayP
     };
   });
 
+  console.log(`✅ [GET_AD_REQUESTS] IDs de anuncios retornados:`, adRequests.map(a => ({ id: a.id, status: a.status, providerName: a.providerName })));
   console.log(`✅ [GET_AD_REQUESTS] Retornando ${adRequests.length} solicitudes de anuncios (página ${page}/${Math.ceil(total / limit)}, total ${total})`);
   return paginatedResponse(adRequests, total, page, limit);
 }
@@ -909,47 +954,67 @@ async function getHistory(event: APIGatewayProxyEventV2): Promise<APIGatewayProx
 
   const queryParams = event.queryStringParameters || {};
   const status = queryParams.status; // Opcional: 'APPROVED' o 'REJECTED' para filtrar
-  const page = parseInt(queryParams.page || '1', 10);
-  const limit = parseInt(queryParams.limit || '20', 10);
+  const page = Math.max(1, parseInt(queryParams.page || '1', 10));
+  const limit = Math.max(1, Math.min(100, parseInt(queryParams.limit || '20', 10)));
   const offset = (page - 1) * limit;
   const search = queryParams.search?.trim(); // Búsqueda por nombre, email o ciudad
+  const serviceType = queryParams.serviceType || ''; // Filtro por tipo de servicio
+  const dateFrom = queryParams.dateFrom || '';
+  const dateTo = queryParams.dateTo || '';
 
   const prisma = getPrismaClient();
 
-  // Construir el filtro WHERE - por defecto incluir APPROVED y REJECTED
-  const statusFilter = {
+  console.log(`🔍 [GET_HISTORY] Params: status=${status || 'all'}, page=${page}, limit=${limit}, search="${search}", serviceType="${serviceType}", dateFrom="${dateFrom}", dateTo="${dateTo}"`);
+
+  // Construir filtros dinámicamente
+  const filters: any[] = [];
+
+  // Filtro por estado (verification_status)
+  filters.push({
     verification_status: {
       in: status === 'APPROVED' ? ['APPROVED'] :
           status === 'REJECTED' ? ['REJECTED'] :
           ['APPROVED', 'REJECTED'], // Por defecto, ambos estados
     },
-  };
+  });
 
-  // Construir el filtro completo
-  const whereClause: any = search ? {
-    AND: [
-      statusFilter,
-      {
-        OR: [
-          { commercial_name: { contains: search, mode: 'insensitive' } },
-          { users: { email: { contains: search, mode: 'insensitive' } } },
-          { provider_branches: { 
-            some: {
-              OR: [
-                { address_text: { contains: search, mode: 'insensitive' } },
-                { cities: { name: { contains: search, mode: 'insensitive' } } },
-              ],
-            },
-          } },
-        ],
-      },
-    ],
-  } : statusFilter;
+  // Filtro por búsqueda (nombre, email, ciudad)
+  if (search) {
+    filters.push({
+      OR: [
+        { commercial_name: { contains: search, mode: 'insensitive' } },
+        { users: { email: { contains: search, mode: 'insensitive' } } },
+        { provider_branches: { 
+          some: {
+            OR: [
+              { address_text: { contains: search, mode: 'insensitive' } },
+              { cities: { name: { contains: search, mode: 'insensitive' } } },
+            ],
+          },
+        } },
+      ],
+    });
+  }
+
+  // Filtro por tipo de servicio (service_categories.slug)
+  if (serviceType) {
+    filters.push({ service_categories: { slug: serviceType } });
+  }
+
+  // Filtro por rango de fechas (users.created_at)
+  if (dateFrom || dateTo) {
+    const dateFilter: any = {};
+    if (dateFrom) dateFilter.gte = new Date(dateFrom);
+    if (dateTo) dateFilter.lte = new Date(dateTo + 'T23:59:59.999Z');
+    filters.push({ users: { created_at: dateFilter } });
+  }
+
+  const whereClause: any = filters.length > 0 ? { AND: filters } : {};
 
   const total = await prisma.providers.count({ where: whereClause });
   console.log(`📊 [GET_HISTORY] Total registros: ${total}`);
 
-  console.log(`🔍 [GET_HISTORY] Buscando providers con status: ${whereClause.verification_status.in.join(', ')}`);
+  console.log(`🔍 [GET_HISTORY] Buscando providers con status: ${status || 'APPROVED, REJECTED'}`);
   if (search) {
     console.log(`🔍 [GET_HISTORY] Búsqueda: "${search}"`);
   }
@@ -1028,7 +1093,7 @@ async function getHistory(event: APIGatewayProxyEventV2): Promise<APIGatewayProx
       status: provider.verification_status === 'APPROVED' ? 'APPROVED' :
               provider.verification_status === 'REJECTED' ? 'REJECTED' :
               'PENDING',
-      rejectionReason: (provider as any).rejection_reason || null,
+      rejectionReason: (provider as any)?.rejection_reason || null,
       phone: branch?.phone_contact || '',
       whatsapp: branch?.phone_contact || '',
       city: city?.name || 'Sin ciudad',
@@ -1394,7 +1459,7 @@ async function approveRequest(event: APIGatewayProxyEventV2): Promise<APIGateway
       type = "insumo";
       title = "¡Nueva tienda de insumos médicos! 📦";
       body = `${providerName} se ha unido a DOCALINK. Ya puedes consultar su catálogo de productos y equipos médicos.`;
-    } else if (categorySlug === "clinic") {
+    } else if (categorySlug === "clinic" || categorySlug === "clinica") {
       type = "cita";
       title = "¡Nueva clínica disponible! 🏥";
       body = `La clínica ${providerName} se ha unido a DOCALINK. Ya puedes agendar citas en sus consultorios.`;
