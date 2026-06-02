@@ -7,6 +7,7 @@ import { errorResponse, internalErrorResponse, notFoundResponse, paginatedRespon
 import { parseBody, updateAppointmentStatusClinicSchema, updateReceptionStatusSchema, extractIdFromPath } from '../shared/validators';
 import { notifyAppointmentCancelled, notifyAppointmentConfirmed } from '../shared/notifications';
 import { emitToUser } from '../shared/realtime';
+import { resolveClinicForAuthUser } from './clinic-context';
 
 // Helper para obtener datos del doctor desde las relaciones
 async function getDoctorData(providerId: string, prisma: any) {
@@ -50,9 +51,7 @@ export async function getAppointments(event: APIGatewayProxyEventV2): Promise<AP
 
   try {
     // Buscar cl�nica del usuario autenticado
-    const clinic = await prisma.clinics.findFirst({
-      where: { user_id: authContext.user.id },
-    });
+    const { clinic } = await resolveClinicForAuthUser(authContext.user.id);
 
     if (!clinic) {
       console.error('? [CLINICS] Cl�nica no encontrada');
@@ -256,9 +255,7 @@ export async function updateAppointmentStatus(event: APIGatewayProxyEventV2): Pr
     const body = parseBody(event.body, updateAppointmentStatusClinicSchema);
 
     // Buscar cl�nica del usuario autenticado
-    const clinic = await prisma.clinics.findFirst({
-      where: { user_id: authContext.user.id },
-    });
+    const { clinic } = await resolveClinicForAuthUser(authContext.user.id);
 
     if (!clinic) {
       console.error('? [CLINICS] Cl�nica no encontrada');
@@ -460,9 +457,7 @@ export async function getTodayReception(event: APIGatewayProxyEventV2): Promise<
 
   try {
     // Buscar clínica del usuario autenticado
-    const clinic = await prisma.clinics.findFirst({
-      where: { user_id: authContext.user.id },
-    });
+    const { clinic } = await resolveClinicForAuthUser(authContext.user.id);
 
     if (!clinic) {
       console.error('❌ [CLINICS] Clínica no encontrada');
@@ -558,9 +553,7 @@ export async function updateReceptionStatus(event: APIGatewayProxyEventV2): Prom
     const body = parseBody(event.body, updateReceptionStatusSchema);
 
     // Buscar cl�nica del usuario autenticado
-    const clinic = await prisma.clinics.findFirst({
-      where: { user_id: authContext.user.id },
-    });
+    const { clinic } = await resolveClinicForAuthUser(authContext.user.id);
 
     if (!clinic) {
       console.error('? [CLINICS] Cl�nica no encontrada');

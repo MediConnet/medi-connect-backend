@@ -371,6 +371,37 @@ app.use("/api/ambulances", async (req, res) => {
   await handleLambdaResponse(ambulancesHandler, req, res, path);
 });
 
+// Routes - Association (doctor-clinic relationships)
+let associationHandler: any;
+try {
+  associationHandler = require("../src/association/handler").handler;
+  console.log("✅ [ASSOCIATION] Handler de asociación cargado correctamente");
+} catch (e: any) {
+  console.error("❌ [ASSOCIATION] Error al cargar handler de asociación:", e.message);
+}
+
+if (associationHandler) {
+  app.use("/api/association", async (req, res) => {
+    const path = req.originalUrl.split("?")[0];
+    console.log(`🔗 [ASSOCIATION ROUTE] ${req.method} ${path}`);
+    await handleLambdaResponse(associationHandler, req, res, path);
+  });
+} else {
+  console.error("❌ [ASSOCIATION] Handler de asociación no disponible");
+}
+
+// Routes - Clinic-Associated Doctor (forward to association handler)
+// El frontend llama a /api/clinics/doctors/me/* pero el backend registra
+// las rutas bajo /api/association/doctors/me/* — redirigimos con rewrite
+if (associationHandler) {
+  app.use("/api/clinics/doctors/me", async (req, res) => {
+    let path = req.originalUrl.split("?")[0];
+    path = path.replace("/api/clinics/doctors/me", "/api/association/doctors/me");
+    console.log(`🔗 [CLINICS->ASSOCIATION] ${req.method} ${path}`);
+    await handleLambdaResponse(associationHandler, req, res, path);
+  });
+}
+
 // Routes - Clinics (si existe)
 if (clinicsHandler) {
   app.use("/api/clinics", async (req, res) => {

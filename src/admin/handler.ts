@@ -583,23 +583,31 @@ async function getRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayPro
 
   // Obtener providers con estado PENDING (o el estado especificado)
   // IMPORTANTE: Como verification_status es String? en el schema, usar strings directamente
-  const verificationStatus = status === 'APPROVED' ? 'APPROVED' :
-                             status === 'REJECTED' ? 'REJECTED' :
-                             'PENDING';
+  const normalizedStatus = (status || "PENDING").toUpperCase();
+  const verificationStatus =
+    normalizedStatus === "APPROVED"
+      ? "APPROVED"
+      : normalizedStatus === "REJECTED"
+        ? "REJECTED"
+        : normalizedStatus === "ALL"
+          ? "ALL"
+          : "PENDING";
 
   console.log(`🔍 [GET_REQUESTS] Buscando providers con status: ${verificationStatus}`);
 
-  // Buscar usando el string directamente, incluyendo null como PENDING
-  const whereClause = verificationStatus === 'PENDING'
-    ? {
-        OR: [
-          { verification_status: 'PENDING' },
-          { verification_status: null }
-        ]
-      }
-    : {
-        verification_status: verificationStatus,
-      };
+  const whereClause =
+    verificationStatus === "ALL"
+      ? {}
+      : verificationStatus === "PENDING"
+        ? {
+            OR: [
+              { verification_status: "PENDING" },
+              { verification_status: null },
+            ],
+          }
+        : {
+            verification_status: verificationStatus,
+          };
 
   // Obtener total para paginación
   const total = await prisma.providers.count({ where: whereClause });
@@ -1423,6 +1431,27 @@ async function approveRequest(event: APIGatewayProxyEventV2): Promise<APIGateway
     where: { provider_id: requestId },
     data: { is_active: true },
   });
+
+  const categorySlug = provider.service_categories?.slug;
+  if (
+    (categorySlug === "clinic" || categorySlug === "clinica") &&
+    provider.users?.id
+  ) {
+    try {
+      const { activateClinicForApprovedProvider } = await import(
+        "../clinics/clinic-context"
+      );
+      await activateClinicForApprovedProvider(provider.users.id);
+      console.log(
+        `✅ [APPROVE_REQUEST] Clínica activada para usuario ${provider.users.id}`,
+      );
+    } catch (clinicErr: any) {
+      console.error(
+        `❌ [APPROVE_REQUEST] Error activando clínica:`,
+        clinicErr?.message,
+      );
+    }
+  }
 
   // Enviar notificación a todos los pacientes (broadcast) sobre el nuevo proveedor
   try {

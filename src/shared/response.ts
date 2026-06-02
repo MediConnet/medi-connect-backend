@@ -106,7 +106,8 @@ export function errorResponse(
   message: string,
   statusCode: number = 400,
   errors?: any[],
-  event?: APIGatewayProxyEventV2
+  event?: APIGatewayProxyEventV2,
+  code?: string,
 ): APIGatewayProxyResult {
   const origin = getAllowedOrigin(event);
   
@@ -119,7 +120,6 @@ export function errorResponse(
       'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS',
       'Access-Control-Allow-Credentials': 'true',
       'Access-Control-Max-Age': '86400',
-      // Security headers (solo para web, apps móviles los ignoran)
       'X-Content-Type-Options': 'nosniff',
       'X-Frame-Options': 'DENY',
       'X-XSS-Protection': '1; mode=block',
@@ -128,12 +128,13 @@ export function errorResponse(
       success: false,
       message,
       ...(errors && { errors }),
-    } as ErrorResponse),
+      ...(code && { code }),
+    } as ErrorResponse & { code?: string }),
   };
 }
 
-export function unauthorizedResponse(message: string = 'Unauthorized', event?: APIGatewayProxyEventV2): APIGatewayProxyResult {
-  return errorResponse(message, 401, undefined, event);
+export function unauthorizedResponse(message: string = 'Unauthorized', code?: string, event?: APIGatewayProxyEventV2): APIGatewayProxyResult {
+  return errorResponse(message, 401, undefined, event, code);
 }
 
 export function forbiddenResponse(message: string = 'Forbidden', event?: APIGatewayProxyEventV2): APIGatewayProxyResult {

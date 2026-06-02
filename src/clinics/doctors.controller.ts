@@ -6,6 +6,8 @@ import { logger } from '../shared/logger';
 import { getPrismaClient } from '../shared/prisma';
 import { errorResponse, internalErrorResponse, notFoundResponse, paginatedResponse, successResponse } from '../shared/response';
 import { parseBody, inviteDoctorSchema, updateDoctorStatusSchema, updateDoctorOfficeSchema, extractIdFromPath } from '../shared/validators';
+import { isRegisteredDoctorByEmail, findNonDoctorUserByEmail, normalizeInvitationEmail } from './invitation-helpers';
+import { resolveClinicForAuthUser } from './clinic-context';
 import { randomBytes } from 'crypto';
 
 // Helper para obtener datos del doctor desde las relaciones
@@ -69,10 +71,7 @@ export async function getDoctors(event: APIGatewayProxyEventV2): Promise<APIGate
   const queryParams = event.queryStringParameters || {};
 
   try {
-    // Buscar clínica del usuario autenticado
-    const clinic = await prisma.clinics.findFirst({
-      where: { user_id: authContext.user.id },
-    });
+    const { clinic } = await resolveClinicForAuthUser(authContext.user.id);
 
     if (!clinic) {
       console.error('❌ [CLINICS] Clínica no encontrada');
@@ -168,33 +167,61 @@ export async function inviteDoctor(event: APIGatewayProxyEventV2): Promise<APIGa
       email: body.email,
     });
 
-    // Buscar clínica del usuario autenticado
-    const clinic = await prisma.clinics.findFirst({
-      where: { user_id: authContext.user.id },
-    });
+    const { clinic } = await resolveClinicForAuthUser(authContext.user.id);
 
     if (!clinic) {
       console.error('❌ [CLINICS] Clínica no encontrada');
       return notFoundResponse('Clinic not found');
     }
 
-    // Verificar que el email no esté ya registrado en esta clínica
-    const existingDoctor = await prisma.clinic_doctors.findFirst({
+    const normalizedEmail = normalizeInvitationEmail(body.email);
+    const doctorExists = await isRegisteredDoctorByEmail(prisma, normalizedEmail);
+
+    if (doctorExists) {
+      console.log(`📧 [CLINICS] Invitación (invite) a usuario existente: ${normalizedEmail}`);
+    } else {
+      console.log(`📧 [CLINICS] Invitación (invite) a usuario nuevo: ${normalizedEmail}`);
+    }
+
+    // CASO B: Verificar que el email no pertenezca a un usuario con rol no-médico
+    const nonDoctorUser = await findNonDoctorUserByEmail(prisma, normalizedEmail);
+    if (nonDoctorUser) {
+      console.error(`❌ [CLINICS] El email ${normalizedEmail} pertenece al rol ${nonDoctorUser.role} — no es médico`);
+      return errorResponse(
+        'El usuario existe pero no pertenece al rol Médico. Solo es posible asociar usuarios médicos a una clínica.',
+        400,
+      );
+    }
+
+    // Verificar asociación activa existente (is_invited=false = ya aceptó)
+    const existingActiveDoctor = await prisma.clinic_doctors.findFirst({
       where: {
         clinic_id: clinic.id,
         users: {
-          email: body.email
-        }
+          email: { equals: normalizedEmail, mode: 'insensitive' },
+        },
+        is_invited: false,
       },
     });
 
-    if (existingDoctor) {
-      if (!existingDoctor.is_invited) {
-        console.error(`❌ [CLINICS] El email ${body.email} ya está registrado y activo en esta clínica`);
-        return errorResponse('Email already registered and active in this clinic', 400);
-      }
-      
-      console.log(`⚠️ [CLINICS] El email ${body.email} ya tiene una invitación pendiente. Actualizando invitación...`);
+    if (existingActiveDoctor) {
+      console.error(`❌ [CLINICS] El email ${normalizedEmail} ya es médico activo en esta clínica`);
+      return errorResponse('Este médico ya pertenece a la clínica.', 400);
+    }
+
+    // Verificar si ya existe un registro de clinic_doctors con invitación pendiente
+    const existingPendingDoctor = await prisma.clinic_doctors.findFirst({
+      where: {
+        clinic_id: clinic.id,
+        users: {
+          email: { equals: normalizedEmail, mode: 'insensitive' },
+        },
+        is_invited: true,
+      },
+    });
+
+    if (existingPendingDoctor) {
+      console.log(`⚠️ [CLINICS] El email ${normalizedEmail} ya tiene una invitación pendiente. Actualizando invitación...`);
       
       const invitationToken = randomBytes(32).toString('base64url');
       const expiresAt = new Date();
@@ -204,7 +231,7 @@ export async function inviteDoctor(event: APIGatewayProxyEventV2): Promise<APIGa
         const existingInvitation = await tx.doctor_invitations.findFirst({
           where: {
             clinic_id: clinic.id,
-            email: body.email,
+            email: { equals: normalizedEmail, mode: 'insensitive' },
             status: 'pending',
           },
         });
@@ -216,6 +243,7 @@ export async function inviteDoctor(event: APIGatewayProxyEventV2): Promise<APIGa
               invitation_token: invitationToken,
               expires_at: expiresAt,
               status: 'pending',
+              doctor_exists: doctorExists,
             },
           });
         } else {
@@ -223,16 +251,17 @@ export async function inviteDoctor(event: APIGatewayProxyEventV2): Promise<APIGa
             data: {
               id: randomUUID(),
               clinic_id: clinic.id,
-              email: body.email,
+              email: normalizedEmail,
               invitation_token: invitationToken,
               expires_at: expiresAt,
               status: 'pending',
+              doctor_exists: doctorExists,
             },
           });
         }
         
         const updatedDoctor = await tx.clinic_doctors.update({
-          where: { id: existingDoctor.id },
+          where: { id: existingPendingDoctor.id },
           data: {
             invitation_token: invitationToken,
             invitation_expires_at: expiresAt,
@@ -243,10 +272,8 @@ export async function inviteDoctor(event: APIGatewayProxyEventV2): Promise<APIGa
         return { doctor: updatedDoctor, invitationToken, expiresAt };
       });
       
-      console.log(`✅ [CLINICS] Invitación actualizada exitosamente: ${body.email}`);
+      console.log(`✅ [CLINICS] Invitación actualizada exitosamente: ${normalizedEmail}`);
       
-      // Enviar email de invitación (asíncrono, no bloquea la respuesta)
-      // Frontend espera la ruta: https://www.docalink.com/clinic/invite/{TOKEN}
       const frontendUrl = process.env.FRONTEND_URL || 'https://docalink.com';
       const invitationLink = `${frontendUrl}/clinic/invite/${result.invitationToken}`;
       
@@ -256,31 +283,32 @@ export async function inviteDoctor(event: APIGatewayProxyEventV2): Promise<APIGa
       const emailHtml = generateDoctorInvitationEmail({
         clinicName: clinic.name,
         invitationLink,
+        doctorExists,
       });
 
-      console.log(`📧 [CLINICS] Iniciando envío de email de invitación a: ${body.email}`);
+      console.log(`📧 [CLINICS] Iniciando envío de email de invitación a: ${normalizedEmail}`);
       
-      sendEmail({
-        to: body.email,
-        subject: `Invitación de ${clinic.name} - DOCALINK`,
-        html: emailHtml,
-      })
-        .then((emailSent) => {
-          if (emailSent) {
-            console.log(`✅ [CLINICS] Email de invitación enviado exitosamente a: ${body.email}`);
-          } else {
-            console.error(`❌ [CLINICS] FALLO: No se pudo enviar email de invitación a ${body.email}`);
-          }
+        sendEmail({
+          to: normalizedEmail,
+          subject: `Invitación de ${clinic.name} - DOCALINK`,
+          html: emailHtml,
         })
-        .catch((error: any) => {
-          console.error(`❌ [CLINICS] ERROR al enviar email de invitación a ${body.email}:`, error.message);
-        });
+          .then((emailSent) => {
+            if (emailSent) {
+              console.log(`✅ [CLINICS] Email de invitación enviado exitosamente a: ${normalizedEmail}`);
+            } else {
+              console.error(`❌ [CLINICS] FALLO: No se pudo enviar email de invitación a ${normalizedEmail}`);
+            }
+          })
+          .catch((error: any) => {
+            console.error(`❌ [CLINICS] ERROR al enviar email de invitación a ${normalizedEmail}:`, error.message);
+          });
       
       return successResponse(
         {
-          id: existingDoctor.id,
+          id: existingPendingDoctor.id,
           clinicId: clinic.id,
-          email: body.email,
+          email: normalizedEmail,
           invitationToken: result.invitationToken,
           expiresAt: result.expiresAt.toISOString(),
           status: 'pending',
@@ -291,19 +319,20 @@ export async function inviteDoctor(event: APIGatewayProxyEventV2): Promise<APIGa
       );
     }
 
-    const invitationToken = randomBytes(32).toString('base64url');
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7);
+    const newInvitationToken = randomBytes(32).toString('base64url');
+    const newExpiresAt = new Date();
+    newExpiresAt.setDate(newExpiresAt.getDate() + 7);
 
     const result = await prisma.$transaction(async (tx) => {
       const invitation = await tx.doctor_invitations.create({
         data: {
           id: randomUUID(),
           clinic_id: clinic.id,
-          email: body.email,
-          invitation_token: invitationToken,
-          expires_at: expiresAt,
+          email: normalizedEmail,
+          invitation_token: newInvitationToken,
+          expires_at: newExpiresAt,
           status: 'pending',
+          doctor_exists: doctorExists,
         },
       });
 
@@ -311,11 +340,11 @@ export async function inviteDoctor(event: APIGatewayProxyEventV2): Promise<APIGa
         data: {
           id: randomUUID(),
           clinic_id: clinic.id,
-          user_id: null, // Se asignará al aceptar
+          user_id: null,
           is_invited: true,
           is_active: true,
-          invitation_token: invitationToken,
-          invitation_expires_at: expiresAt,
+          invitation_token: newInvitationToken,
+          invitation_expires_at: newExpiresAt,
         },
       });
 
@@ -327,7 +356,7 @@ export async function inviteDoctor(event: APIGatewayProxyEventV2): Promise<APIGa
     // Enviar email de invitación (asíncrono, no bloquea la respuesta)
     // Frontend espera la ruta: https://www.docalink.com/clinic/invite/{TOKEN}
     const frontendUrl = process.env.FRONTEND_URL || 'https://docalink.com';
-    const invitationLink = `${frontendUrl}/clinic/invite/${invitationToken}`;
+    const invitationLink = `${frontendUrl}/clinic/invite/${newInvitationToken}`;
     
     const { sendEmail } = await import('../shared/email-adapter');
     const { generateDoctorInvitationEmail } = await import('../shared/email');
@@ -335,33 +364,34 @@ export async function inviteDoctor(event: APIGatewayProxyEventV2): Promise<APIGa
     const emailHtml = generateDoctorInvitationEmail({
       clinicName: clinic.name,
       invitationLink,
+      doctorExists,
     });
 
-    console.log(`📧 [CLINICS] Iniciando envío de email de invitación a: ${body.email}`);
+    console.log(`📧 [CLINICS] Iniciando envío de email de invitación a: ${normalizedEmail}`);
     
     sendEmail({
-      to: body.email,
+      to: normalizedEmail,
       subject: `Invitación de ${clinic.name} - DOCALINK`,
       html: emailHtml,
     })
       .then((emailSent) => {
         if (emailSent) {
-          console.log(`✅ [CLINICS] Email de invitación enviado exitosamente a: ${body.email}`);
+          console.log(`✅ [CLINICS] Email de invitación enviado exitosamente a: ${normalizedEmail}`);
         } else {
-          console.error(`❌ [CLINICS] FALLO: No se pudo enviar email de invitación a ${body.email}`);
+          console.error(`❌ [CLINICS] FALLO: No se pudo enviar email de invitación a ${normalizedEmail}`);
         }
       })
       .catch((error: any) => {
-        console.error(`❌ [CLINICS] ERROR al enviar email de invitación a ${body.email}:`, error.message);
+        console.error(`❌ [CLINICS] ERROR al enviar email de invitación a ${normalizedEmail}:`, error.message);
       });
     
     return successResponse(
       {
         id: result.invitation.id,
         clinicId: clinic.id,
-        email: body.email,
-        invitationToken: invitationToken,
-        expiresAt: expiresAt.toISOString(),
+        email: normalizedEmail,
+        invitationToken: newInvitationToken,
+        expiresAt: newExpiresAt.toISOString(),
         status: 'pending',
         createdAt: result.invitation.created_at?.toISOString() || null,
         invitationLink,
@@ -395,9 +425,7 @@ export async function updateDoctorStatus(event: APIGatewayProxyEventV2): Promise
     const doctorId = extractIdFromPath(event.requestContext.http.path, '/api/clinics/doctors/', '/status');
     const body = parseBody(event.body, updateDoctorStatusSchema);
 
-    const clinic = await prisma.clinics.findFirst({
-      where: { user_id: authContext.user.id },
-    });
+    const { clinic } = await resolveClinicForAuthUser(authContext.user.id);
 
     if (!clinic) {
       console.error('❌ [CLINICS] Clínica no encontrada');
@@ -457,9 +485,7 @@ export async function updateDoctorOffice(event: APIGatewayProxyEventV2): Promise
     const doctorId = extractIdFromPath(event.requestContext.http.path, '/api/clinics/doctors/', '/office');
     const body = parseBody(event.body, updateDoctorOfficeSchema);
 
-    const clinic = await prisma.clinics.findFirst({
-      where: { user_id: authContext.user.id },
-    });
+    const { clinic } = await resolveClinicForAuthUser(authContext.user.id);
 
     if (!clinic) {
       console.error('❌ [CLINICS] Clínica no encontrada');
@@ -518,9 +544,7 @@ export async function deleteDoctor(event: APIGatewayProxyEventV2): Promise<APIGa
   try {
     const doctorId = extractIdFromPath(event.requestContext.http.path, '/api/clinics/doctors/');
 
-    const clinic = await prisma.clinics.findFirst({
-      where: { user_id: authContext.user.id },
-    });
+    const { clinic } = await resolveClinicForAuthUser(authContext.user.id);
 
     if (!clinic) {
       console.error('❌ [CLINICS] Clínica no encontrada');
@@ -611,9 +635,7 @@ export async function getDoctorProfile(event: APIGatewayProxyEventV2): Promise<A
   try {
     const doctorId = extractIdFromPath(event.requestContext.http.path, '/api/clinics/doctors/', '/profile');
 
-    const clinic = await prisma.clinics.findFirst({
-      where: { user_id: authContext.user.id },
-    });
+    const { clinic } = await resolveClinicForAuthUser(authContext.user.id);
 
     if (!clinic) {
       console.error('❌ [CLINICS] Clínica no encontrada');

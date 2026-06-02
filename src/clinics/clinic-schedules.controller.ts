@@ -12,6 +12,7 @@ import {
   successResponse,
 } from '../shared/response';
 import { parseBody, clinicScheduleSchema } from '../shared/validators';
+import { resolveClinicForAuthUser } from './clinic-context';
 
 // Helper para convertir número de día a nombre
 function dayNumberToName(day: number): string {
@@ -68,9 +69,16 @@ export async function getClinicSchedule(
   const prisma = getPrismaClient();
 
   try {
-    // Buscar clínica del usuario autenticado
+    const { clinic: baseClinic } = await resolveClinicForAuthUser(
+      authContext.user.id,
+    );
+    if (!baseClinic) {
+      console.error('❌ [CLINICS] Clínica no encontrada');
+      return notFoundResponse('Clinic not found');
+    }
+
     const clinic = await prisma.clinics.findFirst({
-      where: { user_id: authContext.user.id },
+      where: { id: baseClinic.id },
       include: {
         clinic_schedules: {
           orderBy: {
@@ -81,7 +89,6 @@ export async function getClinicSchedule(
     });
 
     if (!clinic) {
-      console.error('❌ [CLINICS] Clínica no encontrada');
       return notFoundResponse('Clinic not found');
     }
 
@@ -145,10 +152,7 @@ export async function updateClinicSchedule(
     });
     const body = parseBody(event.body, bodySchema);
 
-    // Buscar clínica del usuario autenticado
-    const clinic = await prisma.clinics.findFirst({
-      where: { user_id: authContext.user.id },
-    });
+    const { clinic } = await resolveClinicForAuthUser(authContext.user.id);
 
     if (!clinic) {
       console.error('❌ [CLINICS] Clínica no encontrada');

@@ -322,7 +322,7 @@ export function generateJWT(payload: { userId: string; email: string; role: stri
     email: payload.email,
     role: payload.role,
     iat: now,
-    exp: now + 3600, // 1 hora
+    exp: now + 60 * 60 * 24 * 30, // 30 días (consistente con generateLocalJWT)
   };
   
   const encodedPayload = base64UrlEncode(JSON.stringify(jwtPayload));

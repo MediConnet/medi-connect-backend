@@ -14,19 +14,6 @@ import {
 import { getDoctorAvailability } from "./availability.controller";
 import { getBankAccount, upsertBankAccount } from "./bank-account.controller";
 import {
-  createReceptionMessage,
-  getClinicAppointments,
-  getClinicInfo,
-  getClinicNotifications,
-  getClinicProfile,
-  getDateBlocks,
-  getReceptionMessages,
-  markReceptionMessagesAsRead,
-  requestDateBlock,
-  updateClinicAppointmentStatus,
-  updateClinicProfile,
-} from "./clinic.controller";
-import {
   getBlockedSlots,
   createBlockedSlot,
   deleteBlockedSlot,
@@ -161,57 +148,6 @@ export async function handler(
         if (method === "PUT") return await updateSpecialtyFee(event);
         if (method === "DELETE") return await removeSpecialty(event);
       }
-    }
-
-    // --- Clinic Associated Doctor Routes ---
-    if (path === "/api/doctors/clinic-info") {
-      if (method === "GET") return await getClinicInfo(event);
-    }
-
-    if (path === "/api/doctors/clinic/profile") {
-      if (method === "GET") return await getClinicProfile(event);
-      if (method === "PUT") return await updateClinicProfile(event);
-    }
-
-    if (
-      path === "/api/doctors/clinic/appointments" ||
-      path.startsWith("/api/doctors/clinic/appointments?")
-    ) {
-      if (method === "GET") return await getClinicAppointments(event);
-    }
-
-    if (
-      path.startsWith("/api/doctors/clinic/appointments/") &&
-      path.endsWith("/status")
-    ) {
-      if (method === "PATCH") return await updateClinicAppointmentStatus(event);
-    }
-
-    if (path === "/api/doctors/clinic/reception/messages") {
-      if (method === "GET") return await getReceptionMessages(event);
-      if (method === "POST") return await createReceptionMessage(event);
-    }
-
-    if (path === "/api/doctors/clinic/reception/messages/read") {
-      if (method === "PATCH") return await markReceptionMessagesAsRead(event);
-    }
-
-    if (
-      path === "/api/doctors/clinic/date-blocks" ||
-      path.startsWith("/api/doctors/clinic/date-blocks?")
-    ) {
-      if (method === "GET") return await getDateBlocks(event);
-    }
-
-    if (path === "/api/doctors/clinic/date-blocks/request") {
-      if (method === "POST") return await requestDateBlock(event);
-    }
-
-    if (
-      path === "/api/doctors/clinic/notifications" ||
-      path.startsWith("/api/doctors/clinic/notifications?")
-    ) {
-      if (method === "GET") return await getClinicNotifications(event);
     }
 
     // --- Blocked Slots (Independent Doctors) ---

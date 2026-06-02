@@ -3,28 +3,15 @@ import { logger } from '../shared/logger';
 import { errorResponse, internalErrorResponse, optionsResponse } from '../shared/response';
 import { getProfile, updateProfile, uploadLogo } from './profile.controller';
 import { getDashboard } from './dashboard.controller';
-import { getDoctors, updateDoctorStatus, updateDoctorOffice, deleteDoctor, getDoctorProfile } from './doctors.controller';
-import { validateInvitation, acceptInvitation, rejectInvitation, sendInvitation, generateInvitationLink } from './invitations.controller';
+import { getDoctors, inviteDoctor, updateDoctorStatus, updateDoctorOffice, deleteDoctor, getDoctorProfile } from './doctors.controller';
 import { getAppointments, updateAppointmentStatus, getTodayReception, updateReceptionStatus } from './appointments.controller';
 import { getDoctorSchedule, updateDoctorSchedule } from './schedules.controller';
 import { getClinicSchedule, updateClinicSchedule } from './clinic-schedules.controller';
 import { getClinicNotifications, getUnreadCount, markNotificationAsRead, markAllAsRead } from './notifications.controller';
 import { getReceptionMessages, createReceptionMessage, markReceptionMessagesRead } from './reception-messages.controller';
 import { getClinicPayments, getClinicPaymentDetail, distributePayment, getDoctorPayments, payDoctor, getPaymentDistribution, getAdminClinicPaymentsList, markAdminClinicPaymentPaid } from './payments.controller';
-import {
-  getClinicInfo as getDoctorClinicInfo,
-  getClinicProfile as getDoctorClinicProfile,
-  updateClinicProfile as updateDoctorClinicProfile,
-  getClinicAppointments as getDoctorClinicAppointments,
-  updateClinicAppointmentStatus as updateDoctorClinicAppointmentStatus,
-  getReceptionMessages as getDoctorReceptionMessages,
-  createReceptionMessage as createDoctorReceptionMessage,
-  markReceptionMessagesAsRead as markDoctorReceptionMessagesAsRead,
-  getDateBlocks as getDoctorDateBlocks,
-  requestDateBlock as requestDoctorDateBlock,
-  getClinicNotifications as getDoctorClinicNotifications,
-} from './doctor-associated.controller';
 import { extractIdFromPath } from '../shared/validators';
+import { generateInvitationLink, validateInvitation, acceptInvitation, rejectInvitation, associateInvitation, cancelInvitation } from './invitations.controller';
 
 export async function handler(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   const method = event.requestContext.http.method;
@@ -73,76 +60,60 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       if (method === 'GET') return await getDoctors(event);
     }
 
-    // --- Rutas de Invitación de Médicos ---
-    
-    // POST /api/clinics/doctors/invitation - Generar link de invitación (usado por frontend)
-    if (path === '/api/clinics/doctors/invitation') {
-      console.log(`✅ [CLINICS HANDLER] Ruta de invitación encontrada: ${path}`);
-      if (method === 'POST') return await generateInvitationLink(event);
-    }
-
-    // POST /api/clinics/invitations (nueva ruta alternativa)
-    if (path === '/api/clinics/invitations') {
-      console.log(`✅ [CLINICS HANDLER] Ruta de invitations encontrada`);
-      if (method === 'POST') return await sendInvitation(event);
-    }
-
-    // POST /api/clinics/doctors/invite/link - Generar link sin enviar email
-    if (path === '/api/clinics/invite' || path === '/api/clinics/doctors/invite/link') {
-      if (method === 'POST') return await generateInvitationLink(event);
-    }
-
-    // POST /api/clinics/doctors/invite - Enviar invitación por email
+    // POST /api/clinics/doctors/invite - Invitar médico por email
     if (path === '/api/clinics/doctors/invite') {
-      console.log(`✅ [CLINICS HANDLER] Ruta de invitación por email encontrada: ${path}`);
-      if (method === 'POST') return await sendInvitation(event);
+      console.log(`✅ [CLINICS HANDLER] Ruta de invitación encontrada`);
+      if (method === 'POST') return await inviteDoctor(event);
     }
+
+    // POST /api/clinics/doctors/invitation - Generar link de invitación
+    if (path === '/api/clinics/doctors/invitation') {
+      console.log(`✅ [CLINICS HANDLER] Ruta de link de invitación encontrada`);
+      if (method === 'POST') return await generateInvitationLink(event);
+    }
+
+    // POST /api/clinics/doctors/invite/link - Generar link de invitación (alias)
+    if (path === '/api/clinics/doctors/invite/link') {
+      console.log(`✅ [CLINICS HANDLER] Ruta de link de invitación (alias) encontrada`);
+      if (method === 'POST') return await generateInvitationLink(event);
+    }
+
+    // PUT /api/clinics/doctors/invite/:id/cancel — Cancelar invitación
+    if (path.startsWith('/api/clinics/doctors/invite/') && path.endsWith('/cancel')) {
+      if (method === 'PUT') return await cancelInvitation(event);
+    }
+
+    const isClinicDoctorAdminRoute =
+      path.startsWith('/api/clinics/doctors/') && !path.includes('/doctors/me/');
 
     // --- Rutas de Estado de Médico ---
-    if (path.startsWith('/api/clinics/doctors/') && path.endsWith('/status')) {
+    if (isClinicDoctorAdminRoute && path.endsWith('/status')) {
       if (method === 'PATCH') return await updateDoctorStatus(event);
     }
 
     // --- Rutas de Consultorio de Médico ---
-    if (path.startsWith('/api/clinics/doctors/') && path.endsWith('/office')) {
+    if (isClinicDoctorAdminRoute && path.endsWith('/office')) {
       if (method === 'PATCH') return await updateDoctorOffice(event);
     }
 
     // --- Rutas de Eliminación de Médico ---
-    if (path.startsWith('/api/clinics/doctors/') && 
-        !path.includes('/status') && 
-        !path.includes('/office') && 
-        !path.includes('/schedule') && 
+    if (isClinicDoctorAdminRoute &&
+        !path.includes('/status') &&
+        !path.includes('/office') &&
+        !path.includes('/schedule') &&
         !path.includes('/invite')) {
       if (method === 'DELETE') return await deleteDoctor(event);
     }
 
-    // --- Rutas de Horarios de Médico ---
-    if (path.startsWith('/api/clinics/doctors/') && path.endsWith('/schedule')) {
+    // --- Rutas de Horarios de Médico (admin o médico con :doctorId) ---
+    if (isClinicDoctorAdminRoute && path.endsWith('/schedule')) {
       if (method === 'GET') return await getDoctorSchedule(event);
       if (method === 'PUT') return await updateDoctorSchedule(event);
     }
 
-    // --- Rutas de Perfil de Médico ---
-    if (path.startsWith('/api/clinics/doctors/') && path.endsWith('/profile')) {
+    // --- Rutas de Perfil de Médico (vista clínica) ---
+    if (isClinicDoctorAdminRoute && path.endsWith('/profile')) {
       if (method === 'GET') return await getDoctorProfile(event);
-    }
-
-    // --- Rutas de Invitaciones (públicas) ---
-    if (path.startsWith('/api/clinics/invite/') && path.endsWith('/accept')) {
-      if (method === 'POST') {
-        return await acceptInvitation(event);
-      }
-    }
-
-    if (path.startsWith('/api/clinics/invite/') && path.endsWith('/reject')) {
-      if (method === 'POST') {
-        return await rejectInvitation(event);
-      }
-    }
-
-    if (path.startsWith('/api/clinics/invite/')) {
-      if (method === 'GET') return await validateInvitation(event);
     }
 
     // --- Rutas de Citas ---
@@ -254,48 +225,21 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       if (method === 'GET') return await getAdminClinicPaymentsList(event);
     }
 
-    // --- Rutas de Médico Asociado (doctor-side clinic operations) ---
-    // GET /api/clinics/doctors/me/info
-    if (path === '/api/clinics/doctors/me/info') {
-      if (method === 'GET') return await getDoctorClinicInfo(event);
+    // --- Rutas de Invitaciones (públicas) ---
+    if (path.startsWith('/api/clinics/invite/') && path.endsWith('/accept')) {
+      if (method === 'POST') return await acceptInvitation(event);
     }
 
-    // GET/PUT /api/clinics/doctors/me/profile
-    if (path === '/api/clinics/doctors/me/profile') {
-      if (method === 'GET') return await getDoctorClinicProfile(event);
-      if (method === 'PUT') return await updateDoctorClinicProfile(event);
+    if (path.startsWith('/api/clinics/invite/') && path.endsWith('/associate')) {
+      if (method === 'POST') return await associateInvitation(event);
     }
 
-    // GET /api/clinics/doctors/me/appointments
-    if (path === '/api/clinics/doctors/me/appointments' || path.startsWith('/api/clinics/doctors/me/appointments?')) {
-      if (method === 'GET') return await getDoctorClinicAppointments(event);
+    if (path.startsWith('/api/clinics/invite/') && path.endsWith('/reject')) {
+      if (method === 'POST') return await rejectInvitation(event);
     }
 
-    // PATCH /api/clinics/doctors/me/appointments/:id/status
-    if (path.startsWith('/api/clinics/doctors/me/appointments/') && path.endsWith('/status')) {
-      if (method === 'PATCH') return await updateDoctorClinicAppointmentStatus(event);
-    }
-
-    // GET/POST /api/clinics/doctors/me/messages
-    if (path === '/api/clinics/doctors/me/messages' || path.startsWith('/api/clinics/doctors/me/messages?')) {
-      if (method === 'GET') return await getDoctorReceptionMessages(event);
-      if (method === 'POST') return await createDoctorReceptionMessage(event);
-    }
-
-    // PATCH /api/clinics/doctors/me/messages/read
-    if (path === '/api/clinics/doctors/me/messages/read') {
-      if (method === 'PATCH') return await markDoctorReceptionMessagesAsRead(event);
-    }
-
-    // GET/POST /api/clinics/doctors/me/date-blocks
-    if (path === '/api/clinics/doctors/me/date-blocks' || path.startsWith('/api/clinics/doctors/me/date-blocks?')) {
-      if (method === 'GET') return await getDoctorDateBlocks(event);
-      if (method === 'POST') return await requestDoctorDateBlock(event);
-    }
-
-    // GET /api/clinics/doctors/me/notifications
-    if (path === '/api/clinics/doctors/me/notifications' || path.startsWith('/api/clinics/doctors/me/notifications?')) {
-      if (method === 'GET') return await getDoctorClinicNotifications(event);
+    if (path.startsWith('/api/clinics/invite/')) {
+      if (method === 'GET') return await validateInvitation(event);
     }
 
     // Si no coincide ninguna ruta

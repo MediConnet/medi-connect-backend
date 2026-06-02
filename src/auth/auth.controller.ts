@@ -11,7 +11,15 @@ import { randomUUID } from "crypto";
 import { OAuth2Client } from "google-auth-library";
 import { enum_roles, enum_verification } from "../generated/prisma/client";
 import { requireAuth } from "../shared/auth";
-import { ROLE_TO_ENUM, TYPE_TO_SLUG } from "../shared/constants";
+import {
+  isProviderApproved,
+} from "../clinics/clinic-context";
+import {
+  CLINICS_PROVIDER_TYPE,
+  ROLE_TO_ENUM,
+  TYPE_TO_SLUG,
+  normalizeProviderServiceType,
+} from "../shared/constants";
 import { logger } from "../shared/logger";
 import {
   isMultipartContentType,
@@ -263,13 +271,15 @@ async function createProviderProfile(prisma: any, userId: string, body: any) {
 
   // Lógica Clínicas
   if (body.type === "clinic" || body.type === "clinica") {
+    const clinicPhone = body.phone || "0000000000";
     await prisma.clinics.create({
       data: {
         id: randomUUID(),
         user_id: userId,
         name: businessName,
         address: fullAddress,
-        phone: body.phone || "0000000000",
+        phone: clinicPhone,
+        whatsapp: body.whatsapp || clinicPhone,
         is_active: false,
       },
     });
@@ -290,7 +300,10 @@ async function processClinicInvitation(
   invitationToken: string | null | undefined,
   userName: string | null | undefined,
 ): Promise<void> {
-  if (!invitationToken) return;
+  if (!invitationToken) {
+    console.log(`⚠️ [REGISTER] No hay token de invitación — omitiendo asociación`);
+    return;
+  }
 
   try {
     console.log(
@@ -302,7 +315,7 @@ async function processClinicInvitation(
         invitation_token: invitationToken,
         status: "pending",
         expires_at: { gte: new Date() },
-        email: userEmail,
+        email: { equals: userEmail, mode: "insensitive" },
       },
       include: {
         clinics: true,
@@ -316,6 +329,14 @@ async function processClinicInvitation(
       return;
     }
 
+    console.log(`[INVITATION STATUS]`, JSON.stringify({
+      id: invitation.id,
+      clinicId: invitation.clinic_id,
+      email: invitation.email,
+      status: invitation.status,
+      expiresAt: invitation.expires_at,
+    }));
+
     const provider = await prisma.providers.findFirst({
       where: { user_id: userId },
     });
@@ -327,19 +348,44 @@ async function processClinicInvitation(
       return;
     }
 
+    console.log(`[DOCTOR PROFILE]`, JSON.stringify({
+      providerId: provider.id,
+      commercialName: provider.commercial_name,
+      verificationStatus: provider.verification_status,
+    }));
+
+    // Buscar asociación existente por user_id O por clinic_id + user_id null (invitación sin completar)
     const existingAssociation = await prisma.clinic_doctors.findFirst({
       where: {
-        user_id: userId,
         clinic_id: invitation.clinic_id,
+        OR: [
+          { user_id: userId },
+          { user_id: null },
+        ],
       },
     });
 
     if (existingAssociation) {
-      console.log(`⚠️ [REGISTER] Usuario ya está asociado a esta clínica`);
+      if (existingAssociation.user_id === userId) {
+        console.log(`⚠️ [REGISTER] Usuario ya está asociado a esta clínica — actualizando invitación`);
+      } else {
+        console.log(`⚠️ [REGISTER] Actualizando registro previo de clinic_doctors (user_id era null)`);
+        await prisma.clinic_doctors.update({
+          where: { id: existingAssociation.id },
+          data: {
+            user_id: userId,
+            is_invited: false,
+            is_active: true,
+            invitation_token: null,
+            invitation_expires_at: null,
+          },
+        });
+      }
       await prisma.doctor_invitations.update({
         where: { id: invitation.id },
         data: { status: "accepted" },
       });
+      console.log(`[ASSOCIATION]`, JSON.stringify({ clinicId: invitation.clinic_id, userId, status: 'ACTIVE' }));
       return;
     }
 
@@ -348,12 +394,12 @@ async function processClinicInvitation(
         id: randomUUID(),
         clinic_id: invitation.clinic_id,
         user_id: userId,
-        email: userEmail,
-        name: userName || provider.commercial_name || userEmail,
         is_invited: false,
         is_active: true,
       },
     });
+
+    console.log(`[ASSOCIATION]`, JSON.stringify({ clinicId: invitation.clinic_id, userId, status: 'ACTIVE' }));
 
     await prisma.doctor_invitations.update({
       where: { id: invitation.id },
@@ -365,6 +411,7 @@ async function processClinicInvitation(
     );
   } catch (error: any) {
     console.error(`❌ [REGISTER] Error al procesar invitación:`, error.message);
+    throw error;
   }
 }
 
@@ -469,6 +516,7 @@ export async function register(
             type: f["type"],
             specialties,
             whatsapp: f["whatsapp"],
+            invitationToken: f["invitationToken"],
           });
 
           const baseUrl =
@@ -511,8 +559,12 @@ export async function register(
       !CLIENT_ID ||
       !USER_POOL_ID;
 
+    // Normalizar email para evitar duplicados por mayúsculas/minúsculas
+    const normalizedEmail = body.email.trim().toLowerCase();
+    body.email = normalizedEmail;
+
     const existingUser = await prisma.users.findFirst({
-      where: { email: body.email },
+      where: { email: { equals: normalizedEmail, mode: 'insensitive' } },
     });
 
     if (existingUser) {
@@ -570,6 +622,23 @@ export async function register(
               documents: uploadedDocuments,
             },
           );
+          const existingUserInvitationToken =
+            body.invitationToken ||
+            event.queryStringParameters?.invitationToken ||
+            null;
+          if (existingUserInvitationToken) {
+            const existingUserName =
+              body.name ||
+              [body.firstName, body.lastName].filter(Boolean).join(" ") ||
+              null;
+            await processClinicInvitation(
+              prisma,
+              existingUser.id,
+              existingUser.email,
+              existingUserInvitationToken,
+              existingUserName,
+            );
+          }
           return successResponse(
             {
               userId: existingUser.id,
@@ -615,6 +684,25 @@ export async function register(
               },
             });
           }
+        }
+
+        // Procesar invitación de clínica si existe token (Caso A: doctor ya registrado)
+        const existingUserInvitationToken =
+          body.invitationToken ||
+          event.queryStringParameters?.invitationToken ||
+          null;
+        if (existingUserInvitationToken) {
+          const existingUserName =
+            body.name ||
+            [body.firstName, body.lastName].filter(Boolean).join(" ") ||
+            null;
+          await processClinicInvitation(
+            prisma,
+            existingUser.id,
+            existingUser.email,
+            existingUserInvitationToken,
+            existingUserName,
+          );
         }
 
         return successResponse(
@@ -681,6 +769,7 @@ export async function register(
           body.invitationToken ||
           event.queryStringParameters?.invitationToken ||
           null;
+        console.log(`[AUDIT REGISTER] invitationToken=${invitationToken ? 'presente' : 'ausente'}, body keys=${Object.keys(body).join(',')}`);
         if (invitationToken) {
           const userName =
             body.name ||
@@ -696,6 +785,7 @@ export async function register(
         }
       }
 
+      console.log(`[AUDIT REGISTER] Usuario creado exitosamente: id=${user.id}, email=${user.email}, role=${user.role}`);
       return successResponse(
         {
           userId: user.id,
@@ -760,6 +850,7 @@ export async function register(
         body.invitationToken ||
         event.queryStringParameters?.invitationToken ||
         null;
+      console.log(`[AUDIT REGISTER COGNITO] invitationToken=${invitationToken ? 'presente' : 'ausente'}`);
       if (invitationToken) {
         const userName =
           body.name ||
@@ -775,6 +866,7 @@ export async function register(
       }
     }
 
+    console.log(`[AUDIT REGISTER COGNITO] Usuario creado: id=${user.id}, email=${user.email}, role=${user.role}`);
     return successResponse(
       {
         userId: user.id,
@@ -814,21 +906,41 @@ export async function login(
       console.log("🔧 [LOGIN] Modo desarrollo local");
       const prisma = getPrismaClient();
 
-      // Use $queryRaw to avoid ColumnNotFound bug with adapter-pg findFirst
+      // Usar LOWER para comparación case-insensitive
+      const normalizedLoginEmail = body.email.trim().toLowerCase();
       const users = await prisma.$queryRaw<any[]>`
         SELECT id, email, password_hash, role, is_active
-        FROM users WHERE email = ${body.email} LIMIT 1
+        FROM users WHERE LOWER(email) = ${normalizedLoginEmail} LIMIT 1
       `;
       const user = users[0] || null;
 
-      if (!user) return unauthorizedResponse("Credenciales inválidas");
+      if (!user) {
+        console.log(`[AUDIT LOGIN] Usuario no encontrado: ${normalizedLoginEmail}`);
+        const pendingInvite = await prisma.doctor_invitations.findFirst({
+          where: { email: { equals: normalizedLoginEmail, mode: 'insensitive' }, status: 'pending' },
+          select: { id: true },
+        });
+        if (pendingInvite) {
+          console.log(`[AUDIT LOGIN] Invitación pendiente encontrada para ${normalizedLoginEmail} — retornando INVITED_NOT_REGISTERED`);
+          return unauthorizedResponse(
+            "Has sido invitado, pero aún debes completar tu registro antes de iniciar sesión.",
+            "INVITED_NOT_REGISTERED",
+          );
+        }
+        console.log(`[AUDIT LOGIN] Sin invitación pendiente para ${normalizedLoginEmail} — retornando USER_NOT_FOUND`);
+        return unauthorizedResponse(
+          "No existe una cuenta registrada con este correo electrónico.",
+          "USER_NOT_FOUND",
+        );
+      }
+      console.log(`[AUDIT LOGIN] Usuario encontrado: id=${user.id}, email=${user.email}, role=${user.role}, is_active=${user.is_active}`);
 
       const isProduction =
         process.env.STAGE === "prod" || process.env.NODE_ENV === "production";
       const isDevelopment = !isProduction;
 
       if (!user.is_active && !isDevelopment)
-        return unauthorizedResponse("La cuenta de usuario está inactiva");
+        return unauthorizedResponse("La cuenta de usuario está inactiva", "USER_INACTIVE");
       if (!user.password_hash)
         return unauthorizedResponse("Credenciales inválidas");
 
@@ -837,7 +949,7 @@ export async function login(
         user.password_hash,
       );
 
-      if (!passwordMatch) return unauthorizedResponse("Credenciales inválidas");
+      if (!passwordMatch) return unauthorizedResponse("Credenciales inválidas", "WRONG_PASSWORD");
 
       let patientInfo = null;
       if (user.role === enum_roles.patient) {
@@ -857,12 +969,30 @@ export async function login(
         });
 
         if (clinic) {
+          const clinicProvider = await prisma.providers.findFirst({
+            where: {
+              user_id: user.id,
+              service_categories: { slug: { in: ["clinic", "clinica"] } },
+            },
+            select: { verification_status: true },
+          });
+
+          if (
+            clinicProvider &&
+            !isProviderApproved(clinicProvider.verification_status)
+          ) {
+            return unauthorizedResponse(
+              "Tu cuenta está en proceso de verificación. Debes esperar a ser aprobado para ingresar.",
+              "VERIFICATION_PENDING",
+            );
+          }
+
           providerInfo = {
             id: clinic.id,
             commercialName: clinic.name,
             logoUrl: clinic.logo_url,
           };
-          serviceType = "clinica";
+          serviceType = CLINICS_PROVIDER_TYPE;
         } else {
           const typeToSlug: Record<string, string> = {
             doctor: "doctor",
@@ -885,7 +1015,6 @@ export async function login(
               where: {
                 user_id: user.id,
                 service_categories: { slug: categorySlug },
-                verification_status: enum_verification.APPROVED,
               },
               include: {
                 service_categories: { select: { slug: true, name: true } },
@@ -899,7 +1028,6 @@ export async function login(
             provider = await prisma.providers.findFirst({
               where: {
                 user_id: user.id,
-                verification_status: enum_verification.APPROVED,
               },
               include: {
                 service_categories: { select: { slug: true, name: true } },
@@ -910,9 +1038,16 @@ export async function login(
           }
 
           if (provider) {
-            if (provider.verification_status !== enum_verification.APPROVED) {
+            if (!isProviderApproved(provider.verification_status)) {
               return unauthorizedResponse(
                 "Tu cuenta está en proceso de verificación. Debes esperar a ser aprobado para ingresar.",
+                "VERIFICATION_PENDING",
+              );
+            }
+            if (provider.verification_status === enum_verification.REJECTED) {
+              return unauthorizedResponse(
+                "Tu solicitud de registro fue rechazada. Contacta al administrador.",
+                "REGISTRATION_REJECTED",
               );
             }
 
@@ -973,9 +1108,7 @@ export async function login(
       const normalizedRole = user.role
         ? String(user.role).toLowerCase()
         : "patient";
-      const normalizedServiceType = serviceType
-        ? String(serviceType).toLowerCase()
-        : null;
+      const normalizedServiceType = normalizeProviderServiceType(serviceType);
 
       let firstName = "";
       let lastName = "";
@@ -1100,38 +1233,50 @@ export async function refresh(
       let serviceType = null;
       let providerInfo = null;
       if (user.role === enum_roles.provider) {
-        const provider = await prisma.providers.findFirst({
-          where: {
-            user_id: user.id,
-            verification_status: { in: [enum_verification.APPROVED, enum_verification.PENDING] },
-          },
-          include: {
-            service_categories: { select: { slug: true } },
-            pharmacy_chains: true,
-          },
+        const clinic = await prisma.clinics.findFirst({
+          where: { user_id: user.id },
+          select: { id: true, name: true, logo_url: true },
         });
-        if (provider) {
-          serviceType = provider.service_categories?.slug;
-          const isChainMember =
-            !!provider.chain_id && !!provider.pharmacy_chains;
-          const chain = provider.pharmacy_chains;
+
+        if (clinic) {
           providerInfo = {
-            id: provider.id,
-            commercialName:
-              isChainMember && chain ? chain.name : provider.commercial_name,
-            logoUrl:
-              isChainMember && chain
-                ? chain.logo_url || null
-                : provider.logo_url,
-            isChainMember: isChainMember,
-            chainName: isChainMember && chain ? chain.name : null,
-            chainLogo: isChainMember && chain ? chain.logo_url : null,
+            id: clinic.id,
+            commercialName: clinic.name,
+            logoUrl: clinic.logo_url,
           };
+          serviceType = CLINICS_PROVIDER_TYPE;
+        } else {
+          const provider = await prisma.providers.findFirst({
+            where: {
+              user_id: user.id,
+              verification_status: { in: [enum_verification.APPROVED, enum_verification.PENDING] },
+            },
+            include: {
+              service_categories: { select: { slug: true } },
+              pharmacy_chains: true,
+            },
+          });
+          if (provider) {
+            serviceType = provider.service_categories?.slug;
+            const isChainMember =
+              !!provider.chain_id && !!provider.pharmacy_chains;
+            const chain = provider.pharmacy_chains;
+            providerInfo = {
+              id: provider.id,
+              commercialName:
+                isChainMember && chain ? chain.name : provider.commercial_name,
+              logoUrl:
+                isChainMember && chain
+                  ? chain.logo_url || null
+                  : provider.logo_url,
+              isChainMember: isChainMember,
+              chainName: isChainMember && chain ? chain.name : null,
+              chainLogo: isChainMember && chain ? chain.logo_url : null,
+            };
+          }
         }
       }
-      const normalizedServiceType = serviceType
-        ? String(serviceType).toLowerCase()
-        : null;
+      const normalizedServiceType = normalizeProviderServiceType(serviceType);
 
       const responseData: any = {
         token: newToken,
@@ -1212,47 +1357,62 @@ export async function me(
   };
 
   if (user.role === enum_roles.provider) {
-    // Buscar provider incluyendo null como PENDING
-    const provider = await prisma.providers.findFirst({
-      where: {
-        user_id: user.id,
-        OR: [
-          { verification_status: { in: [enum_verification.APPROVED, enum_verification.PENDING] } },
-          { verification_status: null }, // Tratar null como PENDING
-        ],
-      },
-      include: {
-        service_categories: { select: { slug: true, name: true } },
-        pharmacy_chains: true,
-      },
+    const clinic = await prisma.clinics.findFirst({
+      where: { user_id: user.id },
+      select: { id: true, name: true, logo_url: true },
     });
 
-    if (provider) {
-      const serviceType = provider.service_categories?.slug || null;
-      const normalizedServiceType = serviceType
-        ? String(serviceType).toLowerCase()
-        : null;
-
-      const isChainMember = !!provider.chain_id && !!provider.pharmacy_chains;
-      const chain = provider.pharmacy_chains;
-      const displayName =
-        isChainMember && chain ? chain.name : provider.commercial_name;
-      const displayLogo =
-        isChainMember && chain ? chain.logo_url || null : provider.logo_url;
-
-      if (normalizedServiceType) {
-        responseData.serviceType = normalizedServiceType;
-        responseData.tipo = normalizedServiceType;
-      }
-      responseData.name = displayName;
+    if (clinic) {
+      responseData.serviceType = CLINICS_PROVIDER_TYPE;
+      responseData.tipo = CLINICS_PROVIDER_TYPE;
+      responseData.name = clinic.name;
       responseData.provider = {
-        id: provider.id,
-        commercialName: displayName,
-        logoUrl: displayLogo,
-        isChainMember: isChainMember,
-        chainName: isChainMember && chain ? chain.name : null,
-        chainLogo: isChainMember && chain ? chain.logo_url : null,
+        id: clinic.id,
+        commercialName: clinic.name,
+        logoUrl: clinic.logo_url,
       };
+    } else {
+      // Buscar provider incluyendo null como PENDING
+      const provider = await prisma.providers.findFirst({
+        where: {
+          user_id: user.id,
+          OR: [
+            { verification_status: { in: [enum_verification.APPROVED, enum_verification.PENDING] } },
+            { verification_status: null }, // Tratar null como PENDING
+          ],
+        },
+        include: {
+          service_categories: { select: { slug: true, name: true } },
+          pharmacy_chains: true,
+        },
+      });
+
+      if (provider) {
+        const normalizedServiceType = normalizeProviderServiceType(
+          provider.service_categories?.slug || null,
+        );
+
+        const isChainMember = !!provider.chain_id && !!provider.pharmacy_chains;
+        const chain = provider.pharmacy_chains;
+        const displayName =
+          isChainMember && chain ? chain.name : provider.commercial_name;
+        const displayLogo =
+          isChainMember && chain ? chain.logo_url || null : provider.logo_url;
+
+        if (normalizedServiceType) {
+          responseData.serviceType = normalizedServiceType;
+          responseData.tipo = normalizedServiceType;
+        }
+        responseData.name = displayName;
+        responseData.provider = {
+          id: provider.id,
+          commercialName: displayName,
+          logoUrl: displayLogo,
+          isChainMember: isChainMember,
+          chainName: isChainMember && chain ? chain.name : null,
+          chainLogo: isChainMember && chain ? chain.logo_url : null,
+        };
+      }
     }
   }
 

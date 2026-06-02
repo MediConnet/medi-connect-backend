@@ -15,9 +15,9 @@ import {
   type WeekSchedulePayload,
   type DaySchedulePayload,
   WEEK_DAYS,
-} from './schedule-helpers';
+} from '../clinics/schedule-helpers';
 
-const LOG = '[CLINICS SCHEDULE]';
+const LOG = '[ASSOCIATION SCHEDULE]';
 
 async function resolveClinicDoctor(
   doctorIdParam: string,
@@ -85,7 +85,7 @@ async function loadDoctorWeekSchedule(
 
 // GET /api/clinics/doctors/:doctorId/schedule  (doctorId puede ser "me")
 export async function getDoctorSchedule(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log(`${LOG} GET /api/clinics/doctors/{id}/schedule`);
+  console.log(`${LOG} GET /api/association/doctors/{id}/schedule`);
 
   try {
     const authResult = await requireRole(event, [enum_roles.provider]);
@@ -99,7 +99,7 @@ export async function getDoctorSchedule(event: APIGatewayProxyEventV2): Promise<
     const path = event.requestContext.http.path;
     const doctorIdParam = extractIdFromPath(
       path,
-      '/api/clinics/doctors/',
+      '/api/association/doctors/',
       '/schedule',
     );
     console.log(`${LOG} doctorIdParam: ${doctorIdParam}, path: ${path}`);
@@ -156,7 +156,7 @@ export async function getDoctorSchedule(event: APIGatewayProxyEventV2): Promise<
 
 // PUT /api/clinics/doctors/:doctorId/schedule
 export async function updateDoctorSchedule(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log(`${LOG} PUT /api/clinics/doctors/{id}/schedule`);
+  console.log(`${LOG} PUT /api/association/doctors/{id}/schedule`);
 
   try {
     const authResult = await requireRole(event, [enum_roles.provider]);
@@ -170,7 +170,7 @@ export async function updateDoctorSchedule(event: APIGatewayProxyEventV2): Promi
     const path = event.requestContext.http.path;
     const doctorIdParam = extractIdFromPath(
       path,
-      '/api/clinics/doctors/',
+      '/api/association/doctors/',
       '/schedule',
     );
     const body = parseBody(event.body, updateDoctorScheduleSchema);
