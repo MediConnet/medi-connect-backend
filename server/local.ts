@@ -156,10 +156,7 @@ async function handleLambdaResponse(
     }
   } catch (error: any) {
     const duration = Date.now() - startTime;
-    console.error(
-      `❌ [REQUEST] ${req.method} ${path} - Error después de ${duration}ms:`,
-      error.message,
-    );
+    console.error(`❌ [REQUEST] ${req.method} ${path} - Error después de ${duration}ms:`, error.message);
     res.status(500).json({
       success: false,
       message: error.message || "Internal server error",
@@ -180,6 +177,7 @@ import { handler as pharmaciesHandler } from "../src/pharmacies/handler";
 import { handler as pharmacyChainsHandler } from "../src/pharmacy-chains/handler";
 import { handler as publicHandler } from "../src/public/handler";
 import { handler as suppliesHandler } from "../src/supplies/handler";
+import { handler as commentsHandler } from "../src/comments/handler";
 
 // Importar otros handlers si existen
 let laboratoriesHandler: any;
@@ -212,31 +210,16 @@ try {
   console.error("❌ [CLINICS] Stack:", e.stack);
 }
 
-// =================================================================
-// 🚦 RUTAS (ENDPOINTS)
-// =================================================================
-
 // Routes - Auth
 app.use("/api/auth", async (req, res) => {
   const path = req.originalUrl.split("?")[0];
   await handleLambdaResponse(authHandler, req, res, path);
 });
 
-// Route - Public Ads (Debe ir antes de /api/public genérico)
-// Esta ruta es manejada por el módulo de Ads, no por el módulo Public general
-app.get("/api/public/ads", async (req, res) => {
-  const path = req.originalUrl.split("?")[0];
-  console.log(`🔍 [PUBLIC ADS] ${req.method} ${path}`);
-  // Enviamos al adsHandler, que tiene la lógica de getPublicAds
-  await handleLambdaResponse(adsHandler, req, res, path);
-});
-
-// Routes - Public (doctors, pharmacies, generic)
+// Routes - Public (doctors, pharmacies, etc.)
 app.use("/api/public", async (req, res) => {
   const path = req.originalUrl.split("?")[0];
-  console.log(
-    `🔍 [PUBLIC ROUTE] ${req.method} ${path} - originalUrl: ${req.originalUrl}`,
-  );
+  console.log(`🔍 [PUBLIC ROUTE] ${req.method} ${path} - originalUrl: ${req.originalUrl}`);
   await handleLambdaResponse(publicHandler, req, res, path);
 });
 
@@ -247,7 +230,7 @@ app.use("/api/doctors", async (req, res) => {
 });
 
 app.use("/api/specialties", async (req, res) => {
-  const path = req.originalUrl.split("?")[0];
+  const path = req.originalUrl.split("?")[0]; 
   await handleLambdaResponse(doctorsHandler, req, res, path);
 });
 
@@ -263,7 +246,7 @@ app.use("/api/providers", async (req, res) => {
   await handleLambdaResponse(adminHandler, req, res, path);
 });
 
-// Routes - Ads (Gestión Privada de Anuncios)
+// Routes - Ads (Anuncios)
 app.use("/api/ads", async (req, res) => {
   const path = req.originalUrl.split("?")[0];
   await handleLambdaResponse(adsHandler, req, res, path);
@@ -287,60 +270,20 @@ app.use("/api/pharmacy-chains", async (req, res) => {
   await handleLambdaResponse(pharmacyChainsHandler, req, res, path);
 });
 
-// Routes - Gmail
-app.use("/api/gmail", async (req, res) => {
-  const path = req.originalUrl.split("?")[0];
-  console.log(
-    `📧 [GMAIL ROUTE] ${req.method} ${path} - originalUrl: ${req.originalUrl}`,
-  );
-  await handleLambdaResponse(gmailHandler, req, res, path);
-});
-
-// Routes - Payments
-app.use("/api/payments", async (req, res) => {
-  const path = req.originalUrl.split("?")[0];
-
-  // --- 💀 DEBUG START ---
-  console.log("💀 [DEBUG] Intento de acceso a payments");
-  console.log("💀 [DEBUG] paymentsHandler es tipo:", typeof paymentsHandler);
-
-  if (!paymentsHandler) {
-    console.error(
-      '❌ [CRITICAL] paymentsHandler es undefined. Verifica que src/payments/handler.ts tenga "export async function handler"',
-    );
-    return res.status(500).json({
-      error: "Internal Server Error",
-      details: "Payments Handler is undefined in local.ts",
-    });
-  }
-  // --- 💀 DEBUG END ---
-
-  console.log(
-    `💰 [PAYMENTS ROUTE] ${req.method} ${path} - originalUrl: ${req.originalUrl}`,
-  );
-  await handleLambdaResponse(paymentsHandler, req, res, path);
-});
-
 // Routes - Patients
 if (patientsHandler) {
   app.use("/api/patients", async (req, res) => {
     const path = req.originalUrl.split("?")[0];
-    console.log(
-      `🔍 [PATIENTS ROUTE] ${req.method} ${path} - originalUrl: ${req.originalUrl}`,
-    );
+    console.log(`🔍 [PATIENTS ROUTE] ${req.method} ${path} - originalUrl: ${req.originalUrl}`);
     await handleLambdaResponse(patientsHandler, req, res, path);
   });
 } else {
-  console.error(
-    "❌ [PATIENTS] Handler de pacientes no disponible - Las rutas no se registrarán",
-  );
+  console.error("❌ [PATIENTS] Handler de pacientes no disponible - Las rutas no se registrarán");
   app.use("/api/patients", (req, res) => {
-    console.error(
-      `❌ [PATIENTS] Petición recibida pero handler no disponible: ${req.method} ${req.originalUrl}`,
-    );
-    res.status(500).json({
-      success: false,
-      message: "Patients handler not available. Check server logs.",
+    console.error(`❌ [PATIENTS] Petición recibida pero handler no disponible: ${req.method} ${req.originalUrl}`);
+    res.status(500).json({ 
+      success: false, 
+      message: "Patients handler not available. Check server logs." 
     });
   });
 }
@@ -348,9 +291,7 @@ if (patientsHandler) {
 // Routes - Pharmacies
 app.use("/api/pharmacies", async (req, res) => {
   const path = req.originalUrl.split("?")[0];
-  console.log(
-    `🔍 [PHARMACIES ROUTE] ${req.method} ${path} - originalUrl: ${req.originalUrl}`,
-  );
+  console.log(`🔍 [PHARMACIES ROUTE] ${req.method} ${path} - originalUrl: ${req.originalUrl}`);
   await handleLambdaResponse(pharmaciesHandler, req, res, path);
 });
 
@@ -362,43 +303,21 @@ if (laboratoriesHandler) {
   });
 }
 
-// Routes - Ambulances (panel privado)
-app.use("/api/ambulances", async (req, res) => {
-  const path = req.originalUrl.split("?")[0];
-  console.log(
-    `🔍 [AMBULANCES ROUTE] ${req.method} ${path} - originalUrl: ${req.originalUrl}`,
-  );
-  await handleLambdaResponse(ambulancesHandler, req, res, path);
-});
-
-// Routes - Association (doctor-clinic relationships)
-let associationHandler: any;
-try {
-  associationHandler = require("../src/association/handler").handler;
-  console.log("✅ [ASSOCIATION] Handler de asociación cargado correctamente");
-} catch (e: any) {
-  console.error("❌ [ASSOCIATION] Error al cargar handler de asociación:", e.message);
-}
-
-if (associationHandler) {
-  app.use("/api/association", async (req, res) => {
+// Routes - Ambulances
+if (ambulancesHandler) {
+  app.use("/api/ambulances", async (req, res) => {
     const path = req.originalUrl.split("?")[0];
-    console.log(`🔗 [ASSOCIATION ROUTE] ${req.method} ${path}`);
-    await handleLambdaResponse(associationHandler, req, res, path);
+    console.log(`🔍 [AMBULANCES ROUTE] ${req.method} ${path} - originalUrl: ${req.originalUrl}`);
+    await handleLambdaResponse(ambulancesHandler, req, res, path);
   });
 } else {
-  console.error("❌ [ASSOCIATION] Handler de asociación no disponible");
-}
-
-// Routes - Clinic-Associated Doctor (forward to association handler)
-// El frontend llama a /api/clinics/doctors/me/* pero el backend registra
-// las rutas bajo /api/association/doctors/me/* — redirigimos con rewrite
-if (associationHandler) {
-  app.use("/api/clinics/doctors/me", async (req, res) => {
-    let path = req.originalUrl.split("?")[0];
-    path = path.replace("/api/clinics/doctors/me", "/api/association/doctors/me");
-    console.log(`🔗 [CLINICS->ASSOCIATION] ${req.method} ${path}`);
-    await handleLambdaResponse(associationHandler, req, res, path);
+  console.error("❌ [AMBULANCES] Handler de ambulancias no disponible - Las rutas no se registrarán");
+  app.use("/api/ambulances", (req, res) => {
+    console.error(`❌ [AMBULANCES] Petición recibida pero handler no disponible: ${req.method} ${req.originalUrl}`);
+    res.status(500).json({ 
+      success: false, 
+      message: "Ambulances handler not available. Check server logs." 
+    });
   });
 }
 
@@ -410,10 +329,28 @@ if (clinicsHandler) {
     await handleLambdaResponse(clinicsHandler, req, res, path);
   });
 } else {
-  console.error(
-    "❌ [CLINICS] Handler de clínicas no disponible - Las rutas no se registrarán",
-  );
+  console.error("❌ [CLINICS] Handler de clínicas no disponible - Las rutas no se registrarán");
+  app.use("/api/clinics", (req, res) => {
+    console.error(`❌ [CLINICS] Petición recibida pero handler no disponible: ${req.method} ${req.originalUrl}`);
+    res.status(500).json({ 
+      success: false, 
+      message: "Clinics handler not available. Check server logs." 
+    });
+  });
 }
+
+// Routes - Comments
+app.use("/api/comments", async (req, res) => {
+  const path = req.originalUrl.split("?")[0];
+  console.log(`💬 [COMMENTS ROUTE] ${req.method} ${path}`);
+  await handleLambdaResponse(commentsHandler, req, res, path);
+});
+
+// Routes - Payments
+app.use("/api/payments", async (req, res) => {
+  const path = req.originalUrl.split("?")[0];
+  await handleLambdaResponse(paymentsHandler, req, res, path);
+});
 
 // Health check
 app.get("/api/health", (req, res) => {

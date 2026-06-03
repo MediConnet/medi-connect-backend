@@ -7,7 +7,20 @@ import { getDoctors, inviteDoctor, updateDoctorStatus, updateDoctorOffice, delet
 import { getAppointments, updateAppointmentStatus, getTodayReception, updateReceptionStatus } from './appointments.controller';
 import { getDoctorSchedule, updateDoctorSchedule } from './schedules.controller';
 import { getClinicSchedule, updateClinicSchedule } from './clinic-schedules.controller';
-import { getClinicNotifications, getUnreadCount, markNotificationAsRead, markAllAsRead } from './notifications.controller';
+import { getClinicNotifications as getClinicAdminNotifications, getUnreadCount, markNotificationAsRead, markAllAsRead } from './notifications.controller';
+import {
+  getClinicInfo,
+  getClinicProfile,
+  updateClinicProfile,
+  getClinicAppointments,
+  updateClinicAppointmentStatus,
+  getReceptionMessages as getDoctorReceptionMessages,
+  createReceptionMessage as createDoctorReceptionMessage,
+  markReceptionMessagesAsRead,
+  getDateBlocks,
+  requestDateBlock,
+  getClinicNotifications as getDoctorClinicNotifications,
+} from './doctor-associated.controller';
 import { getReceptionMessages, createReceptionMessage, markReceptionMessagesRead } from './reception-messages.controller';
 import { getClinicPayments, getClinicPaymentDetail, distributePayment, getDoctorPayments, payDoctor, getPaymentDistribution, getAdminClinicPaymentsList, markAdminClinicPaymentPaid } from './payments.controller';
 import { extractIdFromPath } from '../shared/validators';
@@ -28,6 +41,39 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
   try {
     console.log(`🔍 [CLINICS HANDLER] Comparando path: "${path}"`);
     
+    // --- Rutas del Médico Asociado (doctors/me) ---
+    if (path === '/api/clinics/doctors/me/info') {
+      if (method === 'GET') return await getClinicInfo(event);
+    }
+    if (path === '/api/clinics/doctors/me/profile') {
+      if (method === 'GET') return await getClinicProfile(event);
+      if (method === 'PUT') return await updateClinicProfile(event);
+    }
+    if (path === '/api/clinics/doctors/me/schedule') {
+      if (method === 'GET') return await getDoctorSchedule(event);
+      if (method === 'PUT') return await updateDoctorSchedule(event);
+    }
+    if (path === '/api/clinics/doctors/me/messages' || path.startsWith('/api/clinics/doctors/me/messages?')) {
+      if (method === 'GET') return await getDoctorReceptionMessages(event);
+      if (method === 'POST') return await createDoctorReceptionMessage(event);
+    }
+    if (path === '/api/clinics/doctors/me/messages/read') {
+      if (method === 'PATCH') return await markReceptionMessagesAsRead(event);
+    }
+    if (path === '/api/clinics/doctors/me/appointments' || path.startsWith('/api/clinics/doctors/me/appointments?')) {
+      if (method === 'GET') return await getClinicAppointments(event);
+    }
+    if (path.startsWith('/api/clinics/doctors/me/appointments/') && path.endsWith('/status')) {
+      if (method === 'PATCH') return await updateClinicAppointmentStatus(event);
+    }
+    if (path === '/api/clinics/doctors/me/date-blocks' || path.startsWith('/api/clinics/doctors/me/date-blocks?')) {
+      if (method === 'GET') return await getDateBlocks(event);
+      if (method === 'POST') return await requestDateBlock(event);
+    }
+    if (path === '/api/clinics/doctors/me/notifications' || path.startsWith('/api/clinics/doctors/me/notifications?')) {
+      if (method === 'GET') return await getDoctorClinicNotifications(event);
+    }
+
     // --- Rutas de Perfil ---
     if (path === '/api/clinics/profile') {
       console.log(`✅ [CLINICS HANDLER] Ruta de perfil encontrada`);
@@ -150,7 +196,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
 
     // --- Rutas de Notificaciones ---
     if (path === '/api/clinics/notifications') {
-      if (method === 'GET') return await getClinicNotifications(event);
+      if (method === 'GET') return await getClinicAdminNotifications(event);
     }
 
     if (path === '/api/clinics/notifications/unread-count') {
