@@ -57,11 +57,33 @@ export async function createComment(event: APIGatewayProxyEventV2): Promise<APIG
     const data = validateBody(event.body, commentSchema);
 
     const prisma = getPrismaClient();
+
+    // Buscar nombre del usuario
+    let userName = undefined;
+    if (authContext.user.role === "patient") {
+      const patient = await prisma.patients.findFirst({
+        where: { user_id: authContext.user.id },
+      });
+      if (patient) {
+        userName = patient.full_name;
+      }
+    } else if (authContext.user.role === "provider") {
+      const provider = await prisma.providers.findFirst({
+        where: { user_id: authContext.user.id },
+      });
+      if (provider) {
+        userName = provider.commercial_name;
+      }
+    } else if (authContext.user.role === "admin") {
+      userName = "Administrador";
+    }
+
     const comment = await prisma.comments.create({
       data: {
         id: crypto.randomUUID(),
         user_id: authContext.user.id,
         user_type: authContext.user.role || "user",
+        user_name: userName || authContext.user.email || "Usuario",
         user_email: authContext.user.email || undefined,
         subject: data.subject,
         message: data.message,
@@ -82,6 +104,43 @@ export async function createComment(event: APIGatewayProxyEventV2): Promise<APIG
     }
     console.error("[COMMENTS] Error creating comment:", error);
     return internalErrorResponse("Error creating comment");
+  }
+}
+
+// GET /api/comments/my - List comments of authenticated user
+export async function getMyComments(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  try {
+    const authResult = await requireAuth(event);
+    if ("statusCode" in authResult) return authResult;
+    const authContext = authResult;
+
+    const prisma = getPrismaClient();
+    const comments = await prisma.comments.findMany({
+      where: {
+        user_id: authContext.user.id,
+        deleted_at: null,
+      },
+      orderBy: { created_at: "desc" },
+    });
+
+    return successResponse(
+      comments.map((c) => ({
+        id: c.id,
+        userId: c.user_id,
+        userType: c.user_type,
+        userName: c.user_name,
+        userEmail: c.user_email,
+        subject: c.subject,
+        message: c.message,
+        status: c.status,
+        adminResponse: c.admin_response,
+        createdAt: c.created_at.toISOString(),
+        updatedAt: c.updated_at.toISOString(),
+      }))
+    );
+  } catch (error: any) {
+    console.error("[COMMENTS] Error listing my comments:", error);
+    return internalErrorResponse("Error listing my comments");
   }
 }
 
@@ -198,8 +257,9 @@ export async function getCommentById(event: APIGatewayProxyEventV2): Promise<API
 // PUT /api/comments/:id - Update comment
 export async function updateComment(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   try {
-    const authResult = await requireRole(event, ["admin"]);
+    const authResult = await requireAuth(event);
     if ("statusCode" in authResult) return authResult;
+    const authContext = authResult;
 
     const id = extractUuidFromPath(event.requestContext.http.path);
     if (!id) return errorResponse("Comment ID is required", 400);
@@ -212,6 +272,13 @@ export async function updateComment(event: APIGatewayProxyEventV2): Promise<APIG
     });
 
     if (!existing) return notFoundResponse("Comment not found");
+
+    const isAdmin = authContext.user.role === "admin";
+    const isOwner = existing.user_id === authContext.user.id;
+
+    if (!isAdmin && !isOwner) {
+      return errorResponse("Unauthorized", 403);
+    }
 
     const updated = await prisma.comments.update({
       where: { id },
@@ -320,8 +387,9 @@ export async function respondComment(event: APIGatewayProxyEventV2): Promise<API
 // DELETE /api/comments/:id - Soft delete comment
 export async function deleteComment(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   try {
-    const authResult = await requireRole(event, ["admin"]);
+    const authResult = await requireAuth(event);
     if ("statusCode" in authResult) return authResult;
+    const authContext = authResult;
 
     const id = extractUuidFromPath(event.requestContext.http.path);
     if (!id) return errorResponse("Comment ID is required", 400);
@@ -332,6 +400,13 @@ export async function deleteComment(event: APIGatewayProxyEventV2): Promise<APIG
     });
 
     if (!existing) return notFoundResponse("Comment not found");
+
+    const isAdmin = authContext.user.role === "admin";
+    const isOwner = existing.user_id === authContext.user.id;
+
+    if (!isAdmin && !isOwner) {
+      return errorResponse("Unauthorized", 403);
+    }
 
     await prisma.comments.update({
       where: { id },

@@ -5,6 +5,7 @@ import {
   deleteComment,
   getCommentById,
   getComments,
+  getMyComments,
   respondComment,
   updateComment,
   updateCommentStatus,
@@ -22,6 +23,11 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     // POST /api/comments - Create comment (authenticated)
     if (path === "/api/comments" && method === "POST") {
       return await createComment(event);
+    }
+
+    // GET /api/comments/my - List my comments (authenticated)
+    if (path === "/api/comments/my" && method === "GET") {
+      return await getMyComments(event);
     }
 
     // GET /api/comments - List comments (admin only)
