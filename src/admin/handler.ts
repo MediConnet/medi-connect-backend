@@ -1323,7 +1323,7 @@ async function approveAdRequest(event: APIGatewayProxyEventV2): Promise<APIGatew
   }
 
   // Actualizar estado a APPROVED y activar el anuncio
-  await prisma.provider_ads.update({
+  const updatedAd = await prisma.provider_ads.update({
     where: { id: requestId },
     data: {
       status: 'APPROVED',
@@ -1332,6 +1332,31 @@ async function approveAdRequest(event: APIGatewayProxyEventV2): Promise<APIGatew
   });
 
   console.log(`✅ [APPROVE_AD_REQUEST] Solicitud ${requestId} aprobada exitosamente`);
+
+  // Enviar notificación push masiva (broadcast) a los pacientes
+  try {
+    const { patientNotificationService } = await import('../shared/patient-notification.service');
+    
+    // El título del push será el badge (ej. "Primera Cita") o el título del anuncio
+    const pushTitle = updatedAd.badge_text || updatedAd.title || '¡Nuevo anuncio disponible! 🎉';
+    // El cuerpo será el título (ej. "20% descuento") o la descripción
+    const pushBody = updatedAd.title || updatedAd.subtitle || 'Revisa las últimas promociones en la app.';
+    
+    await patientNotificationService.broadcast({
+      type: 'general',
+      title: pushTitle,
+      body: pushBody,
+      data: {
+        adId: updatedAd.id,
+        screen: updatedAd.target_screen || 'Home',
+        ...(updatedAd.target_id && { targetId: updatedAd.target_id }),
+      },
+    });
+    console.log(`📲 [APPROVE_AD_REQUEST] Push broadcast enviado con éxito para anuncio: ${updatedAd.id}`);
+  } catch (notifErr: any) {
+    console.error(`❌ [APPROVE_AD_REQUEST] Error enviando broadcast de notificación push:`, notifErr.message);
+  }
+
   return successResponse({ success: true });
 }
 
