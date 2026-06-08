@@ -41,7 +41,7 @@ export const REGISTRATION_ROLES = [
 ] as const;
 export type RegistrationRole = (typeof REGISTRATION_ROLES)[number];
 
-// ── Registration type → service category slug ──
+// ── Registration type → service category slug (DB service_categories) ──
 export const TYPE_TO_SLUG: Record<string, string> = {
   doctor: "doctor",
   pharmacy: "pharmacy",
@@ -51,7 +51,27 @@ export const TYPE_TO_SLUG: Record<string, string> = {
   supplies: "supplies",
   clinic: "clinica",
   clinica: "clinica",
+  clinics: "clinica",
 };
+
+/** Canonical provider type returned in auth (login/me) for clinic admins. */
+export const CLINICS_PROVIDER_TYPE = "clinics" as const;
+
+const CLINIC_AUTH_TYPE_ALIASES = new Set(["clinic", "clinica", "clinics", "clínica"]);
+
+/**
+ * Normalizes provider serviceType/tipo in auth responses.
+ * Legacy values (clinica, clinic) map to `clinics`; DB slugs stay separate via TYPE_TO_SLUG.
+ */
+export function normalizeProviderServiceType(
+  value: string | null | undefined,
+): string | null {
+  if (!value) return null;
+  const key = String(value).trim().toLowerCase();
+  if (CLINIC_AUTH_TYPE_ALIASES.has(key)) return CLINICS_PROVIDER_TYPE;
+  if (key === "lab") return "laboratory";
+  return key;
+}
 
 // ── User-facing role string → enum_roles ──
 export const ROLE_TO_ENUM: Record<string, string> = {

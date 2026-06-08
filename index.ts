@@ -310,6 +310,7 @@ import { handler as pharmacyChainsHandler } from './src/pharmacy-chains/handler'
 import { handler as publicHandler } from './src/public/handler';
 import { handler as homeHandler } from './src/home/handler';
 import { handler as paymentsHandler } from './src/payments/handler';
+import { handler as commentsHandler } from './src/comments/handler';
 
 // Importar otros handlers si existen
 let laboratoriesHandler: any;
@@ -500,6 +501,13 @@ if (clinicsHandler) {
 app.use('/api/payments', async (req: express.Request, res: express.Response) => {
   const path = req.originalUrl.split('?')[0];
   await handleLambdaResponse(paymentsHandler, req, res, path);
+});
+
+// Routes - Comments
+app.use('/api/comments', async (req: express.Request, res: express.Response) => {
+  const path = req.originalUrl.split('?')[0];
+  console.log(`💬 [COMMENTS ROUTE] ${req.method} ${path}`);
+  await handleLambdaResponse(commentsHandler, req, res, path);
 });
 
 // Servir imágenes de plantillas de email (público)

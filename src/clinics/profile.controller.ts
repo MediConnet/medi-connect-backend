@@ -7,6 +7,7 @@ import { getPrismaClient } from '../shared/prisma';
 import { errorResponse, internalErrorResponse, notFoundResponse, successResponse } from '../shared/response';
 import { parseBody, updateClinicProfileSchema } from '../shared/validators';
 import { uploadImageToCloudinary, isBase64Image } from '../shared/cloudinary';
+import { resolveClinicForAuthUser } from './clinic-context';
 
 // Helper para convertir número de día a nombre
 function dayNumberToName(day: number): string {
@@ -264,10 +265,7 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
     const body = parseBody(event.body, updateClinicProfileSchema);
     console.log('✅ [CLINICS] Body validado:', JSON.stringify(body, null, 2));
 
-    // Buscar clínica del usuario autenticado
-    const clinic = await prisma.clinics.findFirst({
-      where: { user_id: authContext.user.id },
-    });
+    const { clinic } = await resolveClinicForAuthUser(authContext.user.id);
 
     if (!clinic) {
       console.error('❌ [CLINICS] Clínica no encontrada');

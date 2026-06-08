@@ -16,19 +16,18 @@ import {
   normalizeInvitationEmail,
   resolveDoctorExists,
 } from './invitation-helpers';
-import { resolveClinicForAuthUser } from './clinic-context';
 
 /**
  * POST /api/clinics/doctors/invite/link
  * Generar link de invitación único para un médico (sin enviar email)
  */
 export async function generateInvitationLink(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('✅ [CLINICS] POST /api/clinics/doctors/invite/link - Generando link de invitación');
+  console.log('✅ [ASSOCIATION] POST /api/association/doctors/invite/link - Generando link de invitación');
   
   // Validar autenticación y permisos de clínica
   const authResult = await requireRole(event, [enum_roles.provider]);
   if ('statusCode' in authResult) {
-    console.error('❌ [CLINICS] Error de autenticación/autorización');
+    console.error('❌ [ASSOCIATION] Error de autenticación/autorización');
     return authResult;
   }
 
@@ -54,7 +53,7 @@ export async function generateInvitationLink(event: APIGatewayProxyEventV2): Pro
     });
 
     if (!clinic) {
-      console.error('❌ [CLINICS] Clínica no encontrada para el usuario');
+      console.error('❌ [ASSOCIATION] Clínica no encontrada para el usuario');
       return notFoundResponse('Clínica no encontrada');
     }
 
@@ -63,7 +62,7 @@ export async function generateInvitationLink(event: APIGatewayProxyEventV2): Pro
     // PASO 1: CASO B — Validar rol antes que nada
     const nonDoctorUser = await findNonDoctorUserByEmail(prisma, normalizedEmail);
     if (nonDoctorUser) {
-      console.error(`❌ [CLINICS] El email ${normalizedEmail} pertenece al rol ${nonDoctorUser.role} — no es médico`);
+      console.error(`❌ [ASSOCIATION] El email ${normalizedEmail} pertenece al rol ${nonDoctorUser.role} — no es médico`);
       return errorResponse(
         'El usuario existe pero no pertenece al rol Médico. Solo es posible asociar usuarios médicos a una clínica.',
         400,
@@ -102,7 +101,7 @@ export async function generateInvitationLink(event: APIGatewayProxyEventV2): Pro
       const invitationLink = `${frontendUrl}/clinic/invite/${existingInvitation.invitation_token}`;
       const doctorExisteExisting = await resolveDoctorExists(prisma, existingInvitation);
       
-      console.log(`✅ [CLINICS] Invitación existente encontrada para: ${normalizedEmail}`);
+      console.log(`✅ [ASSOCIATION] Invitación existente encontrada para: ${normalizedEmail}`);
       return successResponse({
         invitationLink,
         expiresAt: existingInvitation.expires_at.toISOString(),
@@ -113,9 +112,9 @@ export async function generateInvitationLink(event: APIGatewayProxyEventV2): Pro
     const doctorExists = await isRegisteredDoctorByEmail(prisma, normalizedEmail);
 
     if (doctorExists) {
-      console.log(`📧 [CLINICS] Invitación para usuario existente (médico registrado): ${normalizedEmail}`);
+      console.log(`📧 [ASSOCIATION] Invitación para usuario existente (médico registrado): ${normalizedEmail}`);
     } else {
-      console.log(`📧 [CLINICS] Invitación para usuario nuevo: ${normalizedEmail}`);
+      console.log(`📧 [ASSOCIATION] Invitación para usuario nuevo: ${normalizedEmail}`);
     }
 
     // Generar token único y seguro (256 bits)
@@ -141,14 +140,14 @@ export async function generateInvitationLink(event: APIGatewayProxyEventV2): Pro
     const frontendUrl = process.env.FRONTEND_URL || 'https://docalink.com';
     const invitationLink = `${frontendUrl}/clinic/invite/${invitationToken}`;
 
-    console.log(`✅ [CLINICS] Link de invitación generado exitosamente para: ${normalizedEmail}`);
+    console.log(`✅ [ASSOCIATION] Link de invitación generado exitosamente para: ${normalizedEmail}`);
     return successResponse({
       invitationLink,
       expiresAt: expiresAt.toISOString(),
       doctorExiste: doctorExists,
     });
   } catch (error: any) {
-    console.error(`❌ [CLINICS] Error al generar link de invitación:`, error.message);
+    console.error(`❌ [ASSOCIATION] Error al generar link de invitación:`, error.message);
     logger.error('Error generating invitation link', error);
     if (error.message.includes('Validation error')) {
       return errorResponse(error.message, 400);
@@ -162,7 +161,7 @@ export async function generateInvitationLink(event: APIGatewayProxyEventV2): Pro
  * Enviar invitación por email a un médico
  */
 export async function sendInvitation(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('✅ [CLINICS] POST /api/clinics/doctors/invite - Enviando invitación por email');
+  console.log('✅ [ASSOCIATION] POST /api/association/doctors/invite - Enviando invitación por email');
   
   const prisma = getPrismaClient();
 
@@ -177,12 +176,12 @@ export async function sendInvitation(event: APIGatewayProxyEventV2): Promise<API
     // Obtener claims del JWT
     const claims = getJWTClaims(event);
     if (!claims || !claims.sub) {
-      console.error('❌ [CLINICS] No se pudo obtener claims del token');
+      console.error('❌ [ASSOCIATION] No se pudo obtener claims del token');
       return errorResponse('Token de autenticación inválido', 401);
     }
 
     const userId = claims.sub;
-    console.log(`✅ [CLINICS] Usuario autenticado: ${userId}`);
+    console.log(`✅ [ASSOCIATION] Usuario autenticado: ${userId}`);
 
     // Obtener clinicId del body o buscar la clínica del usuario
     let clinicId = body.clinicId;
@@ -193,12 +192,12 @@ export async function sendInvitation(event: APIGatewayProxyEventV2): Promise<API
       });
 
       if (!userClinic) {
-        console.error('❌ [CLINICS] No se encontró clínica para el usuario:', userId);
+        console.error('❌ [ASSOCIATION] No se encontró clínica para el usuario:', userId);
         return errorResponse('No se encontró clínica asociada al usuario', 404);
       }
 
       clinicId = userClinic.id;
-      console.log(`✅ [CLINICS] Clínica obtenida automáticamente: ${clinicId}`);
+      console.log(`✅ [ASSOCIATION] Clínica obtenida automáticamente: ${clinicId}`);
     }
 
     // Verificar que la clínica existe
@@ -215,7 +214,7 @@ export async function sendInvitation(event: APIGatewayProxyEventV2): Promise<API
     // CASO B: Verificar que el email no pertenezca a un usuario con rol no-médico
     const nonDoctorUser = await findNonDoctorUserByEmail(prisma, normalizedEmail);
     if (nonDoctorUser) {
-      console.error(`❌ [CLINICS] El email ${normalizedEmail} pertenece al rol ${nonDoctorUser.role} — no es médico`);
+      console.error(`❌ [ASSOCIATION] El email ${normalizedEmail} pertenece al rol ${nonDoctorUser.role} — no es médico`);
       return errorResponse(
         'El usuario existe pero no pertenece al rol Médico. Solo es posible asociar usuarios médicos a una clínica.',
         400,
@@ -256,12 +255,12 @@ export async function sendInvitation(event: APIGatewayProxyEventV2): Promise<API
     const doctorExists = await isRegisteredDoctorByEmail(prisma, normalizedEmail);
 
     if (doctorExists) {
-      console.log(`📧 [CLINICS] Invitación enviada a usuario existente: ${normalizedEmail}`);
+      console.log(`📧 [ASSOCIATION] Invitación enviada a usuario existente: ${normalizedEmail}`);
     } else {
-      console.log(`📧 [CLINICS] Invitación enviada a usuario nuevo: ${normalizedEmail}`);
+      console.log(`📧 [ASSOCIATION] Invitación enviada a usuario nuevo: ${normalizedEmail}`);
     }
 
-    // Generar token seguro (256 bits) consistente con generateInvitationLink
+    // Generar token de invitación seguro (256 bits)
     const invitationToken = randomBytes(32).toString('base64url');
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
@@ -294,7 +293,7 @@ export async function sendInvitation(event: APIGatewayProxyEventV2): Promise<API
     });
 
     // Enviar email de invitación
-    console.log(`📧 [CLINICS] Enviando email a: ${normalizedEmail}`);
+    console.log(`📧 [ASSOCIATION] Enviando email a: ${normalizedEmail}`);
     const emailSent = await sendEmail({
       to: normalizedEmail,
       subject: `Invitación para unirte a ${clinic.name} - MediConnect`,
@@ -302,13 +301,13 @@ export async function sendInvitation(event: APIGatewayProxyEventV2): Promise<API
     });
 
     if (emailSent) {
-      console.log(`✅ [CLINICS] Email enviado exitosamente a: ${normalizedEmail}`);
+      console.log(`✅ [ASSOCIATION] Email enviado exitosamente a: ${normalizedEmail}`);
     } else {
-      console.error('❌ [CLINICS] Error al enviar email de invitación');
+      console.error('❌ [ASSOCIATION] Error al enviar email de invitación');
       logger.error('Failed to send invitation email', new Error('Email sending failed'), { email: normalizedEmail, clinicId });
     }
 
-    console.log(`✅ [CLINICS] Invitación creada exitosamente para: ${normalizedEmail}`);
+    console.log(`✅ [ASSOCIATION] Invitación creada exitosamente para: ${normalizedEmail}`);
     return successResponse({
       message: 'Invitación enviada exitosamente',
       email: normalizedEmail,
@@ -318,8 +317,8 @@ export async function sendInvitation(event: APIGatewayProxyEventV2): Promise<API
       doctorExiste: doctorExists,
     }, 201);
   } catch (error: any) {
-    console.error(`❌ [CLINICS] Error al enviar invitación:`, error.message);
-    console.error(`❌ [CLINICS] Stack:`, error.stack);
+    console.error(`❌ [ASSOCIATION] Error al enviar invitación:`, error.message);
+    console.error(`❌ [ASSOCIATION] Stack:`, error.stack);
     logger.error('Error sending invitation', error);
     return internalErrorResponse('Failed to send invitation');
   }
@@ -327,12 +326,12 @@ export async function sendInvitation(event: APIGatewayProxyEventV2): Promise<API
 
 // GET /api/clinics/invite/:token
 export async function validateInvitation(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('✅ [CLINICS] GET /api/clinics/invite/{token} - Validando token de invitación');
+  console.log('✅ [ASSOCIATION] GET /api/association/invite/{token} - Validando token de invitación');
   
   const prisma = getPrismaClient();
 
   try {
-    const token = extractIdFromPath(event.requestContext.http.path, '/api/clinics/invite/');
+    const token = extractIdFromPath(event.requestContext.http.path, '/api/association/invite/');
 
     // Buscar invitación
     const invitation = await prisma.doctor_invitations.findFirst({
@@ -348,7 +347,7 @@ export async function validateInvitation(event: APIGatewayProxyEventV2): Promise
     });
 
     if (!invitation) {
-      console.error(`❌ [CLINICS] Token de invitación no encontrado: ${token}`);
+      console.error(`❌ [ASSOCIATION] Token de invitación no encontrado: ${token}`);
       // Retornar respuesta con isValid: false en lugar de 404 para que el frontend pueda mostrar el mensaje
       return successResponse({
         clinic: null,
@@ -376,7 +375,7 @@ export async function validateInvitation(event: APIGatewayProxyEventV2): Promise
     const doctorExiste = await resolveDoctorExists(prisma, invitation);
 
     console.log(
-      `✅ [CLINICS] Token validado: ${isValid ? 'válido' : 'inválido'} (status: ${invitation.status}, expirado: ${isExpired}, doctorExiste: ${doctorExiste})`,
+      `✅ [ASSOCIATION] Token validado: ${isValid ? 'válido' : 'inválido'} (status: ${invitation.status}, expirado: ${isExpired}, doctorExiste: ${doctorExiste})`,
     );
     return successResponse({
       clinic: invitation.clinics ? {
@@ -389,7 +388,7 @@ export async function validateInvitation(event: APIGatewayProxyEventV2): Promise
       doctorExiste,
     });
   } catch (error: any) {
-    console.error(`❌ [CLINICS] Error al validar invitación:`, error.message);
+    console.error(`❌ [ASSOCIATION] Error al validar invitación:`, error.message);
     logger.error('Error validating invitation', error);
     if (error.message.includes('Invalid path format')) {
       return errorResponse('Invalid invitation token', 400);
@@ -400,12 +399,12 @@ export async function validateInvitation(event: APIGatewayProxyEventV2): Promise
 
 // POST /api/clinics/invite/:token/reject
 export async function rejectInvitation(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('❌ [CLINICS] POST /api/clinics/invite/{token}/reject - Rechazando invitación');
+  console.log('❌ [ASSOCIATION] POST /api/association/invite/{token}/reject - Rechazando invitación');
   
   const prisma = getPrismaClient();
 
   try {
-    const token = extractIdFromPath(event.requestContext.http.path, '/api/clinics/invite/', '/reject');
+    const token = extractIdFromPath(event.requestContext.http.path, '/api/association/invite/', '/reject');
 
     // Buscar invitación
     const invitation = await prisma.doctor_invitations.findFirst({
@@ -413,32 +412,32 @@ export async function rejectInvitation(event: APIGatewayProxyEventV2): Promise<A
     });
 
     if (!invitation) {
-      console.error(`❌ [CLINICS] Token de invitación no encontrado: ${token}`);
+      console.error(`❌ [ASSOCIATION] Token de invitación no encontrado: ${token}`);
       return notFoundResponse('Invitation token not found');
     }
 
     // Validar que la invitación no fue ya aceptada (aunque haya expirado)
     if (invitation.status === 'accepted') {
-      console.error(`❌ [CLINICS] Invitación ya fue aceptada`);
+      console.error(`❌ [ASSOCIATION] Invitación ya fue aceptada`);
       return errorResponse('Invitation has already been accepted', 400);
     }
 
     // Validar que la invitación no fue ya rechazada
     if (invitation.status === 'rejected') {
-      console.error(`❌ [CLINICS] Invitación ya fue rechazada`);
+      console.error(`❌ [ASSOCIATION] Invitación ya fue rechazada`);
       return errorResponse('Invitation has already been rejected', 400);
     }
 
     // Validar que el token no ha expirado
     const now = new Date();
     if (invitation.expires_at < now) {
-      console.error(`❌ [CLINICS] Token de invitación expirado`);
+      console.error(`❌ [ASSOCIATION] Token de invitación expirado`);
       return errorResponse('Invitation token has expired', 400);
     }
 
     // Solo permitir rechazar si está en estado 'pending'
     if (invitation.status !== 'pending') {
-      console.error(`❌ [CLINICS] Invitación no está en estado válido para rechazar: ${invitation.status}`);
+      console.error(`❌ [ASSOCIATION] Invitación no está en estado válido para rechazar: ${invitation.status}`);
       return errorResponse('Invitation is not in a valid state to be rejected', 400);
     }
 
@@ -448,13 +447,13 @@ export async function rejectInvitation(event: APIGatewayProxyEventV2): Promise<A
       data: { status: 'rejected' },
     });
 
-    console.log(`✅ [CLINICS] Invitación rechazada exitosamente: ${invitation.email}`);
+    console.log(`✅ [ASSOCIATION] Invitación rechazada exitosamente: ${invitation.email}`);
     return successResponse({
       success: true,
       message: 'Invitación rechazada correctamente',
     });
   } catch (error: any) {
-    console.error(`❌ [CLINICS] Error al rechazar invitación:`, error.message);
+    console.error(`❌ [ASSOCIATION] Error al rechazar invitación:`, error.message);
     logger.error('Error rejecting invitation', error);
     if (error.message.includes('Invalid path format')) {
       return errorResponse('Invalid invitation token', 400);
@@ -463,84 +462,14 @@ export async function rejectInvitation(event: APIGatewayProxyEventV2): Promise<A
   }
 }
 
-/**
- * PUT /api/clinics/doctors/invite/:invitationId/cancel
- * Cancela (revoca) una invitación pendiente. Solo la clínica que la creó puede cancelarla.
- */
-export async function cancelInvitation(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('✅ [CLINICS] PUT /api/clinics/doctors/invite/{id}/cancel - Cancelando invitación');
-
-  const authResult = await requireRole(event, [enum_roles.provider]);
-  if ('statusCode' in authResult) {
-    return authResult;
-  }
-
-  const authContext = authResult as AuthContext;
-  const prisma = getPrismaClient();
-
-  try {
-    const invitationId = extractIdFromPath(event.requestContext.http.path, '/api/clinics/doctors/invite/', '/cancel');
-
-    const { clinic } = await resolveClinicForAuthUser(authContext.user.id);
-    if (!clinic) {
-      return notFoundResponse('Clínica no encontrada');
-    }
-
-    const invitation = await prisma.doctor_invitations.findFirst({
-      where: {
-        id: invitationId,
-        clinic_id: clinic.id,
-      },
-    });
-
-    if (!invitation) {
-      return notFoundResponse('Invitación no encontrada');
-    }
-
-    if (invitation.status !== 'pending') {
-      return errorResponse('Solo se pueden cancelar invitaciones pendientes', 400);
-    }
-
-    await prisma.$transaction(async (tx) => {
-      await tx.doctor_invitations.update({
-        where: { id: invitationId },
-        data: { status: 'cancelled' },
-      });
-
-      // También limpiar clinic_doctors si existe y está en estado invitado
-      await tx.clinic_doctors.updateMany({
-        where: {
-          clinic_id: clinic.id,
-          invitation_token: invitation.invitation_token,
-          is_invited: true,
-        },
-        data: {
-          is_active: false,
-          updated_at: new Date(),
-        },
-      });
-    });
-
-    console.log(`✅ [CLINICS] Invitación cancelada: ${invitation.id} (${invitation.email})`);
-    return successResponse({ success: true, message: 'Invitación cancelada correctamente' });
-  } catch (error: any) {
-    console.error(`❌ [CLINICS] Error al cancelar invitación:`, error.message);
-    logger.error('Error cancelling invitation', error);
-    if (error.message.includes('Invalid path format')) {
-      return errorResponse('Invalid invitation ID', 400);
-    }
-    return internalErrorResponse('Failed to cancel invitation');
-  }
-}
-
 // POST /api/clinics/invite/:token/accept
 export async function acceptInvitation(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('✅ [CLINICS] POST /api/clinics/invite/{token}/accept - Aceptando invitación');
+  console.log('✅ [ASSOCIATION] POST /api/association/invite/{token}/accept - Aceptando invitación');
   
   const prisma = getPrismaClient();
 
   try {
-    const token = extractIdFromPath(event.requestContext.http.path, '/api/clinics/invite/', '/accept');
+    const token = extractIdFromPath(event.requestContext.http.path, '/api/association/invite/', '/accept');
     const body = parseBody(event.body, acceptInvitationSchema);
 
     // Validar que la especialidad exista en la base de datos
@@ -560,19 +489,19 @@ export async function acceptInvitation(event: APIGatewayProxyEventV2): Promise<A
     });
 
     if (!invitation) {
-      console.error(`❌ [CLINICS] Token de invitación no encontrado: ${token}`);
+      console.error(`❌ [ASSOCIATION] Token de invitación no encontrado: ${token}`);
       return notFoundResponse('Invitation token not found');
     }
 
     // Validar token
     const now = new Date();
     if (invitation.expires_at < now) {
-      console.error(`❌ [CLINICS] Token de invitación expirado`);
+      console.error(`❌ [ASSOCIATION] Token de invitación expirado`);
       return errorResponse('Invitation token has expired', 400);
     }
 
     if (invitation.status !== 'pending') {
-      console.error(`❌ [CLINICS] Token de invitación ya fue usado o expirado`);
+      console.error(`❌ [ASSOCIATION] Token de invitación ya fue usado o expirado`);
       return errorResponse('Invitation token is no longer valid', 400);
     }
 
@@ -585,11 +514,11 @@ export async function acceptInvitation(event: APIGatewayProxyEventV2): Promise<A
 
     // CASO: Usuario ya registrado - requiere autenticación (flujo post-login)
     if (existingUser) {
-      console.log(`🔍 [CLINICS] Aceptación de médico existente (doctorExiste=${doctorExiste})`);
+      console.log(`🔍 [ASSOCIATION] Aceptación de médico existente (doctorExiste=${doctorExiste})`);
 
       const authResult = await requireRole(event, [enum_roles.provider]);
       if ('statusCode' in authResult) {
-        console.log(`🔀 [CLINICS] Redirección a login requerida: usuario no autenticado`);
+        console.log(`🔀 [ASSOCIATION] Redirección a login requerida: usuario no autenticado`);
         return errorResponse(
           'Debes iniciar sesión para aceptar esta invitación. Usa el enlace de invitación y el botón Aceptar.',
           401,
@@ -601,7 +530,7 @@ export async function acceptInvitation(event: APIGatewayProxyEventV2): Promise<A
         normalizeInvitationEmail(authContext.user.email) !==
         normalizeInvitationEmail(invitation.email)
       ) {
-        console.error(`❌ [CLINICS] Usuario autenticado no coincide con el email de la invitación`);
+        console.error(`❌ [ASSOCIATION] Usuario autenticado no coincide con el email de la invitación`);
         return errorResponse('Solo puedes aceptar invitaciones enviadas a tu correo', 403);
       }
 
@@ -610,7 +539,7 @@ export async function acceptInvitation(event: APIGatewayProxyEventV2): Promise<A
       }
 
       if (existingUser && existingUser.role !== enum_roles.provider) {
-        console.error(`❌ [CLINICS] Usuario no es provider`);
+        console.error(`❌ [ASSOCIATION] Usuario no es provider`);
         return errorResponse('Solo los médicos pueden aceptar invitaciones de clínica', 400);
       }
 
@@ -628,7 +557,7 @@ export async function acceptInvitation(event: APIGatewayProxyEventV2): Promise<A
         authContext.user.id,
       );
 
-      console.log(`✅ [CLINICS] Médico existente asociado a clínica ${association.clinicId}`);
+      console.log(`✅ [ASSOCIATION] Médico existente asociado a clínica ${association.clinicId}`);
 
       return successResponse({
         message: association.alreadyAssociated
@@ -653,7 +582,7 @@ export async function acceptInvitation(event: APIGatewayProxyEventV2): Promise<A
     });
 
     if (!doctorCategory) {
-      console.error(`❌ [CLINICS] Categoría de servicio "doctor" no encontrada`);
+      console.error(`❌ [ASSOCIATION] Categoría de servicio "doctor" no encontrada`);
       return errorResponse('Doctor service category not found', 500);
     }
 
@@ -723,7 +652,7 @@ export async function acceptInvitation(event: APIGatewayProxyEventV2): Promise<A
       role: result.user.role,
     });
 
-    console.log(`✅ [CLINICS] Invitación aceptada exitosamente: ${invitation.email}`);
+    console.log(`✅ [ASSOCIATION] Invitación aceptada exitosamente: ${invitation.email}`);
     return successResponse(
       {
         userId: result.user.id,
@@ -744,7 +673,7 @@ export async function acceptInvitation(event: APIGatewayProxyEventV2): Promise<A
       201
     );
   } catch (error: any) {
-    console.error(`❌ [CLINICS] Error al aceptar invitación:`, error.message);
+    console.error(`❌ [ASSOCIATION] Error al aceptar invitación:`, error.message);
     logger.error('Error accepting invitation', error);
     if (error.message.includes('Validation error') || error.message.includes('Invalid path format')) {
       return errorResponse(error.message, 400);
@@ -760,7 +689,7 @@ export async function acceptInvitation(event: APIGatewayProxyEventV2): Promise<A
 export async function associateInvitation(
   event: APIGatewayProxyEventV2,
 ): Promise<APIGatewayProxyResult> {
-  console.log('✅ [CLINICS] POST /api/clinics/invite/{token}/associate - Asociando médico autenticado');
+  console.log('✅ [ASSOCIATION] POST /api/association/invite/{token}/associate - Asociando médico autenticado');
 
   const authResult = await requireRole(event, [enum_roles.provider]);
   if ('statusCode' in authResult) {
@@ -773,7 +702,7 @@ export async function associateInvitation(
   try {
     const token = extractIdFromPath(
       event.requestContext.http.path,
-      '/api/clinics/invite/',
+      '/api/association/invite/',
       '/associate',
     );
 
@@ -788,7 +717,7 @@ export async function associateInvitation(
 
     const now = new Date();
     if (invitation.expires_at < now) {
-      console.error(`❌ [CLINICS] Token de invitación expirado`);
+      console.error(`❌ [ASSOCIATION] Token de invitación expirado`);
       return errorResponse('Invitation token has expired', 400);
     }
 
@@ -805,7 +734,7 @@ export async function associateInvitation(
 
     const doctorExiste = await resolveDoctorExists(prisma, invitation);
     console.log(
-      `🔗 [CLINICS] Asociando invitación post-login (doctorExiste=${doctorExiste}, email=${invitation.email})`,
+      `🔗 [ASSOCIATION] Asociando invitación post-login (doctorExiste=${doctorExiste}, email=${invitation.email})`,
     );
 
     const association = await completeClinicInvitationAssociation(
@@ -814,7 +743,7 @@ export async function associateInvitation(
       authContext.user.id,
     );
 
-    console.log(`✅ [CLINICS] Asociación completada para clínica ${association.clinicId}`);
+    console.log(`✅ [ASSOCIATION] Asociación completada para clínica ${association.clinicId}`);
 
     return successResponse({
       message: association.alreadyAssociated
@@ -826,7 +755,7 @@ export async function associateInvitation(
       doctorExiste: true,
     });
   } catch (error: any) {
-    console.error(`❌ [CLINICS] Error al asociar invitación:`, error.message);
+    console.error(`❌ [ASSOCIATION] Error al asociar invitación:`, error.message);
     logger.error('Error associating invitation', error);
     if (error.message.includes('Invalid path format')) {
       return errorResponse('Invalid invitation token', 400);

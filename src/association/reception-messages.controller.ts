@@ -6,15 +6,15 @@ import { logger } from '../shared/logger';
 import { getPrismaClient } from '../shared/prisma';
 import { errorResponse, internalErrorResponse, notFoundResponse, paginatedResponse, successResponse } from '../shared/response';
 import { parseBody, createReceptionMessageSchema, markReceptionMessagesReadSchema } from '../shared/validators';
-import { resolveClinicForAuthUser } from './clinic-context';
+import { resolveClinicForAuthUser } from '../clinics/clinic-context';
 
 // GET /api/clinics/reception/messages
 export async function getReceptionMessages(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('✅ [CLINICS] GET /api/clinics/reception/messages - Obteniendo mensajes de recepción');
+  console.log('✅ [ASSOCIATION] GET /api/association/reception/messages - Obteniendo mensajes de recepción');
   
   const authResult = await requireRole(event, [enum_roles.provider]);
   if ('statusCode' in authResult) {
-    console.error('❌ [CLINICS] GET /api/clinics/reception/messages - Error de autenticación/autorización');
+    console.error('❌ [ASSOCIATION] GET /api/association/reception/messages - Error de autenticación/autorización');
     return authResult;
   }
 
@@ -26,7 +26,7 @@ export async function getReceptionMessages(event: APIGatewayProxyEventV2): Promi
     const { clinic } = await resolveClinicForAuthUser(authContext.user.id);
 
     if (!clinic) {
-      console.error('❌ [CLINICS] Clínica no encontrada');
+      console.error('❌ [ASSOCIATION] Clínica no encontrada');
       return notFoundResponse('Clinic not found');
     }
 
@@ -102,10 +102,10 @@ export async function getReceptionMessages(event: APIGatewayProxyEventV2): Promi
       };
     });
 
-    console.log(`✅ [CLINICS] Mensajes obtenidos exitosamente (${messagesData.length} mensajes, total: ${total})`);
+    console.log(`✅ [ASSOCIATION] Mensajes obtenidos exitosamente (${messagesData.length} mensajes, total: ${total})`);
     return paginatedResponse(messagesData, total, page, limit);
   } catch (error: any) {
-    console.error(`❌ [CLINICS] Error al obtener mensajes:`, error.message);
+    console.error(`❌ [ASSOCIATION] Error al obtener mensajes:`, error.message);
     logger.error('Error getting reception messages', error);
     return internalErrorResponse('Failed to get reception messages');
   }
@@ -113,11 +113,11 @@ export async function getReceptionMessages(event: APIGatewayProxyEventV2): Promi
 
 // POST /api/clinics/reception/messages
 export async function createReceptionMessage(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('✅ [CLINICS] POST /api/clinics/reception/messages - Enviando mensaje a médico');
+  console.log('✅ [ASSOCIATION] POST /api/association/reception/messages - Enviando mensaje a médico');
   
   const authResult = await requireRole(event, [enum_roles.provider]);
   if ('statusCode' in authResult) {
-    console.error('❌ [CLINICS] POST /api/clinics/reception/messages - Error de autenticación/autorización');
+    console.error('❌ [ASSOCIATION] POST /api/association/reception/messages - Error de autenticación/autorización');
     return authResult;
   }
 
@@ -130,7 +130,7 @@ export async function createReceptionMessage(event: APIGatewayProxyEventV2): Pro
     const { clinic } = await resolveClinicForAuthUser(authContext.user.id);
 
     if (!clinic) {
-      console.error('❌ [CLINICS] Clínica no encontrada');
+      console.error('❌ [ASSOCIATION] Clínica no encontrada');
       return notFoundResponse('Clinic not found');
     }
 
@@ -148,7 +148,7 @@ export async function createReceptionMessage(event: APIGatewayProxyEventV2): Pro
     });
 
     if (!doctor) {
-      console.error(`❌ [CLINICS] Médico no encontrado o no pertenece a esta clínica: ${body.doctorId}`);
+      console.error(`❌ [ASSOCIATION] Médico no encontrado o no pertenece a esta clínica: ${body.doctorId}`);
       return errorResponse('Doctor not found or does not belong to this clinic', 400);
     }
 
@@ -174,7 +174,7 @@ export async function createReceptionMessage(event: APIGatewayProxyEventV2): Pro
       },
     });
 
-    console.log(`✅ [CLINICS] Mensaje creado exitosamente: ${message.id}`);
+    console.log(`✅ [ASSOCIATION] Mensaje creado exitosamente: ${message.id}`);
 
     return successResponse({
       id: message.id,
@@ -188,7 +188,7 @@ export async function createReceptionMessage(event: APIGatewayProxyEventV2): Pro
       senderName: clinic.name || 'Recepción Clínica Central', // ⭐ Nombre de la clínica
     }, 201);
   } catch (error: any) {
-    console.error(`❌ [CLINICS] Error al crear mensaje:`, error.message);
+    console.error(`❌ [ASSOCIATION] Error al crear mensaje:`, error.message);
     logger.error('Error creating reception message', error);
     if (error.message.includes('Validation error')) {
       return errorResponse(error.message, 400);
@@ -199,11 +199,11 @@ export async function createReceptionMessage(event: APIGatewayProxyEventV2): Pro
 
 // PATCH /api/clinics/reception/messages/read
 export async function markReceptionMessagesRead(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('✅ [CLINICS] PATCH /api/clinics/reception/messages/read - Marcando mensajes como leídos');
+  console.log('✅ [ASSOCIATION] PATCH /api/association/reception/messages/read - Marcando mensajes como leídos');
   
   const authResult = await requireRole(event, [enum_roles.provider]);
   if ('statusCode' in authResult) {
-    console.error('❌ [CLINICS] PATCH /api/clinics/reception/messages/read - Error de autenticación/autorización');
+    console.error('❌ [ASSOCIATION] PATCH /api/association/reception/messages/read - Error de autenticación/autorización');
     return authResult;
   }
 
@@ -216,7 +216,7 @@ export async function markReceptionMessagesRead(event: APIGatewayProxyEventV2): 
     const { clinic } = await resolveClinicForAuthUser(authContext.user.id);
 
     if (!clinic) {
-      console.error('❌ [CLINICS] Clínica no encontrada');
+      console.error('❌ [ASSOCIATION] Clínica no encontrada');
       return notFoundResponse('Clinic not found');
     }
 
@@ -232,7 +232,7 @@ export async function markReceptionMessagesRead(event: APIGatewayProxyEventV2): 
     });
 
     if (messages.length !== body.messageIds.length) {
-      console.error(`❌ [CLINICS] Algunos mensajes no pertenecen a esta clínica`);
+      console.error(`❌ [ASSOCIATION] Algunos mensajes no pertenecen a esta clínica`);
       return errorResponse('Some messages do not belong to this clinic', 400);
     }
 
@@ -247,13 +247,13 @@ export async function markReceptionMessagesRead(event: APIGatewayProxyEventV2): 
       },
     });
 
-    console.log(`✅ [CLINICS] ${body.messageIds.length} mensajes marcados como leídos`);
+    console.log(`✅ [ASSOCIATION] ${body.messageIds.length} mensajes marcados como leídos`);
     return successResponse({
       success: true,
       message: 'Mensajes marcados como leídos',
     });
   } catch (error: any) {
-    console.error(`❌ [CLINICS] Error al marcar mensajes como leídos:`, error.message);
+    console.error(`❌ [ASSOCIATION] Error al marcar mensajes como leídos:`, error.message);
     logger.error('Error marking reception messages as read', error);
     if (error.message.includes('Validation error')) {
       return errorResponse(error.message, 400);

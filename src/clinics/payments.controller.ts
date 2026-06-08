@@ -5,6 +5,7 @@ import { successResponse, errorResponse, internalErrorResponse, notFoundResponse
 import { logger } from '../shared/logger';
 import { getAuthContext } from '../shared/auth';
 import { PAYOUT_TYPE_CLINIC } from '../shared/constants';
+import { resolveClinicForAuthUser } from './clinic-context';
 
 /**
  * GET /api/clinics/payments
@@ -28,9 +29,7 @@ export async function getClinicPayments(event: APIGatewayProxyEventV2): Promise<
     }
 
     // Buscar clínica del usuario
-    const clinic = await prisma.clinics.findFirst({
-      where: { user_id: authContext.user.id },
-    });
+    const { clinic } = await resolveClinicForAuthUser(authContext.user.id);
 
     if (!clinic) {
       return notFoundResponse('Clinic not found');
@@ -145,9 +144,7 @@ export async function getClinicPaymentDetail(event: APIGatewayProxyEventV2): Pro
     const paymentId = pathParts[pathParts.length - 1];
 
     // Buscar clínica del usuario
-    const clinic = await prisma.clinics.findFirst({
-      where: { user_id: authContext.user.id },
-    });
+    const { clinic } = await resolveClinicForAuthUser(authContext.user.id);
 
     if (!clinic) {
       return notFoundResponse('Clinic not found');
@@ -251,9 +248,7 @@ export async function distributePayment(event: APIGatewayProxyEventV2): Promise<
     }
 
     // Buscar clínica del usuario
-    const clinic = await prisma.clinics.findFirst({
-      where: { user_id: authContext.user.id },
-    });
+    const { clinic } = await resolveClinicForAuthUser(authContext.user.id);
 
     if (!clinic) {
       return notFoundResponse('Clinic not found');
@@ -364,9 +359,7 @@ export async function getDoctorPayments(event: APIGatewayProxyEventV2): Promise<
     }
 
     // Buscar clínica del usuario
-    const clinic = await prisma.clinics.findFirst({
-      where: { user_id: authContext.user.id },
-    });
+    const { clinic } = await resolveClinicForAuthUser(authContext.user.id);
 
     if (!clinic) {
       return notFoundResponse('Clinic not found');
@@ -489,9 +482,7 @@ export async function payDoctor(event: APIGatewayProxyEventV2): Promise<APIGatew
     }
 
     // Buscar clínica del usuario
-    const clinic = await prisma.clinics.findFirst({
-      where: { user_id: authContext.user.id },
-    });
+    const { clinic } = await resolveClinicForAuthUser(authContext.user.id);
 
     if (!clinic) {
       return notFoundResponse('Clinic not found');
@@ -543,9 +534,7 @@ export async function getPaymentDistribution(event: APIGatewayProxyEventV2): Pro
     const paymentId = pathParts[pathParts.indexOf('payments') + 1];
 
     // Buscar clínica del usuario
-    const clinic = await prisma.clinics.findFirst({
-      where: { user_id: authContext.user.id },
-    });
+    const { clinic } = await resolveClinicForAuthUser(authContext.user.id);
 
     if (!clinic) {
       return notFoundResponse('Clinic not found');

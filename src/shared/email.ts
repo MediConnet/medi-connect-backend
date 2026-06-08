@@ -766,7 +766,17 @@ export function generatePasswordUpdatedEmail(data: {
 export function generateDoctorInvitationEmail(data: {
   clinicName: string;
   invitationLink: string;
+  /** Si true, el destinatario ya tiene cuenta médico; al aceptar irá a iniciar sesión. */
+  doctorExists?: boolean;
 }): string {
+  const loginHint = data.doctorExists
+    ? `<p style="margin-top: 16px; padding: 12px; background: #eff6ff; border-radius: 8px; color: #1e40af; font-size: 14px;">
+        Ya tienes una cuenta en DocaLink con este correo. Al aceptar la invitación, iniciarás sesión para unirte a <strong>${data.clinicName}</strong>.
+      </p>`
+    : `<p style="margin-top: 16px; color: #64748b; font-size: 14px;">
+        Si aún no tienes cuenta, al aceptar completarás un breve registro como médico.
+      </p>`;
+
   const content = `
     <!-- Hero Section con fondo celeste -->
     <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #e0f2fe; padding: 15px 40px;">
@@ -787,6 +797,7 @@ export function generateDoctorInvitationEmail(data: {
       <p>Hola 👋,</p>
       <p>Has sido invitado a formar parte del equipo médico de <strong>${data.clinicName}</strong> en nuestra plataforma.</p>
       <p>Al unirte, podrás gestionar tus citas, expedientes clínicos y pacientes de manera digital y eficiente.</p>
+      ${loginHint}
       
       <div align="center" style="margin: 35px 0;">
         <a href="${data.invitationLink}" style="display: inline-block; background-color: #004aad; color: #ffffff !important; padding: 16px 35px; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 16px;">Aceptar invitación</a>

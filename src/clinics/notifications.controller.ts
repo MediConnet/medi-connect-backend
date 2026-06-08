@@ -5,6 +5,7 @@ import { logger } from '../shared/logger';
 import { getPrismaClient } from '../shared/prisma';
 import { errorResponse, internalErrorResponse, notFoundResponse, paginatedResponse, successResponse } from '../shared/response';
 import { extractIdFromPath } from '../shared/validators';
+import { resolveClinicForAuthUser } from './clinic-context';
 
 // GET /api/clinics/notifications
 export async function getClinicNotifications(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
@@ -20,9 +21,7 @@ export async function getClinicNotifications(event: APIGatewayProxyEventV2): Pro
   const prisma = getPrismaClient();
 
   try {
-    const clinic = await prisma.clinics.findFirst({
-      where: { user_id: authContext.user.id },
-    });
+    const { clinic } = await resolveClinicForAuthUser(authContext.user.id);
 
     if (!clinic) {
       console.error('❌ [CLINICS] Clínica no encontrada');
@@ -71,9 +70,7 @@ export async function getUnreadCount(event: APIGatewayProxyEventV2): Promise<API
   const prisma = getPrismaClient();
 
   try {
-    const clinic = await prisma.clinics.findFirst({
-      where: { user_id: authContext.user.id },
-    });
+    const { clinic } = await resolveClinicForAuthUser(authContext.user.id);
 
     if (!clinic) {
       return notFoundResponse('Clinic not found');
@@ -110,9 +107,7 @@ export async function markNotificationAsRead(event: APIGatewayProxyEventV2): Pro
     const notificationId = extractIdFromPath(event.requestContext.http.path, '/api/clinics/notifications/', '/read');
 
     // Verificar que la notificación pertenece a la clínica del usuario
-    const clinic = await prisma.clinics.findFirst({
-      where: { user_id: authContext.user.id },
-    });
+    const { clinic } = await resolveClinicForAuthUser(authContext.user.id);
 
     if (!clinic) {
       return notFoundResponse('Clinic not found');
@@ -162,9 +157,7 @@ export async function markAllAsRead(event: APIGatewayProxyEventV2): Promise<APIG
   const prisma = getPrismaClient();
 
   try {
-    const clinic = await prisma.clinics.findFirst({
-      where: { user_id: authContext.user.id },
-    });
+    const { clinic } = await resolveClinicForAuthUser(authContext.user.id);
 
     if (!clinic) {
       return notFoundResponse('Clinic not found');
