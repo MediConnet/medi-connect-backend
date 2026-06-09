@@ -310,6 +310,7 @@ export async function getClinicDoctors(event: APIGatewayProxyEventV2): Promise<A
         id: provider.id,
         nombre: provider.commercial_name || "",
         especialidad: especialidadesList[0] || "",
+        especialidadId: primarySpecialtyRecord?.specialty_id || "",
         especialidades: especialidadesList,
         experiencia: provider.years_of_experience || 0,
         tarifas: { consulta: tarifaBase },

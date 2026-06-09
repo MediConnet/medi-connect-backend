@@ -44,8 +44,13 @@ export async function getDoctorAvailability(
       );
     }
 
+    // IMPORTANTE: parsear la fecha como local (no UTC) para evitar
+    // desfase de día en zonas horarias negativas como Ecuador (UTC-5).
+    // "2026-06-09" + "T00:00:00" = medianoche local → día correcto.
     const requestDate = new Date(`${dateString}T00:00:00`);
-    const dayOfWeek = new Date(dateString).getUTCDay();
+    const dayOfWeek = requestDate.getDay(); // 0=Dom, 1=Lun, ... 6=Sáb
+
+    console.log(`🗓️ [AVAILABILITY] Doctor: ${doctorId}, Fecha: ${dateString}, DíaSemana: ${dayOfWeek} (0=Dom,1=Lun,2=Mar,3=Mié,4=Jue,5=Vie,6=Sáb)`);
 
     const provider = await prisma.providers.findUnique({
       where: { id: doctorId },
@@ -61,6 +66,9 @@ export async function getDoctorAvailability(
       },
     });
 
+    console.log(`👨‍⚕️ [AVAILABILITY] Provider encontrado: ${provider ? 'Sí' : 'No'}`);
+    console.log(`🏥 [AVAILABILITY] Es de clínica: ${provider?.users?.clinic_doctors && provider.users.clinic_doctors.length > 0 ? 'Sí' : 'No'}`);
+
     let scheduleSource: any = null;
     let isClinicFlow = false;
 
@@ -71,6 +79,8 @@ export async function getDoctorAvailability(
       isClinicFlow = true;
       const clinicDoctor = provider.users.clinic_doctors[0];
 
+      console.log(`🏥 [AVAILABILITY] Buscando horario de clínica: ${clinicDoctor.clinic_id}, día: ${dayOfWeek}`);
+
       // Doctor de Clínica usando el Horario General de la Clínica
       const clinicSchedule = await prisma.clinic_schedules.findFirst({
         where: {
@@ -79,6 +89,8 @@ export async function getDoctorAvailability(
           enabled: true,
         },
       });
+
+      console.log(`🏥 [AVAILABILITY] Horario de clínica encontrado: ${clinicSchedule ? `${clinicSchedule.start_time} - ${clinicSchedule.end_time}` : 'NINGUNO'}`);
 
       if (
         clinicSchedule &&
@@ -89,16 +101,19 @@ export async function getDoctorAvailability(
       }
     } else {
       // Doctor Independiente (Flujo Normal)
+      console.log(`👨‍⚕️ [AVAILABILITY] Buscando horario independiente para doctor: ${doctorId}, día: ${dayOfWeek}`);
+
       const provSchedule = await prisma.provider_schedules.findFirst({
         where: {
           provider_branches: {
             provider_id: doctorId,
-            ...(branchId ? { id: branchId } : {}),
           },
           day_of_week: dayOfWeek,
           is_active: true,
         },
       });
+
+      console.log(`👨‍⚕️ [AVAILABILITY] Horario independiente encontrado: ${provSchedule ? `${provSchedule.start_time} - ${provSchedule.end_time}` : 'NINGUNO'}`);
 
       if (provSchedule && provSchedule.start_time && provSchedule.end_time) {
         scheduleSource = provSchedule;
@@ -110,11 +125,13 @@ export async function getDoctorAvailability(
       !scheduleSource.start_time ||
       !scheduleSource.end_time
     ) {
+      console.log(`⚠️ [AVAILABILITY] Sin horario configurado para este día → retornando slots vacíos`);
       return successResponse({
         date: dateString,
         availableSlots: [],
       });
     }
+
 
     let allSlots: Date[] = [];
 
