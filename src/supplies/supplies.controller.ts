@@ -58,6 +58,9 @@ const suppliesProfileSchema = z.object({
     ])
     .optional()
     .nullable(),
+  profile_picture_url: z.string().optional().nullable(),
+  imageUrl: z.string().optional().nullable(),
+  preview_images: z.array(z.string()).optional(),
 });
 
 async function getSuppliesProviderByUserId(prisma: any, userId: string) {
@@ -71,6 +74,13 @@ async function getSuppliesProviderByUserId(prisma: any, userId: string) {
     where: {
       user_id: userId,
       category_id: suppliesCategory.id,
+    },
+    include: {
+      users: {
+        select: {
+          profile_picture_url: true,
+        },
+      },
     },
   });
   return provider;
@@ -154,6 +164,9 @@ export async function getSuppliesProfile(
       google_maps_url: branch.google_maps_url || null,
       schedule: branch.opening_hours_text || "",
       logoUrl: provider.logo_url || null,
+      profile_picture_url: provider.users?.profile_picture_url || provider.logo_url || null,
+      imageUrl: branch.image_url || provider.logo_url || null,
+      preview_images: branch.preview_images || [],
       isActive: Boolean(branch.is_active),
     });
   } catch (error: any) {
@@ -215,59 +228,139 @@ export async function updateSuppliesProfile(
     );
 
     // --- SUBIR IMAGEN A CLOUDINARY si es base64 ---
-    let finalLogoUrl: string | undefined | null = body.logoUrl;
-    if (body.logoUrl && isBase64Image(body.logoUrl)) {
-      try {
-        finalLogoUrl = await uploadImageToCloudinary(body.logoUrl, 'providers/supplies');
-        console.log('✅ [SUPPLIES] Imagen subida a Cloudinary:', finalLogoUrl);
-      } catch (imgErr: any) {
-        console.error('❌ [SUPPLIES] Error subiendo imagen a Cloudinary:', imgErr.message);
-        return errorResponse('Error al subir la imagen. Intenta de nuevo.', 500);
+    // A. Avatar de la tienda (profile_picture_url)
+    let uploadedProfilePictureUrl: string | null | undefined;
+    const rawProfilePic = body.profile_picture_url || body.logoUrl;
+    if (rawProfilePic !== undefined) {
+      if (rawProfilePic && isBase64Image(rawProfilePic)) {
+        try {
+          uploadedProfilePictureUrl = await uploadImageToCloudinary(rawProfilePic, 'providers/supplies/avatars');
+          console.log('✅ [SUPPLIES] Avatar subido a Cloudinary:', uploadedProfilePictureUrl);
+        } catch (imgErr: any) {
+          console.error('❌ [SUPPLIES] Error subiendo avatar:', imgErr.message);
+          return errorResponse('Error al subir la imagen de perfil. Intenta de nuevo.', 500);
+        }
+      } else if (rawProfilePic && !isBase64Image(rawProfilePic) && !rawProfilePic.startsWith('blob:')) {
+        uploadedProfilePictureUrl = rawProfilePic;
+      } else if (rawProfilePic === null || rawProfilePic === "") {
+        uploadedProfilePictureUrl = null;
       }
     }
 
-    const updatedProvider = await prisma.providers.update({
+    // B. Banner / Imagen de portada (imageUrl)
+    let uploadedImageUrl: string | null | undefined;
+    if (body.imageUrl !== undefined) {
+      if (body.imageUrl && isBase64Image(body.imageUrl)) {
+        try {
+          uploadedImageUrl = await uploadImageToCloudinary(body.imageUrl, 'providers/supplies');
+          console.log('✅ [SUPPLIES] Imagen de portada subida a Cloudinary:', uploadedImageUrl);
+        } catch (imgErr: any) {
+          console.error('❌ [SUPPLIES] Error subiendo imagen de portada:', imgErr.message);
+          return errorResponse('Error al subir la imagen. Intenta de nuevo.', 500);
+        }
+      } else if (body.imageUrl && !isBase64Image(body.imageUrl) && !body.imageUrl.startsWith('blob:')) {
+        uploadedImageUrl = body.imageUrl;
+      } else if (body.imageUrl === null || body.imageUrl === "") {
+        uploadedImageUrl = null;
+      }
+    }
+
+    // C. Imágenes de vista previa (preview_images)
+    let uploadedPreviewImages: string[] | undefined;
+    if (body.preview_images && body.preview_images.length > 0) {
+      uploadedPreviewImages = [];
+      for (const img of body.preview_images) {
+        if (isBase64Image(img)) {
+          try {
+            const url = await uploadImageToCloudinary(img, 'providers/supplies/previews');
+            uploadedPreviewImages.push(url);
+          } catch (imgErr: any) {
+            console.error('❌ [SUPPLIES] Error subiendo imagen de galería:', imgErr.message);
+            return errorResponse('Error al subir imagen de galería. Intenta de nuevo.', 500);
+          }
+        } else if (!img.startsWith('blob:')) {
+          uploadedPreviewImages.push(img);
+        }
+      }
+    } else if (body.preview_images && body.preview_images.length === 0) {
+      uploadedPreviewImages = [];
+    }
+
+    await prisma.$transaction(async (tx) => {
+      // 1. Actualizar users (profile_picture_url)
+      if (uploadedProfilePictureUrl !== undefined) {
+        await tx.users.update({
+          where: { id: authContext.user.id },
+          data: { profile_picture_url: uploadedProfilePictureUrl },
+        });
+        console.log('✅ [SUPPLIES] profile_picture_url guardado en users:', uploadedProfilePictureUrl);
+      }
+
+      // 2. Actualizar providers
+      await tx.providers.update({
+        where: { id: provider.id },
+        data: {
+          commercial_name:
+            body.name !== undefined ? body.name : provider.commercial_name,
+          description:
+            body.description !== undefined
+              ? body.description
+              : provider.description,
+          logo_url:
+            uploadedProfilePictureUrl !== undefined
+              ? (uploadedProfilePictureUrl === "" ? null : uploadedProfilePictureUrl)
+              : provider.logo_url,
+        },
+      });
+
+      // 3. Actualizar sucursal principal
+      const branchUpdateData: any = {
+        phone_contact:
+          body.phone !== undefined ? body.phone : branch.phone_contact,
+        address_text:
+          body.address !== undefined ? body.address : branch.address_text,
+        opening_hours_text:
+          body.schedule !== undefined
+            ? body.schedule
+            : branch.opening_hours_text,
+        is_active:
+          body.isActive !== undefined ? body.isActive : branch.is_active,
+      };
+      
+      // Agregar campos de ubicación si están presentes
+      if (body.latitude !== undefined) branchUpdateData.latitude = body.latitude !== null ? body.latitude : null;
+      if (body.longitude !== undefined) branchUpdateData.longitude = body.longitude !== null ? body.longitude : null;
+      if (body.google_maps_url !== undefined) branchUpdateData.google_maps_url = body.google_maps_url !== null && body.google_maps_url !== "" ? body.google_maps_url : null;
+      if (uploadedImageUrl !== undefined) branchUpdateData.image_url = uploadedImageUrl;
+      if (uploadedPreviewImages !== undefined) branchUpdateData.preview_images = uploadedPreviewImages;
+      
+      console.log('💾 [SUPPLIES] Actualizando branch con datos:', JSON.stringify(branchUpdateData, null, 2));
+      await tx.provider_branches.update({
+        where: { id: branch.id },
+        data: branchUpdateData,
+      });
+      console.log('✅ [SUPPLIES] Branch actualizado exitosamente');
+    });
+
+    // --- RECUPERAR PERFIL ACTUALIZADO COMPLETO ---
+    const updatedProvider = await prisma.providers.findFirst({
       where: { id: provider.id },
-      data: {
-        commercial_name:
-          body.name !== undefined ? body.name : provider.commercial_name,
-        description:
-          body.description !== undefined
-            ? body.description
-            : provider.description,
-        logo_url:
-          finalLogoUrl !== undefined
-            ? finalLogoUrl === ""
-              ? null
-              : finalLogoUrl
-            : provider.logo_url,
+      include: {
+        users: { select: { email: true, profile_picture_url: true } },
       },
     });
 
-    const branchUpdateData: any = {
-      phone_contact:
-        body.phone !== undefined ? body.phone : branch.phone_contact,
-      address_text:
-        body.address !== undefined ? body.address : branch.address_text,
-      opening_hours_text:
-        body.schedule !== undefined
-          ? body.schedule
-          : branch.opening_hours_text,
-      is_active:
-        body.isActive !== undefined ? body.isActive : branch.is_active,
-    };
-    
-    // Agregar campos de ubicación si están presentes
-    if (body.latitude !== undefined) branchUpdateData.latitude = body.latitude !== null ? body.latitude : null;
-    if (body.longitude !== undefined) branchUpdateData.longitude = body.longitude !== null ? body.longitude : null;
-    if (body.google_maps_url !== undefined) branchUpdateData.google_maps_url = body.google_maps_url !== null && body.google_maps_url !== "" ? body.google_maps_url : null;
-    
-    console.log('💾 [SUPPLIES] Actualizando branch con datos:', JSON.stringify(branchUpdateData, null, 2));
-    const updatedBranch = await prisma.provider_branches.update({
+    if (!updatedProvider) {
+      return errorResponse("Tienda no encontrada al recuperar actualización", 404);
+    }
+
+    const updatedBranch = await prisma.provider_branches.findUnique({
       where: { id: branch.id },
-      data: branchUpdateData,
     });
-    console.log('✅ [SUPPLIES] Branch actualizado exitosamente');
+
+    if (!updatedBranch) {
+      return errorResponse("Sucursal no encontrada al recuperar actualización", 404);
+    }
 
     return successResponse({
       id: updatedProvider.id,
@@ -281,6 +374,9 @@ export async function updateSuppliesProfile(
       google_maps_url: updatedBranch.google_maps_url || null,
       schedule: updatedBranch.opening_hours_text || "",
       logoUrl: updatedProvider.logo_url || null,
+      profile_picture_url: updatedProvider.users?.profile_picture_url || updatedProvider.logo_url || null,
+      imageUrl: updatedBranch.image_url || updatedProvider.logo_url || null,
+      preview_images: updatedBranch.preview_images || [],
       isActive: Boolean(updatedBranch.is_active),
     });
   } catch (error: any) {
@@ -429,6 +525,11 @@ export async function getSupplyStoreById(
     const provider = await prisma.providers.findUnique({
       where: { id: storeId },
       include: {
+        users: {
+          select: {
+            profile_picture_url: true,
+          },
+        },
         provider_branches: {
           where: { is_active: true },
           include: {
@@ -472,7 +573,9 @@ export async function getSupplyStoreById(
       whatsapp: mainBranch?.phone_contact || "",
       email: mainBranch?.email_contact || "",
       rating: mainBranch?.rating_cache ? Number(mainBranch.rating_cache) : 0,
-      imageUrl: provider.logo_url,
+      imageUrl: mainBranch?.image_url || provider.logo_url || "",
+      profile_picture_url: provider.users?.profile_picture_url || provider.logo_url || null,
+      preview_images: Array.isArray(mainBranch?.preview_images) ? mainBranch.preview_images : [],
       latitude: mainBranch?.latitude ? Number(mainBranch.latitude) : null,
       longitude: mainBranch?.longitude ? Number(mainBranch.longitude) : null,
       google_maps_url: mainBranch?.google_maps_url || null,

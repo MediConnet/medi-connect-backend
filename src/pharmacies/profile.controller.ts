@@ -73,6 +73,8 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
     full_name: isChainMember && chain ? chain.name : (profile.commercial_name || user?.email),
     email: user?.email,
     profile_picture_url: isChainMember && chain ? (chain.logo_url || null) : (user?.profile_picture_url || profile.logo_url || null),
+    imageUrl: mainBranch?.image_url || profile.logo_url || null,
+    preview_images: mainBranch?.preview_images || [],
     is_chain_member: isChainMember === true, // ⭐ SIEMPRE booleano (true o false, nunca null/undefined)
     chain_name: isChainMember && chain ? chain.name : null,
     chain_logo: isChainMember && chain ? (chain.logo_url || null) : null,
@@ -160,6 +162,7 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
     }
 
     // --- SUBIR IMAGEN A CLOUDINARY (fuera de la transacción) ---
+    // A. Imagen de sucursal/banner
     let uploadedImageUrl: string | undefined;
     if (body.imageUrl && isBase64Image(body.imageUrl)) {
       try {
@@ -172,6 +175,45 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
     } else if (body.imageUrl && !isBase64Image(body.imageUrl) && !body.imageUrl.startsWith('blob:')) {
       // Solo usar la URL si es una URL válida (no un blob URL temporal)
       uploadedImageUrl = body.imageUrl;
+    }
+
+    // B. Avatar de la farmacia (profile_picture_url) - solo si no es cadena
+    let uploadedProfilePictureUrl: string | null | undefined;
+    if (!isChainMember && body.profile_picture_url !== undefined) {
+      if (body.profile_picture_url && isBase64Image(body.profile_picture_url)) {
+        try {
+          uploadedProfilePictureUrl = await uploadImageToCloudinary(body.profile_picture_url, 'providers/pharmacies/avatars');
+          console.log('✅ [PHARMACIES] Avatar subido a Cloudinary:', uploadedProfilePictureUrl);
+        } catch (imgErr: any) {
+          console.error('❌ [PHARMACIES] Error subiendo avatar a Cloudinary:', imgErr.message);
+          return errorResponse('Error al subir la imagen de perfil. Intenta de nuevo.', 500);
+        }
+      } else if (body.profile_picture_url && !isBase64Image(body.profile_picture_url) && !body.profile_picture_url.startsWith('blob:')) {
+        uploadedProfilePictureUrl = body.profile_picture_url;
+      } else if (body.profile_picture_url === null || body.profile_picture_url === "") {
+        uploadedProfilePictureUrl = null;
+      }
+    }
+
+    // C. Imágenes de vista previa
+    let uploadedPreviewImages: string[] | undefined;
+    if (body.preview_images && body.preview_images.length > 0) {
+      uploadedPreviewImages = [];
+      for (const img of body.preview_images) {
+        if (isBase64Image(img)) {
+          try {
+            const url = await uploadImageToCloudinary(img, 'providers/pharmacies/previews');
+            uploadedPreviewImages.push(url);
+          } catch (imgErr: any) {
+            console.error('❌ [PHARMACIES] Error subiendo imagen de galería a Cloudinary:', imgErr.message);
+            return errorResponse('Error al subir imagen de galería. Intenta de nuevo.', 500);
+          }
+        } else if (!img.startsWith('blob:')) {
+          uploadedPreviewImages.push(img);
+        }
+      }
+    } else if (body.preview_images && body.preview_images.length === 0) {
+      uploadedPreviewImages = [];
     }
 
     // --- TRANSACCIÓN UNIFICADA ---
@@ -200,6 +242,15 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
         });
       }
 
+      // Actualizar profile_picture_url en users (solo si no es de cadena)
+      if (!isChainMember && uploadedProfilePictureUrl !== undefined) {
+        await tx.users.update({
+          where: { id: authContext.user.id },
+          data: { profile_picture_url: uploadedProfilePictureUrl },
+        });
+        console.log('✅ [PHARMACIES] profile_picture_url guardado en users:', uploadedProfilePictureUrl);
+      }
+
       // B. Actualizar Sucursal Principal
       const mainBranch = profile?.provider_branches[0];
       if (mainBranch) {
@@ -213,6 +264,7 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
             has_delivery: body.has_delivery,
             is_24h: body.is_24h,
             image_url: uploadedImageUrl, // Cloudinary URL
+            preview_images: uploadedPreviewImages !== undefined ? uploadedPreviewImages : undefined,
         };
         
         Object.keys(branchData).forEach(key => branchData[key] === undefined && delete branchData[key]);
@@ -287,6 +339,8 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
       full_name: updatedIsChainMember && updatedChain ? updatedChain.name : (updatedProfile?.commercial_name || updatedUser?.email),
       email: updatedUser?.email, 
       profile_picture_url: updatedIsChainMember && updatedChain ? (updatedChain.logo_url || null) : (updatedUser?.profile_picture_url || updatedProfile?.logo_url || null),
+      imageUrl: updatedMainBranch?.image_url || updatedProfile?.logo_url || null,
+      preview_images: updatedMainBranch?.preview_images || [],
       is_chain_member: updatedIsChainMember === true, // ⭐ SIEMPRE booleano (true o false, nunca null/undefined)
       chain_name: updatedIsChainMember && updatedChain ? updatedChain.name : null,
       chain_logo: updatedIsChainMember && updatedChain ? (updatedChain.logo_url || null) : null,

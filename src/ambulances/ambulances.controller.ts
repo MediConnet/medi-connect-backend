@@ -144,6 +144,9 @@ export async function getAmbulanceProfile(
         : 0,
       totalTrips: totalTrips || 0,
       logoUrl: provider.logo_url || mainBranch?.image_url || null,
+      profile_picture_url: provider.users?.profile_picture_url || provider.logo_url || null,
+      imageUrl: mainBranch?.image_url || provider.logo_url || null,
+      preview_images: mainBranch?.preview_images || [],
       isActive: mainBranch?.is_active ?? false,
       city: mainBranch?.cities?.name || null,
       latitude: mainBranch?.latitude ? Number(mainBranch.latitude) : null,
@@ -207,6 +210,8 @@ export async function updateAmbulanceProfile(
       ambulanceTypes,
       coverageArea,
       imageUrl,
+      profile_picture_url,
+      preview_images,
     } = body;
 
     // --- SUBIR IMAGEN A CLOUDINARY ---
@@ -221,6 +226,45 @@ export async function updateAmbulanceProfile(
       }
     } else if (imageUrl) {
       uploadedImageUrl = imageUrl;
+    }
+
+    // B. Avatar de la ambulancia (profile_picture_url)
+    let uploadedProfilePictureUrl: string | null | undefined;
+    if (profile_picture_url !== undefined) {
+      if (profile_picture_url && isBase64Image(profile_picture_url)) {
+        try {
+          uploadedProfilePictureUrl = await uploadImageToCloudinary(profile_picture_url, 'providers/ambulances/avatars');
+          console.log('✅ [AMBULANCES] Avatar subido a Cloudinary:', uploadedProfilePictureUrl);
+        } catch (imgErr: any) {
+          console.error('❌ [AMBULANCES] Error subiendo avatar:', imgErr.message);
+          return errorResponse('Error al subir la imagen de perfil. Intenta de nuevo.', 500);
+        }
+      } else if (profile_picture_url && !isBase64Image(profile_picture_url) && !profile_picture_url.startsWith('blob:')) {
+        uploadedProfilePictureUrl = profile_picture_url;
+      } else if (profile_picture_url === null || profile_picture_url === "") {
+        uploadedProfilePictureUrl = null;
+      }
+    }
+
+    // C. Imágenes de vista previa (preview_images)
+    let uploadedPreviewImages: string[] | undefined;
+    if (preview_images && preview_images.length > 0) {
+      uploadedPreviewImages = [];
+      for (const img of preview_images) {
+        if (isBase64Image(img)) {
+          try {
+            const url = await uploadImageToCloudinary(img, 'providers/ambulances/previews');
+            uploadedPreviewImages.push(url);
+          } catch (imgErr: any) {
+            console.error('❌ [AMBULANCES] Error subiendo imagen de galería:', imgErr.message);
+            return errorResponse('Error al subir imagen de galería. Intenta de nuevo.', 500);
+          }
+        } else if (!img.startsWith('blob:')) {
+          uploadedPreviewImages.push(img);
+        }
+      }
+    } else if (preview_images && preview_images.length === 0) {
+      uploadedPreviewImages = [];
     }
 
     const prisma = getPrismaClient();
@@ -238,48 +282,78 @@ export async function updateAmbulanceProfile(
       return errorResponse("Ambulancia no encontrada", 404);
     }
 
-    // Actualizar proveedor
-    const updatedProvider = await prisma.providers.update({
-      where: { id: provider.id },
-      data: {
-        commercial_name: name,
-        description,
-      },
-    });
-
-    // Actualizar sucursal principal
     const mainBranch =
       provider.provider_branches.find((b) => b.is_main) ||
       provider.provider_branches[0];
-    if (mainBranch) {
-      const branchUpdateData: any = {
-        phone_contact: phone,
-        address_text: address,
-        is_24h: is24h !== undefined ? is24h : mainBranch.is_24h,
-        ambulance_types:
-          ambulanceTypes !== undefined
-            ? ambulanceTypes
-            : mainBranch.ambulance_types,
-        coverage_area:
-          coverageArea !== undefined
-            ? coverageArea
-            : mainBranch.coverage_area,
-      };
-      
-      // Agregar campos de ubicación si están presentes
-      if (latitude !== undefined) branchUpdateData.latitude = latitude !== null ? latitude : null;
-      if (longitude !== undefined) branchUpdateData.longitude = longitude !== null ? longitude : null;
-      if (google_maps_url !== undefined) branchUpdateData.google_maps_url = google_maps_url !== null && google_maps_url !== "" ? google_maps_url : null;
-      if (uploadedImageUrl !== undefined) branchUpdateData.image_url = uploadedImageUrl;
-      
-      console.log('💾 [AMBULANCES] Actualizando branch con datos:', JSON.stringify(branchUpdateData, null, 2));
-      await prisma.provider_branches.update({
-        where: { id: mainBranch.id },
-        data: branchUpdateData,
+
+    // Actualizar proveedor y sucursal principal en transacción
+    await prisma.$transaction(async (tx) => {
+      // Actualizar profile_picture_url en users
+      if (uploadedProfilePictureUrl !== undefined) {
+        await tx.users.update({
+          where: { id: authContext.user.id },
+          data: { profile_picture_url: uploadedProfilePictureUrl },
+        });
+        console.log('✅ [AMBULANCES] profile_picture_url guardado en users:', uploadedProfilePictureUrl);
+      }
+
+      // Actualizar proveedor
+      await tx.providers.update({
+        where: { id: provider.id },
+        data: {
+          commercial_name: name,
+          description,
+        },
       });
-      console.log('✅ [AMBULANCES] Branch actualizado exitosamente');
-    } else {
-      console.log('⚠️ [AMBULANCES] No hay branch principal para actualizar');
+
+      // Actualizar sucursal principal
+      if (mainBranch) {
+        const branchUpdateData: any = {
+          phone_contact: phone,
+          address_text: address,
+          is_24h: is24h !== undefined ? is24h : mainBranch.is_24h,
+          ambulance_types:
+            ambulanceTypes !== undefined
+              ? ambulanceTypes
+              : mainBranch.ambulance_types,
+          coverage_area:
+            coverageArea !== undefined
+              ? coverageArea
+              : mainBranch.coverage_area,
+        };
+        
+        // Agregar campos de ubicación si están presentes
+        if (latitude !== undefined) branchUpdateData.latitude = latitude !== null ? latitude : null;
+        if (longitude !== undefined) branchUpdateData.longitude = longitude !== null ? longitude : null;
+        if (google_maps_url !== undefined) branchUpdateData.google_maps_url = google_maps_url !== null && google_maps_url !== "" ? google_maps_url : null;
+        if (uploadedImageUrl !== undefined) branchUpdateData.image_url = uploadedImageUrl;
+        if (uploadedPreviewImages !== undefined) branchUpdateData.preview_images = uploadedPreviewImages;
+        
+        console.log('💾 [AMBULANCES] Actualizando branch con datos:', JSON.stringify(branchUpdateData, null, 2));
+        await tx.provider_branches.update({
+          where: { id: mainBranch.id },
+          data: branchUpdateData,
+        });
+        console.log('✅ [AMBULANCES] Branch actualizado exitosamente');
+      } else {
+        console.log('⚠️ [AMBULANCES] No hay branch principal para actualizar');
+      }
+    });
+
+    const updatedProvider = await prisma.providers.findFirst({
+      where: { id: provider.id },
+      include: {
+        users: {
+          select: {
+            email: true,
+            profile_picture_url: true,
+          },
+        },
+      },
+    });
+
+    if (!updatedProvider) {
+      return errorResponse("Ambulancia no encontrada al recuperar actualización", 404);
     }
 
     const totalTrips = await prisma.appointments.count({
@@ -307,6 +381,10 @@ export async function updateAmbulanceProfile(
       is24h: updatedBranch?.is_24h ?? false,
       ambulanceTypes: updatedBranch?.ambulance_types || [],
       coverageArea: updatedBranch?.coverage_area || null,
+      profile_picture_url: updatedProvider.users?.profile_picture_url || updatedProvider.logo_url || null,
+      logoUrl: updatedProvider.logo_url || updatedBranch?.image_url || null,
+      imageUrl: updatedBranch?.image_url || updatedProvider.logo_url || null,
+      preview_images: updatedBranch?.preview_images || [],
     });
   } catch (error: any) {
     console.error("❌ [AMBULANCES] Error updating ambulance profile:", error);

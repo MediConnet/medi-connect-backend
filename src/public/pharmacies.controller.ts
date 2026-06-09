@@ -38,6 +38,7 @@ const providerSelectForPublicBranch = {
   description: true,
   chain_id: true,
   pharmacy_chains: { select: { description: true } },
+  users: { select: { profile_picture_url: true } },
 } as const;
 
 // Helper para obtener la hora actual de Ecuador (UTC-5) para los filtros
@@ -380,6 +381,8 @@ export async function getPharmacyBranchById(
       hasDelivery: branch.has_delivery || false,
       email: branch.email_contact || "",
       imagen: branch.image_url || branch.providers?.logo_url || "", // <-- Ya estaba correcto
+      profile_picture_url: (branch.providers as any)?.users?.profile_picture_url || branch.providers?.logo_url || null,
+      preview_images: Array.isArray(branch.preview_images) ? branch.preview_images : [],
       latitud: branch.latitude ? Number(branch.latitude) : null,
       longitud: branch.longitude ? Number(branch.longitude) : null,
       google_maps_url: branch.google_maps_url || null,

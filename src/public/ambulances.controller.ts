@@ -66,10 +66,12 @@ function mapAmbulanceData(ambulance: any) {
     longitud: mainBranch?.longitude ? Number(mainBranch.longitude) : null,
     google_maps_url: mainBranch?.google_maps_url || null,
     imagen:
-      ambulance.logo_url ||
       mainBranch?.image_url ||
+      ambulance.logo_url ||
       ambulance.users?.profile_picture_url ||
       "",
+    profile_picture_url: ambulance.users?.profile_picture_url || ambulance.logo_url || null,
+    preview_images: Array.isArray(mainBranch?.preview_images) ? mainBranch.preview_images : [],
 
     calificacion: mainBranch?.rating_cache
       ? Number(mainBranch.rating_cache)

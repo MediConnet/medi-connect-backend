@@ -97,6 +97,12 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
         category_id: categoryId,
       },
       include: {
+        users: {
+          select: {
+            email: true,
+            profile_picture_url: true,
+          },
+        },
         provider_branches: {
           where: { is_active: true },
           orderBy: [{ is_main: "desc" }],
@@ -117,6 +123,9 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
       full_name: provider.commercial_name ?? "",
       description: provider.description ?? "",
       logo_url: toAbsoluteLogoUrl(event, provider.logo_url) ?? null,
+      profile_picture_url: provider.users?.profile_picture_url || provider.logo_url || null,
+      imageUrl: mainBranch?.image_url || provider.logo_url || null,
+      preview_images: mainBranch?.preview_images || [],
       address: mainBranch?.address_text ?? "",
       phone: mainBranch?.phone_contact ?? "",
       whatsapp: mainBranch?.phone_contact ?? "",
@@ -204,13 +213,62 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
         providerData.logo_url = resolvedImageUrl;
       }
 
+      // Procesar avatar de perfil (profile_picture_url)
+      let uploadedProfilePictureUrl: string | null | undefined;
+      if (body.profile_picture_url !== undefined) {
+        if (body.profile_picture_url && isBase64Image(body.profile_picture_url)) {
+          try {
+            uploadedProfilePictureUrl = await uploadImageToCloudinary(body.profile_picture_url, 'providers/laboratories/avatars');
+            console.log('✅ [LABORATORIES] Avatar subido a Cloudinary:', uploadedProfilePictureUrl);
+          } catch (imgErr: any) {
+            console.error('❌ [LABORATORIES] Error subiendo avatar a Cloudinary:', imgErr.message);
+            return errorResponse('Error al subir la imagen de perfil. Intenta de nuevo.', 500);
+          }
+        } else if (body.profile_picture_url && !isBase64Image(body.profile_picture_url) && !body.profile_picture_url.startsWith('blob:')) {
+          uploadedProfilePictureUrl = body.profile_picture_url;
+        } else if (body.profile_picture_url === null || body.profile_picture_url === "") {
+          uploadedProfilePictureUrl = null;
+        }
+      }
+
+      // Procesar galería de vista previa (preview_images)
+      let uploadedPreviewImages: string[] | undefined;
+      if (body.preview_images && body.preview_images.length > 0) {
+        uploadedPreviewImages = [];
+        for (const img of body.preview_images) {
+          if (isBase64Image(img)) {
+            try {
+              const url = await uploadImageToCloudinary(img, 'providers/laboratories/previews');
+              uploadedPreviewImages.push(url);
+            } catch (imgErr: any) {
+              console.error('❌ [LABORATORIES] Error subiendo imagen de galería a Cloudinary:', imgErr.message);
+              return errorResponse('Error al subir imagen de galería. Intenta de nuevo.', 500);
+            }
+          } else if (!img.startsWith('blob:')) {
+            uploadedPreviewImages.push(img);
+          }
+        }
+      } else if (body.preview_images && body.preview_images.length === 0) {
+        uploadedPreviewImages = [];
+      }
+
       if (Object.keys(providerData).length > 0) {
         await tx.providers.update({ where: { id: provider.id }, data: providerData });
+      }
+
+      // Actualizar profile_picture_url en users
+      if (uploadedProfilePictureUrl !== undefined) {
+        await tx.users.update({
+          where: { id: authContext.user.id },
+          data: { profile_picture_url: uploadedProfilePictureUrl },
+        });
+        console.log('✅ [LABORATORIES] profile_picture_url guardado en users:', uploadedProfilePictureUrl);
       }
 
       const branchData: Record<string, unknown> = {};
       // Si se subió imagen, guardarla también en image_url de la sucursal
       if (resolvedImageUrl !== undefined) branchData.image_url = resolvedImageUrl;
+      if (uploadedPreviewImages !== undefined) branchData.preview_images = uploadedPreviewImages;
       if (body.address !== undefined) branchData.address_text = body.address;
       if (body.phone !== undefined) branchData.phone_contact = body.phone;
       if (body.whatsapp !== undefined) branchData.phone_contact = body.whatsapp;
@@ -245,6 +303,12 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
     const updated = await prisma.providers.findFirst({
       where: { id: provider.id },
       include: {
+        users: {
+          select: {
+            email: true,
+            profile_picture_url: true,
+          },
+        },
         provider_branches: {
           where: { is_active: true },
           orderBy: [{ is_main: "desc" }],
@@ -261,6 +325,9 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
       full_name: updated?.commercial_name ?? "",
       description: updated?.description ?? "",
       logo_url: toAbsoluteLogoUrl(event, updated?.logo_url ?? null) ?? null,
+      profile_picture_url: updated?.users?.profile_picture_url || updated?.logo_url || null,
+      imageUrl: upBranch?.image_url || updated?.logo_url || null,
+      preview_images: upBranch?.preview_images || [],
       address: upBranch?.address_text ?? "",
       phone: upBranch?.phone_contact ?? "",
       whatsapp: upBranch?.phone_contact ?? "",

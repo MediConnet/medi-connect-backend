@@ -175,6 +175,11 @@ export async function getLaboratoryById(
     const provider = await prisma.providers.findUnique({
       where: { id: laboratoryId },
       include: {
+        users: {
+          select: {
+            profile_picture_url: true,
+          },
+        },
         provider_branches: {
           where: { is_active: true },
           include: {
@@ -220,7 +225,9 @@ export async function getLaboratoryById(
       calificacion: mainBranch.rating_cache
         ? parseFloat(mainBranch.rating_cache.toString())
         : 0,
-      imagen: provider.logo_url,
+      imagen: mainBranch.image_url || provider.logo_url || "",
+      profile_picture_url: provider.users?.profile_picture_url || provider.logo_url || null,
+      preview_images: Array.isArray(mainBranch.preview_images) ? mainBranch.preview_images : [],
       horarioAtencion: horario,
       latitud: mainBranch.latitude ? Number(mainBranch.latitude) : undefined,
       longitud: mainBranch.longitude ? Number(mainBranch.longitude) : undefined,

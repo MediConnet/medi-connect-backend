@@ -301,6 +301,8 @@ export const updatePharmacyProfileSchema = z.object({
   has_delivery: z.boolean().optional(),
   is_24h: z.boolean().optional(),
   imageUrl: z.string().optional().nullable(), // base64 o URL — se sube a Cloudinary
+  profile_picture_url: z.string().optional().nullable(), // base64 o URL — avatar del usuario
+  preview_images: z.array(z.string()).optional(), // Array de base64 o URLs — galería
   workSchedule: z.array(pharmacyScheduleItemSchema).optional(),
 });
 
@@ -322,6 +324,8 @@ export const updateLaboratoryProfileSchema = z.object({
     z.union([z.string().url(), z.string().startsWith("data:image/"), z.literal("")]).optional(),
   ),
   imageUrl: z.string().optional().nullable(), // alias de logo_url — se sube a Cloudinary
+  profile_picture_url: z.string().optional().nullable(), // base64 o URL — avatar del usuario
+  preview_images: z.array(z.string()).optional(), // Array de base64 o URLs — galería
   is_published: z.boolean().optional(),
   workSchedule: z.array(pharmacyScheduleItemSchema).optional(),
 });
