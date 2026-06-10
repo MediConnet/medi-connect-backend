@@ -111,6 +111,26 @@ export async function createAppointment(
       );
     }
 
+    if (body.discount) {
+      let discountPercentage = 0;
+      if (typeof body.discount === "number") {
+        discountPercentage = body.discount;
+      } else if (typeof body.discount === "string") {
+        const match = body.discount.match(/(\d+)/);
+        if (match) {
+          discountPercentage = parseFloat(match[1]);
+        }
+      }
+
+      if (discountPercentage > 0 && discountPercentage <= 100) {
+        const discountAmount = (appointmentCost * discountPercentage) / 100;
+        appointmentCost = Number((appointmentCost - discountAmount).toFixed(2));
+        console.log(
+          `🏷️ [DEBUG] Aplicando descuento de anuncio: ${discountPercentage}% (-$${discountAmount}). Nuevo costo: $${appointmentCost}`,
+        );
+      }
+    }
+
     const scheduledFor = new Date(`${body.date}T${body.time}:00-05:00`);
 
     // Validar pasado

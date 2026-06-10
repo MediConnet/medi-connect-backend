@@ -780,6 +780,7 @@ export const createAppointmentSchema = z.object({
     .uuid("Consultation price ID must be a valid UUID")
     .optional()
     .nullable(),
+  discount: z.union([z.number(), z.string()]).optional(),
 });
 
 // Helper para extraer ID de la URL
