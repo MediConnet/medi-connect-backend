@@ -122,7 +122,13 @@ async function createProviderProfile(prisma: any, userId: string, body: any) {
   const categorySlug = body.type ? TYPE_TO_SLUG[body.type] || "doctor" : "doctor";
 
   const category = await prisma.service_categories.findFirst({
-    where: { slug: categorySlug },
+    where: {
+      OR: [
+        { slug: categorySlug },
+        ...(categorySlug === "clinica" ? [{ slug: "clinic" }] : []),
+        ...(categorySlug === "clinic" ? [{ slug: "clinica" }] : []),
+      ]
+    },
     select: { id: true },
   });
   const categoryId = category ? category.id : null;
@@ -1014,7 +1020,15 @@ export async function login(
             provider = await prisma.providers.findFirst({
               where: {
                 user_id: user.id,
-                service_categories: { slug: categorySlug },
+                service_categories: {
+                  slug: {
+                    in: [
+                      categorySlug,
+                      ...(categorySlug === "clinica" ? ["clinic"] : []),
+                      ...(categorySlug === "clinic" ? ["clinica"] : []),
+                    ]
+                  }
+                },
               },
               include: {
                 service_categories: { select: { slug: true, name: true } },

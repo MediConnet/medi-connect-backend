@@ -26,6 +26,7 @@ const updateSettingsSchema = z.object({
   serviceApprovalRequired: z.boolean().optional(),
   allowServiceSelfActivation: z.boolean().optional(),
   allowAdSelfPublishing: z.boolean().optional(),
+  requireBackupDocuments: z.boolean().optional(),
 });
 
 /**
@@ -76,6 +77,7 @@ export async function getSettings(event: APIGatewayProxyEventV2): Promise<APIGat
       serviceApprovalRequired: settings.service_approval_required,
       allowServiceSelfActivation: settings.allow_service_self_activation,
       allowAdSelfPublishing: settings.allow_ad_self_publishing,
+      requireBackupDocuments: settings.require_backup_documents,
     };
 
     console.log('✅ [GET_SETTINGS] Configuración obtenida exitosamente');
@@ -133,6 +135,7 @@ export async function updateSettings(event: APIGatewayProxyEventV2): Promise<API
     if (data.serviceApprovalRequired !== undefined) updateData.service_approval_required = data.serviceApprovalRequired;
     if (data.allowServiceSelfActivation !== undefined) updateData.allow_service_self_activation = data.allowServiceSelfActivation;
     if (data.allowAdSelfPublishing !== undefined) updateData.allow_ad_self_publishing = data.allowAdSelfPublishing;
+    if (data.requireBackupDocuments !== undefined) updateData.require_backup_documents = data.requireBackupDocuments;
 
     // Actualizar timestamp
     updateData.updated_at = new Date();
@@ -163,6 +166,7 @@ export async function updateSettings(event: APIGatewayProxyEventV2): Promise<API
       serviceApprovalRequired: settings.service_approval_required,
       allowServiceSelfActivation: settings.allow_service_self_activation,
       allowAdSelfPublishing: settings.allow_ad_self_publishing,
+      requireBackupDocuments: settings.require_backup_documents,
     };
 
     console.log('✅ [UPDATE_SETTINGS] Configuración actualizada exitosamente');

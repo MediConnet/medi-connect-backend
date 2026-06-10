@@ -24,6 +24,7 @@ import {
 } from './users.controller';
 import { getSettings, updateSettings } from './settings.controller';
 import { getSpecialties, createSpecialty, updateSpecialty, deleteSpecialty } from './specialties.controller';
+import { getCities, createCity, updateCity, deleteCity } from './cities.controller';
 
 export async function handler(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   const method = event.requestContext.http.method;
@@ -312,6 +313,26 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       return await deleteSpecialty(event);
     }
 
+    // GET /api/admin/cities
+    if (method === 'GET' && path === '/api/admin/cities') {
+      return await getCities(event);
+    }
+
+    // POST /api/admin/cities
+    if (method === 'POST' && path === '/api/admin/cities') {
+      return await createCity(event);
+    }
+
+    // PUT /api/admin/cities/:id
+    if (method === 'PUT' && path.match(/^\/api\/admin\/cities\/[^/]+$/)) {
+      return await updateCity(event);
+    }
+
+    // DELETE /api/admin/cities/:id
+    if (method === 'DELETE' && path.match(/^\/api\/admin\/cities\/[^/]+$/)) {
+      return await deleteCity(event);
+    }
+
     console.log(`❌ [ADMIN] ${method} ${path} - Ruta no encontrada (404)`);
     return errorResponse('Not found', 404);
   } catch (error: any) {
@@ -428,6 +449,11 @@ async function compileRecentActivity(prisma: any, limitCount: number = 5): Promi
   }
 }
 
+function normalizeServiceType(slug?: string | null, name?: string | null): string {
+  const raw = slug || name?.toLowerCase() || 'doctor';
+  return raw === 'clinic' ? 'clinica' : raw;
+}
+
 async function getDashboardStats(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   console.log('📊 [GET_DASHBOARD_STATS] Obteniendo estadísticas del dashboard');
   const authResult = await requireRole(event, [enum_roles.admin]);
@@ -509,7 +535,9 @@ async function getDashboardStats(event: APIGatewayProxyEventV2): Promise<APIGate
     prisma.providers.count({
       where: {
         service_categories: {
-          slug: 'clinica',
+          slug: {
+            in: ['clinic', 'clinica'],
+          },
         },
         verification_status: 'APPROVED',
       },
@@ -688,7 +716,7 @@ async function getRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayPro
       providerName: provider.commercial_name || 'Sin nombre',
       email: provider.users?.email || '',
       avatarUrl: provider.users?.profile_picture_url || undefined,
-      serviceType: provider.service_categories?.slug || provider.service_categories?.name?.toLowerCase() || 'doctor',
+      serviceType: normalizeServiceType(provider.service_categories?.slug, provider.service_categories?.name),
       submissionDate: provider.users?.created_at 
         ? new Date(provider.users.created_at).toISOString().split('T')[0]
         : new Date().toISOString().split('T')[0],
@@ -770,7 +798,7 @@ async function getRequestDetail(event: APIGatewayProxyEventV2): Promise<APIGatew
     providerName: provider.commercial_name || 'Sin nombre',
     email: provider.users?.email || '',
     avatarUrl: provider.users?.profile_picture_url || undefined,
-    serviceType: provider.service_categories?.slug || provider.service_categories?.name?.toLowerCase() || 'doctor',
+    serviceType: normalizeServiceType(provider.service_categories?.slug, provider.service_categories?.name),
     submissionDate: provider.users?.created_at
       ? new Date(provider.users.created_at).toISOString().split('T')[0]
       : new Date().toISOString().split('T')[0],
@@ -832,7 +860,11 @@ async function getAdRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayP
 
   // Filtro por tipo de servicio
   if (serviceType) {
-    filters.push({ providers: { service_categories: { slug: serviceType } } });
+    if (serviceType === 'clinica') {
+      filters.push({ providers: { service_categories: { slug: { in: ['clinic', 'clinica'] } } } });
+    } else {
+      filters.push({ providers: { service_categories: { slug: serviceType } } });
+    }
   }
 
   // Filtro por rango de fechas (start_date)
@@ -883,9 +915,7 @@ async function getAdRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayP
   // Mapear a la estructura esperada por el frontend
   const adRequests = ads.map((ad) => {
     const provider = ad.providers;
-    const serviceType = provider?.service_categories?.slug || 
-                       provider?.service_categories?.name?.toLowerCase() || 
-                       'doctor';
+    const serviceType = normalizeServiceType(provider?.service_categories?.slug, provider?.service_categories?.name);
 
     // Verificar si el anuncio está activo
     const hasActiveAd = ad.status === ad_status.APPROVED && 
@@ -1006,7 +1036,11 @@ async function getHistory(event: APIGatewayProxyEventV2): Promise<APIGatewayProx
 
   // Filtro por tipo de servicio (service_categories.slug)
   if (serviceType) {
-    filters.push({ service_categories: { slug: serviceType } });
+    if (serviceType === 'clinica') {
+      filters.push({ service_categories: { slug: { in: ['clinic', 'clinica'] } } });
+    } else {
+      filters.push({ service_categories: { slug: serviceType } });
+    }
   }
 
   // Filtro por rango de fechas (users.created_at)
@@ -1093,7 +1127,7 @@ async function getHistory(event: APIGatewayProxyEventV2): Promise<APIGatewayProx
       providerName: provider.commercial_name || 'Sin nombre',
       email: provider.users?.email || '',
       avatarUrl: provider.users?.profile_picture_url || undefined,
-      serviceType: provider.service_categories?.slug || provider.service_categories?.name?.toLowerCase() || 'doctor',
+      serviceType: normalizeServiceType(provider.service_categories?.slug, provider.service_categories?.name),
       submissionDate: provider.users?.created_at 
         ? new Date(provider.users.created_at).toISOString().split('T')[0]
         : new Date().toISOString().split('T')[0],
