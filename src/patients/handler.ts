@@ -7,6 +7,7 @@ import {
 } from "../shared/response";
 import {
   cancelAppointment,
+  confirmAppointmentAttendance,
   createAppointment,
   getAppointmentById,
   getAppointments,
@@ -27,6 +28,8 @@ import {
   getUnreadCount,
   markAllNotificationsAsRead,
   markNotificationAsRead,
+  clearAllNotifications,
+  deleteNotification,
 } from "./notifications.controller";
 import { getProfile, updateProfile } from "./profile.controller";
 import {
@@ -68,7 +71,16 @@ export async function handler(
       return await startPaymentProcess(event);
     }
 
-    // 2. Rutas por ID (Detalle y Cancelar)
+    // 2. Rutas específicas por ID (Confirmación de asistencia)
+    if (
+      path.startsWith("/api/patients/appointments/") &&
+      path.endsWith("/confirm") &&
+      method === "PUT"
+    ) {
+      return await confirmAppointmentAttendance(event);
+    }
+
+    // 3. Rutas por ID (Detalle y Cancelar)
     if (path.startsWith("/api/patients/appointments/")) {
       if (method === "GET") return await getAppointmentById(event);
       if (method === "DELETE") return await cancelAppointment(event);
@@ -116,6 +128,14 @@ export async function handler(
     }
     if (path === "/api/patients/notifications") {
       if (method === "GET") return await getNotifications(event);
+      if (method === "DELETE") return await clearAllNotifications(event);
+    }
+    if (
+      path.startsWith("/api/patients/notifications/") &&
+      !path.endsWith("/read") &&
+      method === "DELETE"
+    ) {
+      return await deleteNotification(event);
     }
 
     // --- Rutas de Recordatorios ---

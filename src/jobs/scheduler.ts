@@ -1,6 +1,7 @@
 import cron from 'node-cron';
 import { checkReminders } from './check-reminders.job';
 import { sendAppointmentReminders } from './appointment-reminders';
+import { checkAppointmentReminders } from './appointment-reminders-check';
 import { updateFeaturedBranches } from './featured.job';
 import { initializeReminderCache, triggerCacheReload } from './reminder-cache';
 
@@ -18,6 +19,15 @@ export function startScheduler(): void {
       await checkReminders();
     } catch (error) {
       console.error('❌ [SCHEDULER] Error en checkReminders:', error);
+    }
+  });
+
+  // Cada 30 minutos: comprobar recordatorios de citas de 48h, 24h, 2h y auto-demotación de 12h
+  cron.schedule('*/30 * * * *', async () => {
+    try {
+      await checkAppointmentReminders();
+    } catch (error) {
+      console.error('❌ [SCHEDULER] Error en checkAppointmentReminders:', error);
     }
   });
 
@@ -53,6 +63,7 @@ export function startScheduler(): void {
   console.log('✅ [SCHEDULER] Cron jobs activos:');
   console.log('   - checkReminders: cada minuto');
   console.log('   - triggerCacheReload: cada hora (seguridad)');
+  console.log('   - checkAppointmentReminders: cada 30 minutos');
   console.log('   - sendAppointmentReminders: diario 8:00 AM Ecuador');
   console.log('   - updateFeaturedBranches: diario 3:00 AM UTC');
 }

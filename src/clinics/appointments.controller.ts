@@ -112,7 +112,8 @@ export async function getAppointments(event: APIGatewayProxyEventV2): Promise<AP
         'confirmed': 'CONFIRMED',
         'attended': 'attended',
         'cancelled': 'CANCELLED',
-        'no_show': 'CANCELLED',
+        'no_show': 'NO_SHOW',
+        'pending_confirmation': 'PENDING_CONFIRMATION',
       };
       where.status = statusMap[queryParams.status.toLowerCase()] || queryParams.status.toUpperCase();
     }
@@ -189,6 +190,8 @@ export async function getAppointments(event: APIGatewayProxyEventV2): Promise<AP
       if (status === 'CONFIRMED') return 'confirmed';
       if (status === 'CANCELLED') return 'cancelled';
       if (status === 'attended' || status === 'ATTENDED') return 'attended';
+      if (status === 'NO_SHOW') return 'no_show';
+      if (status === 'PENDING_CONFIRMATION') return 'pending_confirmation';
       return 'scheduled';
     };
 
@@ -281,7 +284,8 @@ export async function updateAppointmentStatus(event: APIGatewayProxyEventV2): Pr
       'confirmed': 'CONFIRMED',
       'attended': 'attended',
       'cancelled': 'CANCELLED',
-      'no_show': 'CANCELLED',
+      'no_show': 'NO_SHOW',
+      'pending_confirmation': 'PENDING_CONFIRMATION',
     };
 
     const dbStatus = statusMap[body.status] || body.status.toUpperCase();

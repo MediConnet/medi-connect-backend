@@ -217,6 +217,9 @@ functions:
           path: /api/patients/notifications
           method: GET
       - httpApi:
+          path: /api/patients/notifications
+          method: DELETE
+      - httpApi:
           path: /api/patients/notifications/unread
           method: GET
       - httpApi:
@@ -225,6 +228,9 @@ functions:
       - httpApi:
           path: /api/patients/notifications/{id}/read
           method: PUT
+      - httpApi:
+          path: /api/patients/notifications/{id}
+          method: DELETE
       # Reminders
       - httpApi:
           path: /api/patients/reminders

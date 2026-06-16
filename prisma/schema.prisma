@@ -26,6 +26,9 @@ model appointments {
   created_at        DateTime            @default(now()) @db.Timestamp(6)
   updated_at        DateTime            @updatedAt @db.Timestamp(6)
   specialty_id      String?             @db.Uuid
+  reminder_48h_sent Boolean?            @default(false)
+  reminder_24h_sent Boolean?            @default(false)
+  reminder_2h_sent  Boolean?            @default(false)
   provider_branches provider_branches?  @relation(fields: [branch_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   clinics           clinics?            @relation(fields: [clinic_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   patients          patients?           @relation(fields: [patient_id], references: [id], onDelete: NoAction, onUpdate: NoAction)

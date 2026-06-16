@@ -4,7 +4,7 @@ import { addMinutes } from "date-fns";
 import { AuthContext, requireAuth } from "../shared/auth";
 import { logger } from "../shared/logger";
 import { getPrismaClient } from "../shared/prisma";
-import { emitToUser } from "../shared/realtime";
+import { emitToUser, emitToClinic } from "../shared/realtime";
 import {
   errorResponse,
   internalErrorResponse,
@@ -193,6 +193,7 @@ export async function createAppointment(
         providers: {
           include: {
             service_categories: { select: { name: true, slug: true } },
+            users: { select: { profile_picture_url: true } },
           },
         },
         provider_branches: true,
@@ -241,6 +242,29 @@ export async function createAppointment(
           reason: body.reason,
         }),
       }).catch((err: any) => console.error("❌ [APPOINTMENTS] Error enviando email confirmación:", err.message));
+
+      // Notificación push/in-app
+      const formattedDate = appointment.scheduled_for ? appointment.scheduled_for.toLocaleDateString("es-ES", {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+      }) : "";
+      const formattedTime = appointment.scheduled_for ? appointment.scheduled_for.toLocaleTimeString("es-ES", {
+        hour: "2-digit",
+        minute: "2-digit",
+      }) : "";
+
+      const { patientNotificationService } = await import("../shared/patient-notification.service");
+      patientNotificationService.create({
+        patientId: patient.id,
+        type: "cita",
+        title: "Cita Agendada",
+        body: `Tu cita con Dr(a). ${providerName} ha sido registrada para el ${formattedDate} a las ${formattedTime}.`,
+        data: {
+          targetScreen: "Citas",
+          appointmentId: appointment.id,
+        },
+      }).catch((err: any) => console.error("❌ [APPOINTMENTS] Error enviando push confirmación:", err.message));
     }
 
     // Realtime: appointment:created (to doctor, optionally clinic)
@@ -292,7 +316,7 @@ export async function createAppointment(
           ? {
               id: provider.id,
               name: provider.commercial_name,
-              logoUrl: provider.logo_url,
+              logoUrl: provider.users?.profile_picture_url || provider.logo_url,
               category: provider.service_categories?.name || null,
             }
           : null,
@@ -413,6 +437,7 @@ export async function getAppointments(
           providers: {
             include: {
               service_categories: { select: { name: true, slug: true } },
+              users: { select: { profile_picture_url: true } },
             },
           },
           provider_branches: {
@@ -454,7 +479,7 @@ export async function getAppointments(
           ? {
               id: aptWithRelations.providers.id,
               name: aptWithRelations.providers.commercial_name,
-              logoUrl: aptWithRelations.providers.logo_url,
+              logoUrl: aptWithRelations.providers.users?.profile_picture_url || aptWithRelations.providers.logo_url,
               category:
                 aptWithRelations.providers.service_categories?.name || null,
             }
@@ -524,6 +549,7 @@ export async function getAppointmentById(
                 slug: true,
               },
             },
+            users: { select: { profile_picture_url: true } },
           },
         },
         provider_branches: {
@@ -570,7 +596,7 @@ export async function getAppointmentById(
         ? {
             id: provider.id,
             name: provider.commercial_name,
-            logoUrl: provider.logo_url,
+            logoUrl: provider.users?.profile_picture_url || provider.logo_url,
             description: provider.description || null,
             category: provider.service_categories?.name || null,
           }
@@ -707,5 +733,91 @@ export async function cancelAppointment(
       return errorResponse("Invalid appointment ID", 400);
     }
     return internalErrorResponse("Failed to cancel appointment");
+  }
+}
+
+// --- CONFIRM APPOINTMENT ATTENDANCE ---
+export async function confirmAppointmentAttendance(
+  event: APIGatewayProxyEventV2,
+): Promise<APIGatewayProxyResult> {
+  console.log("✅ [PATIENTS] PUT /api/patients/appointments/:id/confirm - Confirmando asistencia");
+
+  const authResult = await requireAuth(event);
+  if ("statusCode" in authResult) {
+    return authResult;
+  }
+
+  const authContext = authResult as AuthContext;
+  const prisma = getPrismaClient();
+
+  try {
+    const appointmentId = extractIdFromPath(
+      event.requestContext.http.path,
+      "/api/patients/appointments/",
+      "/confirm",
+    );
+
+    // Buscar el paciente
+    const patient = await prisma.patients.findFirst({
+      where: { user_id: authContext.user.id },
+    });
+
+    if (!patient) {
+      return notFoundResponse("Patient not found");
+    }
+
+    // Obtener la cita
+    const appointment = await prisma.appointments.findUnique({
+      where: { id: appointmentId },
+      include: {
+        providers: { select: { user_id: true } },
+      },
+    });
+
+    if (!appointment) {
+      return notFoundResponse("Appointment not found");
+    }
+
+    // Validar que la cita pertenezca al paciente
+    if (appointment.patient_id !== patient.id) {
+      return errorResponse("Access denied", 403);
+    }
+
+    // Cambiar estado a CONFIRMED
+    const updatedAppointment = await prisma.appointments.update({
+      where: { id: appointmentId },
+      data: {
+        status: "CONFIRMED",
+      },
+    });
+
+    console.log(`✅ [PATIENTS] Cita ${appointmentId} confirmada por el paciente`);
+
+    // Emitir realtime al médico y clínica
+    if (appointment.providers?.user_id) {
+      emitToUser(appointment.providers.user_id, "appointment:updated", {
+        appointmentId: appointment.id,
+        status: "CONFIRMED",
+      });
+    }
+    if (appointment.clinic_id) {
+      emitToClinic(appointment.clinic_id, "appointment:updated", {
+        appointmentId: appointment.id,
+        status: "CONFIRMED",
+      });
+    }
+
+    return successResponse({
+      id: updatedAppointment.id,
+      status: updatedAppointment.status,
+      message: "Cita confirmada exitosamente por el paciente",
+    });
+  } catch (error: any) {
+    console.error("❌ [PATIENTS] Error al confirmar cita:", error.message);
+    logger.error("Error confirming appointment", error);
+    if (error.message.includes("Invalid path format")) {
+      return errorResponse("Invalid appointment ID", 400);
+    }
+    return internalErrorResponse("Failed to confirm appointment");
   }
 }

@@ -253,3 +253,123 @@ export async function markAllNotificationsAsRead(
     return internalErrorResponse("Failed to mark all notifications as read");
   }
 }
+
+// --- CLEAR ALL NOTIFICATIONS ---
+export async function clearAllNotifications(
+  event: APIGatewayProxyEventV2,
+): Promise<APIGatewayProxyResult> {
+  console.log(
+    "✅ [PATIENTS] DELETE /api/patients/notifications - Borrando todas las notificaciones",
+  );
+
+  const authResult = await requireAuth(event);
+  if ("statusCode" in authResult) {
+    return authResult;
+  }
+
+  const authContext = authResult as AuthContext;
+  const prisma = getPrismaClient();
+
+  try {
+    // Buscar el paciente
+    const patient = await prisma.patients.findFirst({
+      where: { user_id: authContext.user.id },
+    });
+
+    if (!patient) {
+      return errorResponse("Patient not found", 404);
+    }
+
+    // Borrar todas las notificaciones
+    const result = await prisma.notifications.deleteMany({
+      where: {
+        patient_id: patient.id,
+      },
+    });
+
+    console.log(
+      `✅ [PATIENTS] ${result.count} notificaciones eliminadas`,
+    );
+    return successResponse({
+      count: result.count,
+      message: "All notifications cleared successfully",
+    });
+  } catch (error: any) {
+    console.error(
+      "❌ [PATIENTS] Error al borrar notificaciones:",
+      error.message,
+    );
+    logger.error("Error clearing notifications", error);
+    return internalErrorResponse("Failed to clear notifications");
+  }
+}
+
+// --- DELETE SINGLE NOTIFICATION ---
+export async function deleteNotification(
+  event: APIGatewayProxyEventV2,
+): Promise<APIGatewayProxyResult> {
+  console.log(
+    "✅ [PATIENTS] DELETE /api/patients/notifications/:id - Eliminando notificación",
+  );
+
+  const authResult = await requireAuth(event);
+  if ("statusCode" in authResult) {
+    return authResult;
+  }
+
+  const authContext = authResult as AuthContext;
+  const prisma = getPrismaClient();
+
+  try {
+    const notificationId = extractIdFromPath(
+      event.requestContext.http.path,
+      "/api/patients/notifications/",
+      ""
+    );
+
+    // Buscar el paciente
+    const patient = await prisma.patients.findFirst({
+      where: { user_id: authContext.user.id },
+    });
+
+    if (!patient) {
+      return errorResponse("Patient not found", 404);
+    }
+
+    // Buscar la notificación
+    const notification = await prisma.notifications.findUnique({
+      where: { id: notificationId },
+    });
+
+    if (!notification) {
+      return errorResponse("Notification not found", 404);
+    }
+
+    // Verificar que pertenece al paciente
+    if (notification.patient_id !== patient.id) {
+      return errorResponse("Access denied", 403);
+    }
+
+    // Eliminar la notificación
+    await prisma.notifications.delete({
+      where: { id: notificationId },
+    });
+
+    console.log(`✅ [PATIENTS] Notificación ${notificationId} eliminada`);
+    return successResponse({
+      message: "Notification deleted successfully",
+    });
+  } catch (error: any) {
+    console.error(
+      "❌ [PATIENTS] Error al eliminar notificación:",
+      error.message,
+    );
+    logger.error("Error deleting notification", error);
+    if (error.message.includes("Invalid path format")) {
+      return errorResponse("Invalid notification ID", 400);
+    }
+    return internalErrorResponse("Failed to delete notification");
+  }
+}
+
+

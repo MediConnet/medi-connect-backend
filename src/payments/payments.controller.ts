@@ -270,13 +270,43 @@ export async function handlePayphoneWebhook(
       });
 
       if (payment.appointment_id) {
-        await prisma.appointments.update({
+        const updatedApp = await prisma.appointments.update({
           where: { id: payment.appointment_id },
           data: {
             status: "CONFIRMED",
             is_paid: true,
           },
+          include: {
+            providers: { select: { commercial_name: true } },
+            clinics: { select: { name: true } },
+          },
         });
+
+        if (updatedApp.patient_id) {
+          const doctorName = updatedApp.providers?.commercial_name || "Médico";
+          const clinicName = updatedApp.clinics?.name || doctorName;
+          const formattedDate = updatedApp.scheduled_for ? updatedApp.scheduled_for.toLocaleDateString("es-ES", {
+            weekday: "long",
+            day: "numeric",
+            month: "long",
+          }) : "";
+          const formattedTime = updatedApp.scheduled_for ? updatedApp.scheduled_for.toLocaleTimeString("es-ES", {
+            hour: "2-digit",
+            minute: "2-digit",
+          }) : "";
+
+          const { patientNotificationService } = await import("../shared/patient-notification.service");
+          await patientNotificationService.create({
+            patientId: updatedApp.patient_id,
+            type: "cita",
+            title: "Pago Exitoso y Cita Confirmada",
+            body: `Tu pago fue procesado con éxito. Tu cita con Dr(a). ${doctorName} en ${clinicName} está confirmada para el ${formattedDate} a las ${formattedTime}.`,
+            data: {
+              targetScreen: "Citas",
+              appointmentId: updatedApp.id,
+            },
+          }).catch((err: any) => console.error("❌ [WEBHOOK] Error enviando push confirmación:", err.message));
+        }
       }
 
       console.log(

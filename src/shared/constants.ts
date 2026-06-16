@@ -31,7 +31,7 @@ export type PharmacyOrderStatus = (typeof PHARMACY_ORDER_STATUSES)[number];
 
 // ── Clinic appointment statuses (no Prisma enum; the DB stores different values) ──
 export const CLINIC_APPOINTMENT_STATUSES = [
-  "scheduled", "confirmed", "attended", "cancelled", "no_show",
+  "scheduled", "confirmed", "attended", "cancelled", "no_show", "pending_confirmation",
 ] as const;
 export type ClinicAppointmentStatus = (typeof CLINIC_APPOINTMENT_STATUSES)[number];
 

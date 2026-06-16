@@ -182,10 +182,10 @@ export const createDiagnosisSchema = z.object({
 
 // --- Validador para actualizar estado de cita ---
 export const updateAppointmentStatusSchema = z.object({
-  status: z.nativeEnum(enum_appt_status, {
+  status: z.enum(["CONFIRMED", "CANCELLED", "COMPLETED", "PENDING_CONFIRMATION", "NO_SHOW"], {
     errorMap: () => ({
       message:
-        "Estado inválido. Valores permitidos: CONFIRMED, CANCELLED, COMPLETED",
+        "Estado inválido. Valores permitidos: CONFIRMED, CANCELLED, COMPLETED, PENDING_CONFIRMATION, NO_SHOW",
     }),
   }),
 });
@@ -599,7 +599,7 @@ export const updateAppointmentStatusClinicSchema = z.object({
   status: z.enum(CLINIC_APPOINTMENT_STATUSES, {
     errorMap: () => ({
       message:
-        "Status must be one of: scheduled, confirmed, attended, cancelled, no-show",
+        "Status must be one of: scheduled, confirmed, attended, cancelled, no_show, pending_confirmation",
     }),
   }),
 });

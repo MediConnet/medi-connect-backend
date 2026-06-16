@@ -575,15 +575,23 @@ export async function register(
 
     if (existingUser) {
       if (requestedRole === enum_roles.provider) {
+        // Si el usuario registrado existente es una cuenta social (no tiene hash local y/o tiene google_id/apple_id)
+        if (!existingUser.password_hash || existingUser.google_id || existingUser.apple_id) {
+          return unauthorizedResponse(
+            "El correo electrónico ya está registrado mediante una cuenta de Google/Apple. Por favor, utiliza un correo diferente para tu registro profesional."
+          );
+        }
+
         if (isLocalDev) {
-          if (!existingUser.password_hash) {
-            return unauthorizedResponse("Credenciales inválidas");
-          }
           const ok = await bcrypt.compare(
             body.password,
             existingUser.password_hash,
           );
-          if (!ok) return unauthorizedResponse("Credenciales inválidas");
+          if (!ok) {
+            return unauthorizedResponse(
+              "El correo electrónico ya está registrado. Si es tu cuenta, ingresa la contraseña correcta para asociar tu perfil profesional."
+            );
+          }
         } else {
           try {
             await cognitoClient.send(
@@ -603,7 +611,9 @@ export async function register(
                 403,
               );
             }
-            return unauthorizedResponse("Credenciales inválidas");
+            return unauthorizedResponse(
+              "El correo electrónico ya está registrado. Si es tu cuenta, ingresa la contraseña correcta para asociar tu perfil profesional."
+            );
           }
         }
 
