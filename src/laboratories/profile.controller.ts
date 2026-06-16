@@ -22,7 +22,6 @@ function dayIdToSlug(dayId: number): string {
 function formatTimeHHmm(time: Date | null): string {
   if (!time) return "09:00";
   const d = new Date(time);
-  // Use UTC to avoid timezone shifts for @db.Time columns
   return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
 }
 
@@ -285,13 +284,15 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
         for (const item of body.workSchedule) {
           if (item.enabled) {
             const baseDate = "1970-01-01";
+            const [startH, startM] = item.startTime.split(":").map(Number);
+            const [endH, endM] = item.endTime.split(":").map(Number);
             await tx.provider_schedules.create({
               data: {
                 id: randomUUID(),
                 branch_id: mainBranch.id,
                 day_of_week: getDayIdFromString(item.day),
-                start_time: new Date(`${baseDate}T${item.startTime}:00Z`),
-                end_time: new Date(`${baseDate}T${item.endTime}:00Z`),
+                start_time: new Date(Date.UTC(1970, 0, 1, startH, startM, 0, 0)),
+                end_time: new Date(Date.UTC(1970, 0, 1, endH, endM, 0, 0)),
                 is_active: true,
               },
             });

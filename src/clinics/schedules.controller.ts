@@ -186,7 +186,16 @@ export async function updateDoctorSchedule(event: APIGatewayProxyEventV2): Promi
     }
 
     if (doctor.user_id !== authContext.user.id) {
-      return errorResponse('Forbidden', 403);
+      const clinic = await prisma.clinics.findFirst({
+        where: {
+          id: doctor.clinic_id,
+          user_id: authContext.user.id,
+        },
+      });
+
+      if (!clinic) {
+        return errorResponse('Forbidden', 403);
+      }
     }
 
     const clinicSchedule = buildClinicWeekSchedule(doctor);

@@ -50,9 +50,12 @@ export function formatSmartSchedule(schedules: any[]): string {
     return `${startDay} - ${endDay}: ${firstStart} - ${firstEnd}`;
   }
 
-  const now = new Date();
-  now.setHours(now.getHours() - 5);
-  const todayIndex = now.getDay();
+  const weekdayLong = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Guayaquil",
+    weekday: "long",
+  }).format(new Date());
+  const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const todayIndex = weekdays.indexOf(weekdayLong);
 
   const todaySchedule = activeSchedules.find(
     (s) => s.day_of_week === todayIndex,

@@ -14,12 +14,23 @@ import { errorResponse, successResponse } from "../shared/response";
 
 const APPOINTMENT_DURATION = 30;
 
-const getEcuadorTime = (): Date => {
-  const now = new Date();
-  const ecuadorOffset = -5 * 60;
-  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
-  return new Date(utc + 3600000 * -5);
-};
+function formatEcuadorDate(date: Date): string {
+  return new Intl.DateTimeFormat('fr-CA', {
+    timeZone: 'America/Guayaquil',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).format(date);
+}
+
+function formatEcuadorTime(date: Date): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'America/Guayaquil',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  }).format(date);
+}
 
 export async function getDoctorAvailability(
   event: APIGatewayProxyEventV2,
@@ -47,8 +58,8 @@ export async function getDoctorAvailability(
     // IMPORTANTE: parsear la fecha como local (no UTC) para evitar
     // desfase de día en zonas horarias negativas como Ecuador (UTC-5).
     // "2026-06-09" + "T00:00:00" = medianoche local → día correcto.
-    const requestDate = new Date(`${dateString}T00:00:00`);
-    const dayOfWeek = requestDate.getDay(); // 0=Dom, 1=Lun, ... 6=Sáb
+    const requestDate = new Date(`${dateString}T00:00:00.000Z`);
+    const dayOfWeek = new Date(`${dateString}T12:00:00.000Z`).getUTCDay(); // 0=Dom, 1=Lun, ... 6=Sáb
 
     console.log(`🗓️ [AVAILABILITY] Doctor: ${doctorId}, Fecha: ${dateString}, DíaSemana: ${dayOfWeek} (0=Dom,1=Lun,2=Mar,3=Mié,4=Jue,5=Vie,6=Sáb)`);
 
@@ -78,26 +89,58 @@ export async function getDoctorAvailability(
     ) {
       isClinicFlow = true;
       const clinicDoctor = provider.users.clinic_doctors[0];
+      const dbDayOfWeek = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
 
-      console.log(`🏥 [AVAILABILITY] Buscando horario de clínica: ${clinicDoctor.clinic_id}, día: ${dayOfWeek}`);
+      console.log(`🏥 [AVAILABILITY] Buscando horario de clínica/doctor: doctor_id: ${clinicDoctor.id}, clinic_id: ${clinicDoctor.clinic_id}, día: ${dayOfWeek} (DB: ${dbDayOfWeek})`);
 
-      // Doctor de Clínica usando el Horario General de la Clínica
-      const clinicSchedule = await prisma.clinic_schedules.findFirst({
+      // Verificar si el doctor tiene un horario personalizado configurado en esta clínica
+      const hasCustomSchedule = await prisma.doctor_schedules.count({
         where: {
-          clinic_id: clinicDoctor.clinic_id,
-          day_of_week: dayOfWeek,
-          enabled: true,
+          doctor_id: clinicDoctor.id,
+          clinic_id: clinicDoctor.clinic_id ?? undefined,
         },
-      });
+      }) > 0;
 
-      console.log(`🏥 [AVAILABILITY] Horario de clínica encontrado: ${clinicSchedule ? `${clinicSchedule.start_time} - ${clinicSchedule.end_time}` : 'NINGUNO'}`);
+      if (hasCustomSchedule) {
+        console.log(`🏥 [AVAILABILITY] El doctor tiene horario personalizado. Buscando para el día: ${dayOfWeek} (DB: ${dbDayOfWeek})`);
+        const customSchedule = await prisma.doctor_schedules.findFirst({
+          where: {
+            doctor_id: clinicDoctor.id,
+            clinic_id: clinicDoctor.clinic_id ?? undefined,
+            day_of_week: dbDayOfWeek,
+            enabled: true,
+          },
+        });
 
-      if (
-        clinicSchedule &&
-        clinicSchedule.start_time &&
-        clinicSchedule.end_time
-      ) {
-        scheduleSource = clinicSchedule;
+        console.log(`🏥 [AVAILABILITY] Horario personalizado del doctor encontrado: ${customSchedule ? `${customSchedule.start_time} - ${customSchedule.end_time}` : 'NINGUNO'}`);
+
+        if (
+          customSchedule &&
+          customSchedule.start_time &&
+          customSchedule.end_time
+        ) {
+          scheduleSource = customSchedule;
+        }
+      } else {
+        // Fallback al horario general de la clínica
+        console.log(`🏥 [AVAILABILITY] El doctor NO tiene horario personalizado. Usando horario general de la clínica.`);
+        const clinicSchedule = await prisma.clinic_schedules.findFirst({
+          where: {
+            clinic_id: clinicDoctor.clinic_id ?? undefined,
+            day_of_week: dbDayOfWeek,
+            enabled: true,
+          },
+        });
+
+        console.log(`🏥 [AVAILABILITY] Horario de clínica encontrado: ${clinicSchedule ? `${clinicSchedule.start_time} - ${clinicSchedule.end_time}` : 'NINGUNO'}`);
+
+        if (
+          clinicSchedule &&
+          clinicSchedule.start_time &&
+          clinicSchedule.end_time
+        ) {
+          scheduleSource = clinicSchedule;
+        }
       }
     } else {
       // Doctor Independiente (Flujo Normal)
@@ -136,16 +179,16 @@ export async function getDoctorAvailability(
     let allSlots: Date[] = [];
 
     const startDateTime = mergeDateAndTime(
-      requestDate,
+      dateString,
       scheduleSource.start_time,
     );
-    const endDateTime = mergeDateAndTime(requestDate, scheduleSource.end_time);
+    const endDateTime = mergeDateAndTime(dateString, scheduleSource.end_time);
 
     let breakStart: Date | null = null;
     let breakEnd: Date | null = null;
     if (scheduleSource.break_start && scheduleSource.break_end) {
-      breakStart = mergeDateAndTime(requestDate, scheduleSource.break_start);
-      breakEnd = mergeDateAndTime(requestDate, scheduleSource.break_end);
+      breakStart = mergeDateAndTime(dateString, scheduleSource.break_start);
+      breakEnd = mergeDateAndTime(dateString, scheduleSource.break_end);
     }
 
     let currentSlot = startDateTime;
@@ -205,8 +248,8 @@ export async function getDoctorAvailability(
       if (blockedRanges.length > 0) {
         allSlots = allSlots.filter((slot) => {
           const isBlocked = blockedRanges.some((block: any) => {
-            const blockStart = mergeDateAndTime(requestDate, block.start_time);
-            const blockEnd = mergeDateAndTime(requestDate, block.end_time);
+            const blockStart = mergeDateAndTime(dateString, block.start_time);
+            const blockEnd = mergeDateAndTime(dateString, block.end_time);
             return slot >= blockStart && slot < blockEnd;
           });
           return !isBlocked;
@@ -236,10 +279,10 @@ export async function getDoctorAvailability(
             allSlots = allSlots.filter((slot) => {
               const isBlocked = blockRequests.some((block: any) => {
                 const blockStart = mergeDateAndTime(
-                  requestDate,
+                  dateString,
                   block.start_time,
                 );
-                const blockEnd = mergeDateAndTime(requestDate, block.end_time);
+                const blockEnd = mergeDateAndTime(dateString, block.end_time);
                 return slot >= blockStart && slot < blockEnd;
               });
               return !isBlocked;
@@ -249,8 +292,8 @@ export async function getDoctorAvailability(
       }
     }
 
-    const ecuadorNow = getEcuadorTime();
-    const ecuadorDateString = format(ecuadorNow, "yyyy-MM-dd");
+    const ecuadorNow = new Date();
+    const ecuadorDateString = formatEcuadorDate(ecuadorNow);
     const isToday = dateString === ecuadorDateString;
 
     if (isToday) {
@@ -265,7 +308,7 @@ export async function getDoctorAvailability(
       }
     }
 
-    const availableTimes = allSlots.map((slot) => format(slot, "HH:mm"));
+    const availableTimes = allSlots.map((slot) => formatEcuadorTime(slot));
 
     return successResponse({
       date: dateString,
@@ -278,15 +321,10 @@ export async function getDoctorAvailability(
 }
 
 // --- HELPER FUNCTION ---
-function mergeDateAndTime(baseDate: Date, timeDate: Date): Date {
+function mergeDateAndTime(dateStr: string, timeDate: Date): Date {
   const hours = timeDate.getUTCHours();
   const minutes = timeDate.getUTCMinutes();
-
-  let newDate = new Date(baseDate);
-  newDate = setHours(newDate, hours);
-  newDate = setMinutes(newDate, minutes);
-  newDate = setSeconds(newDate, 0);
-  newDate.setMilliseconds(0);
-
-  return newDate;
+  const hh = String(hours).padStart(2, "0");
+  const mm = String(minutes).padStart(2, "0");
+  return new Date(`${dateStr}T${hh}:${mm}:00.000-05:00`);
 }

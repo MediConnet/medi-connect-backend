@@ -33,7 +33,7 @@ function dayNameToNumber(day: string): number {
 function formatTime(time: Date | null): string {
   if (!time) return '09:00';
   const date = new Date(time);
-  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+  return `${String(date.getUTCHours()).padStart(2, '0')}:${String(date.getUTCMinutes()).padStart(2, '0')}`;
 }
 
 // GET /api/clinics/profile

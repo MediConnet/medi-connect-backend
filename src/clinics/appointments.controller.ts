@@ -9,6 +9,24 @@ import { notifyAppointmentCancelled, notifyAppointmentConfirmed } from '../share
 import { emitToUser } from '../shared/realtime';
 import { resolveClinicForAuthUser } from './clinic-context';
 
+function formatEcuadorDate(date: Date): string {
+  return new Intl.DateTimeFormat('fr-CA', {
+    timeZone: 'America/Guayaquil',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).format(date);
+}
+
+function formatEcuadorTime(date: Date): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'America/Guayaquil',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  }).format(date);
+}
+
 // Helper para obtener datos del doctor desde las relaciones
 async function getDoctorData(providerId: string, prisma: any) {
   const provider = await prisma.providers.findFirst({
@@ -204,10 +222,8 @@ export async function getAppointments(event: APIGatewayProxyEventV2): Promise<AP
         const doctorData = apt.provider_id ? providerDataMap.get(apt.provider_id) : null;
         
         // Formatear fecha y hora
-        const date = scheduledFor ? scheduledFor.toISOString().split('T')[0] : null; // YYYY-MM-DD
-        const time = scheduledFor 
-          ? `${String(scheduledFor.getHours()).padStart(2, '0')}:${String(scheduledFor.getMinutes()).padStart(2, '0')}`
-          : null; // HH:mm
+        const date = scheduledFor ? formatEcuadorDate(scheduledFor) : null; // YYYY-MM-DD
+        const time = scheduledFor ? formatEcuadorTime(scheduledFor) : null; // HH:mm
 
         return {
           id: apt.id,
@@ -520,7 +536,7 @@ export async function getTodayReception(event: APIGatewayProxyEventV2): Promise<
         const scheduledFor = apt.scheduled_for ? new Date(apt.scheduled_for) : null;
         return {
           id: apt.id,
-          time: scheduledFor ? `${String(scheduledFor.getHours()).padStart(2, '0')}:${String(scheduledFor.getMinutes()).padStart(2, '0')}` : null,
+          time: scheduledFor ? formatEcuadorTime(scheduledFor) : null,
           patientName: apt.patients?.full_name || 'Paciente',
           doctorName: apt.providers?.commercial_name || 'M�dico',
           doctorSpecialty: apt.providers?.provider_specialties[0]?.specialties.name || null,

@@ -28,7 +28,7 @@ async function testDoctorClinicSchedule() {
 
     // 2. Obtener información de la clínica
     console.log('2️⃣ Obteniendo información de la clínica...');
-    const clinicInfoResponse = await fetch('http://localhost:3000/api/doctors/clinic-info', {
+    const clinicInfoResponse = await fetch('http://localhost:3000/api/clinics/doctors/me/info', {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -52,14 +52,14 @@ async function testDoctorClinicSchedule() {
 
     // 3. Verificar que el horario está presente
     console.log('3️⃣ Verificando horario de la clínica...');
-    const clinic = clinicData.data;
+    const clinic = clinicData.data.data || clinicData.data;
     
-    if (!clinic.generalSchedule) {
-      console.error('❌ El campo generalSchedule no está presente');
+    if (!clinic || !clinic.schedule) {
+      console.error('❌ El campo schedule no está presente');
       return;
     }
-
-    console.log('✅ Campo generalSchedule presente');
+ 
+    console.log('✅ Campo schedule presente');
     console.log('📅 Horario de la clínica:');
     
     const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
@@ -72,12 +72,12 @@ async function testDoctorClinicSchedule() {
       saturday: 'Sábado',
       sunday: 'Domingo',
     };
-
+ 
     let allDaysPresent = true;
     let enabledDays = 0;
-
+ 
     days.forEach((day) => {
-      const daySchedule = clinic.generalSchedule[day];
+      const daySchedule = clinic.schedule[day];
       if (!daySchedule) {
         console.log(`  ❌ ${dayNames[day]}: NO PRESENTE`);
         allDaysPresent = false;
@@ -90,14 +90,14 @@ async function testDoctorClinicSchedule() {
         if (daySchedule.enabled) enabledDays++;
       }
     });
-
+ 
     console.log('');
     console.log('🔍 Verificación de estructura:');
     console.log(`  ✅ Todos los días presentes: ${allDaysPresent ? 'Sí' : 'No'}`);
     console.log(`  ✅ Días habilitados: ${enabledDays}/7`);
     
     // Verificar estructura de cada día
-    const mondaySchedule = clinic.generalSchedule.monday;
+    const mondaySchedule = clinic.schedule.monday;
     if (mondaySchedule) {
       const hasEnabled = typeof mondaySchedule.enabled === 'boolean';
       const hasStartTime = typeof mondaySchedule.startTime === 'string';

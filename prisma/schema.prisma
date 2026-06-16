@@ -1,8 +1,8 @@
 generator client {
   provider        = "prisma-client-js"
   output          = "../src/generated/prisma"
-  binaryTargets   = ["native", "rhel-openssl-3.0.x"]
   previewFeatures = ["driverAdapters"]
+  binaryTargets   = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
@@ -24,11 +24,11 @@ model appointments {
   reception_notes   String?
   reception_status  String?             @db.VarChar(50)
   created_at        DateTime            @default(now()) @db.Timestamp(6)
-  updated_at        DateTime            @updatedAt @db.Timestamp(6)
   specialty_id      String?             @db.Uuid
-  reminder_48h_sent Boolean?            @default(false)
+  updated_at        DateTime            @updatedAt @db.Timestamp(6)
   reminder_24h_sent Boolean?            @default(false)
   reminder_2h_sent  Boolean?            @default(false)
+  reminder_48h_sent Boolean?            @default(false)
   provider_branches provider_branches?  @relation(fields: [branch_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   clinics           clinics?            @relation(fields: [clinic_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   patients          patients?           @relation(fields: [patient_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -47,7 +47,7 @@ model appointments {
 
 model cities {
   id                String              @id @db.Uuid
-  name                 String                 @unique @db.VarChar(255)
+  name              String              @unique @db.VarChar(255)
   state             String?             @db.VarChar(255)
   country           String?             @db.VarChar(255)
   provider_branches provider_branches[]
@@ -265,10 +265,10 @@ model provider_branches {
   is_main            Boolean?             @default(false)
   is_active          Boolean?             @default(false)
   payment_methods    String[]
-  preview_images     String[]             @default([])
   ambulance_types    String[]             @default([])
   coverage_area      String?              @db.VarChar(255)
   google_maps_url    String?              @db.VarChar(500)
+  preview_images     String[]             @default([])
   appointments       appointments[]
   blockedSlots       blocked_slots[]
   featured_branches  featured_branches[]
@@ -412,9 +412,9 @@ model users {
   profile_picture_url  String?               @db.VarChar(255)
   is_active            Boolean?              @default(true)
   created_at           DateTime?             @default(now()) @db.Timestamp(6)
-  push_token           String?               @db.VarChar(255)
   apple_id             String?               @db.VarChar(255)
   google_id            String?               @unique @db.VarChar(255)
+  push_token           String?               @db.VarChar(255)
   clinic_doctors       clinic_doctors[]
   clinics              clinics?
   doctor_bank_accounts doctor_bank_accounts?
@@ -445,11 +445,11 @@ model clinics {
   clinic_doctors       clinic_doctors[]
   clinic_notifications clinic_notifications[]
   clinic_schedules     clinic_schedules[]
-  doctor_schedules     doctor_schedules[]
   clinic_specialties   clinic_specialties[]
   users                users?                 @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   date_block_requests  date_block_requests[]
   doctor_invitations   doctor_invitations[]
+  doctor_schedules     doctor_schedules[]
   payments             payments[]
   reception_messages   reception_messages[]
 }
@@ -479,19 +479,19 @@ model clinic_schedules {
 }
 
 model doctor_schedules {
-  id          String          @id @db.Uuid
-  doctor_id   String?         @db.Uuid
-  clinic_id   String?         @db.Uuid
-  day_of_week Int
-  enabled     Boolean?        @default(false)
-  start_time  DateTime?       @db.Time(6)
-  end_time    DateTime?       @db.Time(6)
-  break_start DateTime?       @db.Time(6)
-  break_end   DateTime?       @db.Time(6)
-  created_at  DateTime?       @default(now()) @db.Timestamp(6)
-  updated_at  DateTime?       @default(now()) @db.Timestamp(6)
-  clinic_doctors clinic_doctors? @relation(fields: [doctor_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id             String          @id @db.Uuid
+  doctor_id      String?         @db.Uuid
+  clinic_id      String?         @db.Uuid
+  day_of_week    Int
+  enabled        Boolean?        @default(false)
+  start_time     DateTime?       @db.Time(6)
+  end_time       DateTime?       @db.Time(6)
+  break_start    DateTime?       @db.Time(6)
+  break_end      DateTime?       @db.Time(6)
+  created_at     DateTime?       @default(now()) @db.Timestamp(6)
+  updated_at     DateTime?       @default(now()) @db.Timestamp(6)
   clinics        clinics?        @relation(fields: [clinic_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  clinic_doctors clinic_doctors? @relation(fields: [doctor_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([doctor_id, clinic_id, day_of_week])
 }
@@ -509,9 +509,9 @@ model clinic_doctors {
   updated_at                   DateTime?                      @default(now()) @db.Timestamp(6)
   clinics                      clinics?                       @relation(fields: [clinic_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   users                        users?                         @relation(fields: [user_id], references: [id], onUpdate: NoAction)
-  doctor_schedules             doctor_schedules[]
   clinic_payment_distributions clinic_payment_distributions[]
   date_block_requests          date_block_requests[]
+  doctor_schedules             doctor_schedules[]
   reception_messages           reception_messages[]
 
   @@unique([clinic_id, user_id])
@@ -555,8 +555,8 @@ model doctor_invitations {
   invitation_token String    @unique @db.VarChar(255)
   expires_at       DateTime  @db.Timestamp(6)
   status           String?   @default("pending") @db.VarChar(50)
-  doctor_exists    Boolean?
   created_at       DateTime? @default(now()) @db.Timestamp(6)
+  doctor_exists    Boolean?
   clinics          clinics?  @relation(fields: [clinic_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }
 
@@ -639,9 +639,29 @@ model admin_settings {
   service_approval_required     Boolean  @default(true)
   allow_service_self_activation Boolean  @default(false)
   allow_ad_self_publishing      Boolean  @default(false)
-  require_backup_documents      Boolean  @default(true)
   updated_at                    DateTime @default(now()) @db.Timestamp(6)
   created_at                    DateTime @default(now()) @db.Timestamp(6)
+  require_backup_documents      Boolean  @default(true)
+}
+
+model comments {
+  id             String              @id @db.Uuid
+  user_id        String?             @db.Uuid
+  user_type      String?             @db.VarChar(50)
+  user_name      String?             @db.VarChar(255)
+  user_email     String?             @db.VarChar(255)
+  subject        String              @db.VarChar(255)
+  message        String
+  status         enum_comment_status @default(PENDING)
+  admin_response String?
+  created_at     DateTime            @default(now()) @db.Timestamp(6)
+  updated_at     DateTime            @updatedAt @db.Timestamp(6)
+  deleted_at     DateTime?           @db.Timestamp(6)
+
+  @@index([id])
+  @@index([user_id])
+  @@index([status])
+  @@index([created_at])
 }
 
 enum enum_appt_status {
@@ -694,26 +714,6 @@ enum enum_reminder_type {
   medicamento
   cita
   general
-}
-
-model comments {
-  id             String               @id @db.Uuid
-  user_id        String?              @db.Uuid
-  user_type      String?              @db.VarChar(50)
-  user_name      String?              @db.VarChar(255)
-  user_email     String?              @db.VarChar(255)
-  subject        String               @db.VarChar(255)
-  message        String               @db.Text
-  status         enum_comment_status  @default(PENDING)
-  admin_response String?              @db.Text
-  created_at     DateTime             @default(now()) @db.Timestamp(6)
-  updated_at     DateTime             @updatedAt @db.Timestamp(6)
-  deleted_at     DateTime?            @db.Timestamp(6)
-
-  @@index([id])
-  @@index([user_id])
-  @@index([status])
-  @@index([created_at])
 }
 
 enum enum_comment_status {

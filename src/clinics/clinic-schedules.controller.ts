@@ -49,7 +49,6 @@ function dayNameToNumber(day: string): number {
 function formatTime(time: Date | null): string {
   if (!time) return '09:00';
   const date = new Date(time);
-  // Usar UTC para evitar problemas de zona horaria
   return `${String(date.getUTCHours()).padStart(2, '0')}:${String(date.getUTCMinutes()).padStart(2, '0')}`;
 }
 

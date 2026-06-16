@@ -157,14 +157,15 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
         for (const sch of mainBranch.provider_schedules) {
           const dayNum = sch.day_of_week ?? 0;
           if (dayNum >= 0 && dayNum <= 6) {
-            const startTime = sch.start_time ? new Date(sch.start_time).toISOString().substring(11, 16) : null;
-            const endTime = sch.end_time ? new Date(sch.end_time).toISOString().substring(11, 16) : null;
-            const breakStart = (sch as any).break_start
-              ? new Date((sch as any).break_start).toISOString().substring(11, 16)
-              : null;
-            const breakEnd = (sch as any).break_end
-              ? new Date((sch as any).break_end).toISOString().substring(11, 16)
-              : null;
+            const formatLocal = (t: Date | null | undefined) => {
+              if (!t) return null;
+              const d = new Date(t);
+              return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+            };
+            const startTime = formatLocal(sch.start_time);
+            const endTime = formatLocal(sch.end_time);
+            const breakStart = formatLocal((sch as any).break_start);
+            const breakEnd = formatLocal((sch as any).break_end);
             
             daysMap[dayNum] = {
               day: dayNames[dayNum],
@@ -373,15 +374,15 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
 
             for (const item of body.workSchedule) {
                 if (item.enabled) {
-                    const baseDate = '1970-01-01';
-                    const startTime = new Date(`${baseDate}T${item.startTime}:00Z`);
-                    const endTime = new Date(`${baseDate}T${item.endTime}:00Z`);
-                    const breakStart = item.breakStart
-                      ? new Date(`${baseDate}T${item.breakStart}:00Z`)
-                      : null;
-                    const breakEnd = item.breakEnd
-                      ? new Date(`${baseDate}T${item.breakEnd}:00Z`)
-                      : null;
+                    const parseLocal = (tStr: string | null | undefined): Date | null => {
+                      if (!tStr) return null;
+                      const [h, m] = tStr.split(":").map(Number);
+                      return new Date(Date.UTC(1970, 0, 1, h, m, 0, 0));
+                    };
+                    const startTime = parseLocal(item.startTime);
+                    const endTime = parseLocal(item.endTime);
+                    const breakStart = parseLocal(item.breakStart);
+                    const breakEnd = parseLocal(item.breakEnd);
 
                     await tx.provider_schedules.create({
                         data: {
@@ -573,14 +574,15 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
           for (const sch of updatedMainBranch.provider_schedules) {
             const dayNum = sch.day_of_week ?? 0;
             if (dayNum >= 0 && dayNum <= 6) {
-              const startTime = sch.start_time ? new Date(sch.start_time).toISOString().substring(11, 16) : null;
-              const endTime = sch.end_time ? new Date(sch.end_time).toISOString().substring(11, 16) : null;
-              const breakStart = (sch as any).break_start
-                ? new Date((sch as any).break_start).toISOString().substring(11, 16)
-                : null;
-              const breakEnd = (sch as any).break_end
-                ? new Date((sch as any).break_end).toISOString().substring(11, 16)
-                : null;
+              const formatLocal = (t: Date | null | undefined) => {
+                if (!t) return null;
+                const d = new Date(t);
+                return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+              };
+              const startTime = formatLocal(sch.start_time);
+              const endTime = formatLocal(sch.end_time);
+              const breakStart = formatLocal((sch as any).break_start);
+              const breakEnd = formatLocal((sch as any).break_end);
               
               daysMap[dayNum] = {
                 day: dayNames[dayNum],

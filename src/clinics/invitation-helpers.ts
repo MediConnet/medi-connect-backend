@@ -122,6 +122,19 @@ export async function completeClinicInvitationAssociation(
     throw new Error("Provider profile not found");
   }
 
+  // Desactivar otras asociaciones de clínica activas para este médico
+  await prisma.clinic_doctors.updateMany({
+    where: {
+      user_id: userId,
+      clinic_id: { not: invitation.clinic_id },
+      is_active: true,
+    },
+    data: {
+      is_active: false,
+      updated_at: new Date(),
+    },
+  });
+
   await prisma.clinic_doctors.create({
     data: {
       id: randomUUID(),

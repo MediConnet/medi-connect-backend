@@ -36,7 +36,8 @@ export function formatTime(time: Date | null): string {
 }
 
 export function parseTimeToDate(time: string): Date {
-  return new Date(`1970-01-01T${time}:00Z`);
+  const [hours, minutes] = time.split(":").map(Number);
+  return new Date(Date.UTC(1970, 0, 1, hours, minutes, 0, 0));
 }
 
 export function timeToMinutes(time: string): number {

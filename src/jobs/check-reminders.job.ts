@@ -8,16 +8,21 @@ export async function checkReminders() {
   const prisma = getPrismaClient();
 
   // --- 1. OBTENER HORA ACTUAL EN ECUADOR ---
-  const nowInEcuador = new Date(
-    new Date().toLocaleString("en-US", {
-      timeZone: "America/Guayaquil",
-    }),
-  );
+  const now = new Date();
+  const hhMm = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Guayaquil",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).format(now);
+  const [currentHour, currentMinute] = hhMm.split(":").map(Number);
 
-  const currentHour = nowInEcuador.getHours();
-  const currentMinute = nowInEcuador.getMinutes();
-
-  const todayString = nowInEcuador.toISOString().split("T")[0];
+  const todayString = new Intl.DateTimeFormat("fr-CA", {
+    timeZone: "America/Guayaquil",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(now);
 
   console.log(
     `\n⏰ [CRON] Iniciando (Hora Ecuador: ${currentHour}:${currentMinute})`,

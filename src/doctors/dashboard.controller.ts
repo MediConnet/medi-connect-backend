@@ -289,12 +289,15 @@ export async function getDashboard(event: APIGatewayProxyEventV2): Promise<APIGa
   const dayNames = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
   const schedules = (mainBranch?.provider_schedules || []).map((sch) => {
     const dayKey = dayNames[sch.day_of_week ?? 0] || "monday";
-    const startTime = sch.start_time ? new Date(sch.start_time).toISOString().substring(11, 16) : null;
-    const endTime = sch.end_time ? new Date(sch.end_time).toISOString().substring(11, 16) : null;
-    const breakStart = sch.break_start
-      ? new Date(sch.break_start).toISOString().substring(11, 16)
-      : null;
-    const breakEnd = sch.break_end ? new Date(sch.break_end).toISOString().substring(11, 16) : null;
+    const formatLocal = (t: Date | null | undefined) => {
+      if (!t) return null;
+      const d = new Date(t);
+      return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+    };
+    const startTime = formatLocal(sch.start_time);
+    const endTime = formatLocal(sch.end_time);
+    const breakStart = formatLocal(sch.break_start);
+    const breakEnd = formatLocal(sch.break_end);
 
     return {
       day_id: sch.day_of_week ?? 0,

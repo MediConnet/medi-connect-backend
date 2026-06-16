@@ -48,7 +48,7 @@ export async function getClinicInfo(
     const formatTime = (time: Date | null): string => {
       if (!time) return "09:00";
       const date = new Date(time);
-      return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+      return `${String(date.getUTCHours()).padStart(2, "0")}:${String(date.getUTCMinutes()).padStart(2, "0")}`;
     };
     const schedule: Record<string, any> = {
       monday: { enabled: false, startTime: "09:00", endTime: "18:00" },
