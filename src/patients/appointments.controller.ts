@@ -37,20 +37,25 @@ export async function createAppointment(
   const prisma = getPrismaClient();
 
   try {
-    // 1. Validar Paciente
-    const patient = await prisma.patients.findFirst({
+    const body = parseBody(event.body, createAppointmentSchema);
+
+    // 1. Validar / Crear Paciente de manera perezosa (lazy profile creation)
+    const patientDb = await prisma.patients.findFirst({
       where: { user_id: authContext.user.id },
       include: { users: { select: { email: true } } },
     });
 
-    if (!patient) {
-      return errorResponse(
-        "Patient profile not found. Please complete your profile first.",
-        404,
-      );
-    }
-
-    const body = parseBody(event.body, createAppointmentSchema);
+    const patient = patientDb
+      ? patientDb
+      : await prisma.patients.create({
+          data: {
+            id: randomUUID(),
+            user_id: authContext.user.id,
+            full_name: body.fullName || authContext.user.email?.split('@')[0] || "Usuario Paciente",
+            phone: body.phone || null,
+          },
+          include: { users: { select: { email: true } } },
+        });
 
     if (!body.specialtyId) {
       return errorResponse("El campo specialtyId es requerido", 400);
@@ -75,9 +80,38 @@ export async function createAppointment(
     if (!doctor || !doctor.users?.is_active) {
       return errorResponse("Doctor not found or inactive", 404);
     }
-    const mainBranch = doctor.provider_branches[0];
-    if (!mainBranch) {
-      return errorResponse("Doctor has no active branch", 400);
+    let branchId: string | null = null;
+    if (body.clinicId) {
+      const clinic = await prisma.clinics.findUnique({
+        where: { id: body.clinicId },
+        include: {
+          users: {
+            include: {
+              providers: {
+                include: {
+                  provider_branches: {
+                    where: { is_active: true },
+                    orderBy: { is_main: "desc" },
+                    take: 1,
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+      const clinicBranch = clinic?.users?.providers?.[0]?.provider_branches?.[0];
+      if (clinicBranch) {
+        branchId = clinicBranch.id;
+      }
+    }
+
+    if (!branchId) {
+      const mainBranch = doctor.provider_branches[0];
+      if (!mainBranch) {
+        return errorResponse("Doctor has no active branch", 400);
+      }
+      branchId = mainBranch.id;
     }
 
     const specialtyRecord = doctor.provider_specialties[0];
@@ -178,7 +212,7 @@ export async function createAppointment(
         id: randomUUID(),
         patient_id: patient.id,
         provider_id: body.doctorId,
-        branch_id: mainBranch.id,
+        branch_id: branchId,
         clinic_id: body.clinicId || null,
         specialty_id: body.specialtyId,
         scheduled_for: scheduledFor,

@@ -66,7 +66,7 @@ function mapDoctorData(doctor: any) {
 
   return {
     id: doctor.id,
-    branchId: mainBranch?.id || "",
+    branchId: mainBranch?.id || clinicData?.id || "",
     nombre: doctor.commercial_name || "",
     apellido: "",
 
@@ -79,9 +79,9 @@ function mapDoctorData(doctor: any) {
     descripcion: doctor.description || "",
     experiencia: doctor.years_of_experience || 0,
     registro: "",
-    telefono: mainBranch?.phone_contact || "",
+    telefono: mainBranch?.phone_contact || clinicData?.phone || "",
     email: doctor.users?.email || "",
-    direccion: mainBranch?.address_text || "",
+    direccion: mainBranch?.address_text || clinicData?.address || "",
     ciudad: mainBranch?.cities?.name || "",
     codigoPostal: "",
 
@@ -92,9 +92,9 @@ function mapDoctorData(doctor: any) {
     calificacion: mainBranch?.rating_cache
       ? Number(mainBranch.rating_cache)
       : 0,
-    latitud: mainBranch?.latitude ? Number(mainBranch.latitude) : null,
-    longitud: mainBranch?.longitude ? Number(mainBranch.longitude) : null,
-    google_maps_url: mainBranch?.google_maps_url || null,
+    latitud: mainBranch?.latitude ? Number(mainBranch.latitude) : (clinicData?.latitude ? Number(clinicData.latitude) : null),
+    longitud: mainBranch?.longitude ? Number(mainBranch.longitude) : (clinicData?.longitude ? Number(clinicData.longitude) : null),
+    google_maps_url: mainBranch?.google_maps_url || clinicData?.google_maps_url || null,
 
     tarifas: {
       consulta: tarifaBase,
@@ -338,7 +338,10 @@ export async function getDoctorById(
         verification_status: enum_verification.APPROVED,
         category_id: 1,
         users: { is_active: true },
-        provider_branches: { some: { is_active: true } },
+        OR: [
+          { provider_branches: { some: { is_active: true } } },
+          { users: { clinic_doctors: { some: { is_active: true } } } }
+        ]
       },
       include: {
         users: {
@@ -351,7 +354,14 @@ export async function getDoctorById(
               select: {
                 clinics: {
                   select: {
+                    id: true,
                     name: true,
+                    address: true,
+                    phone: true,
+                    whatsapp: true,
+                    latitude: true,
+                    longitude: true,
+                    google_maps_url: true,
                     clinic_schedules: {
                       where: { enabled: true },
                       orderBy: { day_of_week: "asc" },
