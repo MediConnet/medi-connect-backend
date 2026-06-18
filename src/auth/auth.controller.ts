@@ -1866,16 +1866,31 @@ export async function socialLogin(
     let socialName: string = fullName || "Usuario";
 
     if (provider === "apple") {
-      const tokenParts = identityToken.split(".");
-      const decoded = Buffer.from(tokenParts[1], "base64").toString("utf8");
-      const applePayload = JSON.parse(decoded);
-      socialId = applePayload.sub;
-      socialEmail = email || applePayload.email;
+      try {
+        const tokenParts = identityToken.split(".");
+        const decoded = Buffer.from(tokenParts[1], "base64url").toString("utf8");
+        const applePayload = JSON.parse(decoded);
+        socialId = applePayload.sub;
+        socialEmail = email || applePayload.email || "";
+        console.log(`✅ [SOCIAL-LOGIN] Token Apple decodificado. sub=${socialId}, email=${socialEmail || "(no enviado)"}`);
+      } catch (err: any) {
+        console.error("❌ [SOCIAL-LOGIN] Error decodificando token Apple:", err.message);
+        return errorResponse("Token de Apple inválido", 400);
+      }
+
     } else if (provider === "google") {
       try {
+        // El token de iOS viene firmado con el iOS Client ID,
+        // mientras que el de Android usa el Web Client ID.
+        // Hay que aceptar AMBOS como audience válido.
+        const validAudiences = [
+          process.env.GOOGLE_CLIENT_ID,            // Web Client ID
+          process.env.GOOGLE_IOS_CLIENT_ID,        // iOS Client ID
+        ].filter(Boolean) as string[];
+
         const ticket = await googleClient.verifyIdToken({
           idToken: identityToken,
-          audience: process.env.GOOGLE_CLIENT_ID,
+          audience: validAudiences,
         });
         const payload = ticket.getPayload();
         if (!payload) return errorResponse("Token de Google inválido", 400);
@@ -1883,28 +1898,45 @@ export async function socialLogin(
         socialId = payload.sub; // ID único de Google
         socialEmail = payload.email!;
         socialName = fullName || payload.name || "Usuario Google";
-      } catch (err) {
+        console.log(`✅ [SOCIAL-LOGIN] Token de Google verificado para: ${socialEmail}`);
+      } catch (err: any) {
+        console.error("❌ [SOCIAL-LOGIN] Error verificando token Google:", err.message);
         return errorResponse("Fallo al verificar token de Google", 400);
       }
     } else {
       return errorResponse("Proveedor no soportado", 400);
     }
 
+
     const prisma = getPrismaClient();
 
     // Buscar usuario por su ID social correspondiente o email
+    // Para Apple: en logins subsecuentes el email no viene, buscar solo por apple_id
+    const whereConditions: any[] = [
+      provider === "apple"
+        ? { apple_id: socialId }
+        : { google_id: socialId },
+    ];
+
+    // Solo agregar la búsqueda por email si tenemos un email válido
+    if (socialEmail) {
+      whereConditions.push({ email: socialEmail });
+    }
+
     let user = await prisma.users.findFirst({
-      where: {
-        OR: [
-          provider === "apple"
-            ? { apple_id: socialId }
-            : { google_id: socialId },
-          { email: socialEmail },
-        ],
-      },
+      where: { OR: whereConditions },
     });
 
     if (!user) {
+      // No se puede crear un nuevo usuario sin email
+      if (!socialEmail) {
+        console.error(`❌ [SOCIAL-LOGIN] No se puede crear usuario ${provider} sin email`);
+        return errorResponse(
+          "No se pudo obtener el correo electrónico. Por favor intenta de nuevo.",
+          400,
+        );
+      }
+
       // Crear nuevo usuario (Paciente por defecto)
       user = await prisma.users.create({
         data: {
@@ -1927,6 +1959,7 @@ export async function socialLogin(
       console.log(
         `✅ [SOCIAL-LOGIN] Nuevo usuario ${provider} creado: ${user.id}`,
       );
+
     } else {
       const updateData: any = {};
       if (provider === "apple" && !user.apple_id)
