@@ -6,6 +6,7 @@ import { getPrismaClient } from '../shared/prisma';
 import { errorResponse, successResponse, paginatedResponse } from '../shared/response';
 import { parseBody, updateAppointmentStatusSchema } from '../shared/validators';
 import { emitToUser } from '../shared/realtime';
+import { notifyAppointmentConfirmed, notifyAppointmentCancelled } from '../shared/notifications';
 
 export async function getAppointments(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   try {
@@ -239,6 +240,69 @@ export async function updateAppointmentStatus(event: APIGatewayProxyEventV2): Pr
       }
     } catch (e) {
       // do not block response
+    }
+
+    // Enviar notificaciones según el estado (no bloquea la respuesta)
+    if (newStatus === enum_appt_status.CONFIRMED || newStatus === enum_appt_status.CANCELLED) {
+      prisma.appointments.findFirst({
+        where: { id: appointmentId },
+        include: {
+          clinics: {
+            include: {
+              users: true,
+            },
+          },
+          patients: {
+            include: {
+              users: true,
+            },
+          },
+          providers: {
+            select: {
+              commercial_name: true,
+              user_id: true,
+            }
+          }
+        },
+      }).then(async (appointmentWithDetails) => {
+        if (appointmentWithDetails) {
+          const doctor = appointmentWithDetails.providers?.user_id 
+            ? await prisma.clinic_doctors.findFirst({
+                where: {
+                  clinic_id: appointmentWithDetails.clinic_id || '',
+                  user_id: appointmentWithDetails.providers.user_id,
+                },
+                include: {
+                  users: true,
+                },
+              })
+            : null;
+
+          const doctorData = doctor || {
+            name: provider.commercial_name,
+            email: authContext.user.email,
+            is_active: true
+          };
+
+          if (newStatus === enum_appt_status.CONFIRMED) {
+            await notifyAppointmentConfirmed(
+              appointmentWithDetails,
+              appointmentWithDetails.clinics,
+              doctorData,
+              appointmentWithDetails.patients
+            );
+          } else if (newStatus === enum_appt_status.CANCELLED) {
+            await notifyAppointmentCancelled(
+              appointmentWithDetails,
+              appointmentWithDetails.clinics,
+              doctorData,
+              appointmentWithDetails.patients
+            );
+          }
+        }
+      }).catch(err => {
+        console.error('Error en notificaciones de actualización de cita:', err);
+      });
     }
 
     return successResponse({

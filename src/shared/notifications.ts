@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import { logger } from './logger';
 import { sendEmail, generateDoctorNewAppointmentEmail, generateClinicNewAppointmentEmail, generatePatientNewAppointmentEmail, generatePatientReminderEmail, generateDoctorCancellationEmail, generatePatientCancellationEmail } from './email';
 import { emitToClinic } from './realtime';
+import { patientNotificationService } from './patient-notification.service';
 
 export interface AppointmentNotificationData {
   appointment_id: string;
@@ -255,6 +256,23 @@ export async function notifyAppointmentCancelled(
         'Tu cita ha sido cancelada'
       );
     }
+
+    // Enviar push notification al paciente
+    if (patient?.id) {
+      const appointmentDate = appointment.scheduled_for ? new Date(appointment.scheduled_for) : null;
+      const dateStr = formatDate(appointmentDate);
+      const timeStr = formatTime(appointmentDate);
+      await patientNotificationService.create({
+        patientId: patient.id,
+        type: 'cita',
+        title: 'Cita Cancelada',
+        body: `Tu cita con el Dr. ${doctor?.name || 'Médico'} programada para el ${dateStr} a las ${timeStr} ha sido cancelada.`,
+        data: {
+          appointmentId: appointment.id,
+          status: 'cancelled'
+        }
+      });
+    }
   } catch (error: any) {
     console.error(`❌ [NOTIFICATIONS] Error al notificar cancelación:`, error.message);
     logger.error('Error notifying appointment cancellation', error);
@@ -354,6 +372,22 @@ export async function notifyAppointmentConfirmed(
       } else {
         console.log(`📅 [NOTIFICATIONS] Recordatorio 24h antes se enviará automáticamente mediante job/cron`);
       }
+    }
+
+    // Enviar push notification al paciente
+    if (patient?.id && appointmentDate) {
+      const dateStr = formatDate(appointmentDate);
+      const timeStr = formatTime(appointmentDate);
+      await patientNotificationService.create({
+        patientId: patient.id,
+        type: 'cita',
+        title: 'Cita Confirmada',
+        body: `Tu cita con el Dr. ${doctor?.name || 'Médico'} ha sido confirmada para el ${dateStr} a las ${timeStr}.`,
+        data: {
+          appointmentId: appointment.id,
+          status: 'confirmed'
+        }
+      });
     }
   } catch (error: any) {
     console.error(`❌ [NOTIFICATIONS] Error al notificar confirmación:`, error.message);

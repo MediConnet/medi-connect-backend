@@ -3,6 +3,8 @@ import { randomUUID } from "crypto";
 import { AuthContext, requireAuth } from "../shared/auth";
 import { getPrismaClient } from "../shared/prisma";
 import { errorResponse, successResponse, paginatedResponse } from "../shared/response";
+import { emitToUser } from "../shared/realtime";
+import { notifyAppointmentConfirmed, notifyAppointmentCancelled } from "../shared/notifications";
 
 /**
  * GET /api/clinics/doctors/me/info
@@ -228,7 +230,15 @@ export async function getClinicAppointments(
 
     const where: any = {
       clinic_id: doctorAssociation.clinic_id,
-      status: { in: ["confirmed", "attended", "completed", "no_show"] },
+      status: { in: [
+        "confirmed", "CONFIRMED",
+        "attended", "ATTENDED",
+        "completed", "COMPLETED",
+        "no_show", "NO_SHOW",
+        "pending", "PENDING",
+        "pending_confirmation", "PENDING_CONFIRMATION",
+        "cancelled", "CANCELLED"
+      ] },
     };
     if (provider) {
       where.provider_id = provider.id;
@@ -258,7 +268,9 @@ export async function getClinicAppointments(
 
     const mapped = appointments.map((apt) => ({
       id: apt.id,
-      patientName: apt.patients?.users?.email || "Paciente",
+      patientId: apt.patient_id,
+      patientName: apt.patients?.full_name || "Paciente",
+      patientPhone: apt.patients?.phone || null,
       patientAvatar: apt.patients?.users?.profile_picture_url || null,
       doctorName: apt.providers?.commercial_name || "Médico",
       date: apt.scheduled_for?.toISOString() || "",
@@ -296,8 +308,8 @@ export async function updateClinicAppointmentStatus(
     }
 
     const { status } = body;
-    if (!status || !["COMPLETED", "NO_SHOW"].includes(status)) {
-      return errorResponse("Estado inválido. Use COMPLETED o NO_SHOW", 400);
+    if (!status || !["CONFIRMED", "COMPLETED", "NO_SHOW", "CANCELLED"].includes(status)) {
+      return errorResponse("Estado inválido. Use CONFIRMED, COMPLETED, NO_SHOW o CANCELLED", 400);
     }
 
     const doctorAssociation = await prisma.clinic_doctors.findFirst({
@@ -326,14 +338,96 @@ export async function updateClinicAppointmentStatus(
     }
 
     const statusMap: Record<string, string> = {
-      COMPLETED: "completed",
-      NO_SHOW: "no_show",
+      CONFIRMED: "CONFIRMED",
+      COMPLETED: "COMPLETED",
+      NO_SHOW: "NO_SHOW",
+      CANCELLED: "CANCELLED",
     };
+
+    const targetStatus = statusMap[status] || status.toUpperCase();
 
     await prisma.appointments.update({
       where: { id: appointmentId },
-      data: { status: statusMap[status] || status.toLowerCase() },
+      data: { status: targetStatus },
     });
+
+    // Realtime: appointment:updated
+    try {
+      emitToUser(authContext.user.id, 'appointment:updated', {
+        appointmentId,
+        status: targetStatus,
+      });
+
+      if (appointment.patient_id) {
+        const patient = await prisma.patients.findUnique({
+          where: { id: appointment.patient_id },
+          select: { user_id: true }
+        });
+        if (patient?.user_id) {
+          emitToUser(patient.user_id, 'appointment:updated', {
+            appointmentId,
+            status: targetStatus,
+          });
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    // Enviar notificaciones según el estado (no bloquea)
+    if (status === 'CONFIRMED' || status === 'CANCELLED') {
+      const appointmentWithDetails = await prisma.appointments.findFirst({
+        where: { id: appointmentId },
+        include: {
+          clinics: {
+            include: {
+              users: true,
+            },
+          },
+          patients: {
+            include: {
+              users: true,
+            },
+          },
+          providers: {
+            select: {
+              commercial_name: true,
+              user_id: true,
+            }
+          }
+        },
+      });
+
+      if (appointmentWithDetails && appointmentWithDetails.clinic_id && appointmentWithDetails.provider_id) {
+        const doctor = appointmentWithDetails.providers?.user_id 
+          ? await prisma.clinic_doctors.findFirst({
+              where: {
+                clinic_id: appointmentWithDetails.clinic_id,
+                user_id: appointmentWithDetails.providers.user_id,
+              },
+              include: {
+                users: true,
+              },
+            })
+          : null;
+
+        if (status === 'CONFIRMED') {
+          notifyAppointmentConfirmed(
+            appointmentWithDetails,
+            appointmentWithDetails.clinics,
+            doctor,
+            appointmentWithDetails.patients
+          ).catch(err => console.error('Error en notificaciones de confirmación:', err));
+        } else if (status === 'CANCELLED') {
+          notifyAppointmentCancelled(
+            appointmentWithDetails,
+            appointmentWithDetails.clinics,
+            doctor,
+            appointmentWithDetails.patients
+          ).catch(err => console.error('Error en notificaciones de cancelación:', err));
+        }
+      }
+    }
 
     return successResponse({ data: { id: appointmentId, status } });
   } catch (error: any) {
