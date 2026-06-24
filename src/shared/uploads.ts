@@ -92,6 +92,9 @@ export async function uploadFilesToCloudinary(params: {
   const stored: StoredDocument[] = [];
 
   for (const f of files) {
+    if (!f.buffer || f.buffer.length === 0 || f.size === 0) {
+      throw new Error(`El archivo '${f.filename}' está vacío (0 bytes). Por favor, sube un archivo válido.`);
+    }
     const id = randomUUID();
     
     // Subir a Cloudinary
