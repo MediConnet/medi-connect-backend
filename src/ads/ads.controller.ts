@@ -170,7 +170,7 @@ export async function createAdRequest(event: APIGatewayProxyEventV2): Promise<AP
         id: randomUUID(),
         provider_id: provider.id,
         badge_text,
-        title: discount_title,
+        title: String(discount_title),
         subtitle: description,
         action_text: button_text,
         image_url: finalImageUrl,
@@ -436,7 +436,7 @@ export async function updateMyAd(event: APIGatewayProxyEventV2): Promise<APIGate
       where: { id },
       data: {
         ...(badge_text !== undefined && { badge_text }),
-        ...(discount_title !== undefined && { title: discount_title }),
+        ...(discount_title !== undefined && { title: discount_title !== null ? String(discount_title) : null }),
         ...(description !== undefined && { subtitle: description }),
         ...(button_text !== undefined && { action_text: button_text }),
         ...(finalImageUrl !== existing.image_url && { image_url: finalImageUrl }),

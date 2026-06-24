@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { randomUUID } from "crypto";
+import { uploadBufferToCloudinary } from "./cloudinary";
 
 export type StoredDocument = {
   id: string;
@@ -74,4 +75,43 @@ export async function storeFilesLocally(params: {
 
   return stored;
 }
+
+export async function uploadFilesToCloudinary(params: {
+  files: Array<{
+    fieldname: string;
+    filename: string;
+    mimetype: string;
+    buffer: Buffer;
+    size: number;
+  }>;
+}): Promise<StoredDocument[]> {
+  const { files } = params;
+  if (!files.length) return [];
+
+  const nowIso = new Date().toISOString();
+  const stored: StoredDocument[] = [];
+
+  for (const f of files) {
+    const id = randomUUID();
+    
+    // Subir a Cloudinary
+    console.log(`📤 Subiendo documento a Cloudinary: ${f.filename} (${f.mimetype})`);
+    const url = await uploadBufferToCloudinary(f.buffer, f.mimetype, "providers/documents", f.filename);
+    console.log(`✅ Documento subido a Cloudinary: ${url}`);
+
+    stored.push({
+      id,
+      name: f.filename,
+      type: inferDocType(f.mimetype),
+      url,
+      category: inferCategory(f.fieldname),
+      mimeType: f.mimetype,
+      size: f.size,
+      createdAt: nowIso,
+    });
+  }
+
+  return stored;
+}
+
 

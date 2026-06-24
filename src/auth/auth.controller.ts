@@ -34,7 +34,7 @@ import {
   unauthorizedResponse,
 } from "../shared/response";
 import { validatePayloadSize } from "../shared/security";
-import { storeFilesLocally } from "../shared/uploads";
+import { storeFilesLocally, uploadFilesToCloudinary } from "../shared/uploads";
 import {
   changePasswordSchema,
   forgotPasswordSchema,
@@ -525,11 +525,7 @@ export async function register(
             invitationToken: f["invitationToken"],
           });
 
-          const baseUrl =
-            process.env.FILE_BASE_URL ||
-            `http://localhost:${process.env.PORT || 3000}`;
-
-          uploadedDocuments = await storeFilesLocally({
+          uploadedDocuments = await uploadFilesToCloudinary({
             files: parsed.files.map((x) => ({
               fieldname: x.fieldname,
               filename: x.filename,
@@ -537,7 +533,6 @@ export async function register(
               buffer: x.buffer,
               size: x.size,
             })),
-            baseUrl,
           });
         }
       } catch (multipartError: any) {

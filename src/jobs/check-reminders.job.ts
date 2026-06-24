@@ -138,7 +138,7 @@ export async function checkReminders() {
         // 2. Enviar Push Notification (Firebase/Expo)
         if (push_token) {
           try {
-            if (push_token.startsWith("ExponentPushToken")) {
+            if (push_token.startsWith("ExponentPushToken") || push_token.startsWith("ExpoPushToken")) {
               await pushNotificationService.send(
                 [push_token],
                 notifTitle,

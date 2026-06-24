@@ -119,6 +119,7 @@ export async function generatePaymentLink(
         payment_source: "PAYPHONE",
         payment_method: "CARD",
         external_transaction_id: clientTransactionId,
+        clinic_id: appointment.clinic_id || null,
       },
     });
 

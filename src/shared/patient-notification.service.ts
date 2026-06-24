@@ -83,7 +83,7 @@ export const patientNotificationService = {
         });
 
         const token = patient?.users?.push_token;
-        if (token && token.startsWith("ExponentPushToken")) {
+        if (token && (token.startsWith("ExponentPushToken") || token.startsWith("ExpoPushToken"))) {
           const { pushNotificationService } = await import("./push-notification.service");
           await pushNotificationService.send([token], payload.title, payload.body, payload.data);
           console.log(`📲 [PATIENT-NOTIF] Push individual enviado con éxito a paciente: ${payload.patientId}`);
@@ -154,7 +154,7 @@ export const patientNotificationService = {
       try {
         const tokens = patients
           .map((p) => p.users?.push_token)
-          .filter((t): t is string => !!t && t.startsWith("ExponentPushToken"));
+          .filter((t): t is string => !!t && (t.startsWith("ExponentPushToken") || t.startsWith("ExpoPushToken")));
 
         if (tokens.length > 0) {
           const { pushNotificationService } = await import("./push-notification.service");

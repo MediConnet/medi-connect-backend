@@ -147,6 +147,21 @@ export async function completeClinicInvitationAssociation(
     },
   });
 
+  // Cleanup independent doctor schedules and consultation fees
+  const branches = await prisma.provider_branches.findMany({
+    where: { provider_id: provider.id },
+    select: { id: true },
+  });
+  const branchIds = branches.map((b) => b.id);
+  if (branchIds.length > 0) {
+    await prisma.provider_schedules.deleteMany({
+      where: { branch_id: { in: branchIds } },
+    });
+  }
+  await prisma.consultation_prices.deleteMany({
+    where: { provider_id: provider.id },
+  });
+
   await prisma.doctor_invitations.update({
     where: { id: invitation.id },
     data: { status: "accepted" },

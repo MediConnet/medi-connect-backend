@@ -1,4 +1,7 @@
 import { v2 as cloudinary } from "cloudinary";
+import * as path from "path";
+import { randomUUID } from "crypto";
+import { Readable } from "stream";
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -80,4 +83,60 @@ export function isBase64Image(value: string | null | undefined): boolean {
  */
 export function isBlobUrl(value: string | null | undefined): boolean {
   return typeof value === "string" && value.startsWith("blob:");
+}
+
+/**
+ * Sube cualquier archivo (buffer) a Cloudinary y retorna la URL segura.
+ * Soporta imágenes, PDFs, etc.
+ */
+export async function uploadBufferToCloudinary(
+  buffer: Buffer,
+  mimetype: string,
+  folder = "medi-connect/documents",
+  filename?: string
+): Promise<string> {
+  const isImage = mimetype.startsWith("image/");
+  
+  if (isImage) {
+    // Para imágenes, podemos seguir usando la subida directa con base64 Data URI
+    const base64 = buffer.toString("base64");
+    const dataURI = `data:${mimetype};base64,${base64}`;
+    const result = await cloudinary.uploader.upload(dataURI, {
+      folder,
+      resource_type: "image",
+    });
+    return result.secure_url;
+  } else {
+    // Para archivos raw (PDFs, docs), debemos subir usando stream para evitar que
+    // se guarde el string base64 en texto plano y corrompa el archivo binario.
+    const isPdf = mimetype === "application/pdf";
+    let ext = "";
+    if (filename) {
+      ext = path.extname(filename);
+    } else if (isPdf) {
+      ext = ".pdf";
+    }
+    const publicId = `${randomUUID()}${ext}`;
+
+    return new Promise((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        {
+          folder,
+          resource_type: "raw",
+          public_id: publicId,
+        },
+        (error, result) => {
+          if (error) return reject(error);
+          resolve(result!.secure_url);
+        }
+      );
+
+      // Convertir buffer a readable stream y pipe al stream de subida
+      const readable = new Readable();
+      readable._read = () => {};
+      readable.push(buffer);
+      readable.push(null);
+      readable.pipe(uploadStream);
+    });
+  }
 }

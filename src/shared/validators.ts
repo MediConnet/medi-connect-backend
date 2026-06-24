@@ -136,6 +136,7 @@ const bankAccountSchema = z.object({
     .max(13, "Identification number must be at most 13 digits")
     .optional()
     .nullable(),
+  email: z.string().email("Invalid email format").optional().nullable(),
 });
 
 // Schema for doctor profile bank account (same shape as clinic)
@@ -207,6 +208,7 @@ export const doctorBankAccountSchema = z.object({
     .max(13, "Identification number must be at most 13 digits")
     .regex(/^\d+$/, "Identification number must contain only digits")
     .optional(),
+  email: z.string().email("Invalid email format").optional().nullable(),
 });
 
 // Admin validators

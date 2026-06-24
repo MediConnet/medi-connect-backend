@@ -32,6 +32,7 @@ export async function getBankAccount(event: APIGatewayProxyEventV2): Promise<API
         accountType: bankAccount.account_type,
         accountHolder: bankAccount.account_holder,
         identificationNumber: bankAccount.identification_number || undefined,
+        email: bankAccount.email || undefined,
         createdAt: bankAccount.created_at?.toISOString(),
         updatedAt: bankAccount.updated_at?.toISOString(),
       },
@@ -70,6 +71,7 @@ export async function upsertBankAccount(event: APIGatewayProxyEventV2): Promise<
           account_type: body.accountType,
           account_holder: body.accountHolder,
           identification_number: body.identificationNumber || null,
+          email: body.email || null,
           updated_at: new Date(),
         },
       });
@@ -83,6 +85,7 @@ export async function upsertBankAccount(event: APIGatewayProxyEventV2): Promise<
           account_type: body.accountType,
           account_holder: body.accountHolder,
           identification_number: body.identificationNumber || null,
+          email: body.email || null,
         },
       });
     }
@@ -94,6 +97,7 @@ export async function upsertBankAccount(event: APIGatewayProxyEventV2): Promise<
         accountType: bankAccount.account_type,
         accountHolder: bankAccount.account_holder,
         identificationNumber: bankAccount.identification_number || undefined,
+        email: bankAccount.email || undefined,
         createdAt: bankAccount.created_at?.toISOString(),
         updatedAt: bankAccount.updated_at?.toISOString(),
       },

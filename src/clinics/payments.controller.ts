@@ -443,6 +443,8 @@ export async function getDoctorPayments(event: APIGatewayProxyEventV2): Promise<
           accountNumber: bankAccountMap.get(dist.clinic_doctors.user_id)!.account_number,
           accountType: bankAccountMap.get(dist.clinic_doctors.user_id)!.account_type,
           accountHolder: bankAccountMap.get(dist.clinic_doctors.user_id)!.account_holder,
+          identificationNumber: bankAccountMap.get(dist.clinic_doctors.user_id)!.identification_number || undefined,
+          email: bankAccountMap.get(dist.clinic_doctors.user_id)!.email || undefined,
         } : undefined,
       };
     });

@@ -27,6 +27,10 @@ export async function getDoctorPayments(event: APIGatewayProxyEventV2): Promise<
     const where = {
       payment_source: { in: DIRECT_PAYMENT_SOURCES },
       payment_method: { in: CARD_METHODS },
+      clinic_id: null,
+      appointments: {
+        clinic_id: null,
+      },
       OR: [
         { paid_at: { not: null } },
         { status: { in: CHARGED_PAYMENT_STATUSES } },
@@ -53,6 +57,7 @@ export async function getDoctorPayments(event: APIGatewayProxyEventV2): Promise<
                 select: {
                   id: true,
                   commercial_name: true,
+                  user_id: true,
                 },
               },
             },
@@ -65,22 +70,47 @@ export async function getDoctorPayments(event: APIGatewayProxyEventV2): Promise<
       prisma.payments.count({ where }),
     ]);
 
+    // Fetch doctor bank accounts
+    const doctorUserIds = payments
+      .map((p) => p.appointments?.providers?.user_id)
+      .filter((id): id is string => !!id);
+
+    const bankAccounts = doctorUserIds.length > 0
+      ? await prisma.doctor_bank_accounts.findMany({
+          where: { user_id: { in: doctorUserIds } },
+        })
+      : [];
+    const bankAccountMap = new Map(bankAccounts.map((b) => [b.user_id, b]));
+
     // Mapear a formato del frontend
-    const mappedPayments = payments.map((payment) => ({
-      id: payment.id,
-      appointmentId: payment.appointment_id,
-      patientName: payment.appointments?.patients?.users?.email || 'Paciente',
-      date: payment.appointments?.scheduled_for?.toISOString() || payment.created_at?.toISOString(),
-      amount: Number(payment.amount_total || 0),
-      commission: Number(payment.platform_fee || 0),
-      netAmount: Number(payment.provider_amount || 0),
-      status: normalizePaymentStatus(payment.status, payment.paid_at),
-      paymentMethod: payment.payment_method || 'card',
-      createdAt: payment.created_at?.toISOString(),
-      source: 'admin',
-      providerId: payment.appointments?.provider_id,
-      providerName: payment.appointments?.providers?.commercial_name,
-    }));
+    const mappedPayments = payments.map((payment) => {
+      const docUser = payment.appointments?.providers?.user_id;
+      const bank = docUser ? bankAccountMap.get(docUser) : null;
+
+      return {
+        id: payment.id,
+        appointmentId: payment.appointment_id,
+        patientName: payment.appointments?.patients?.users?.email || 'Paciente',
+        date: payment.appointments?.scheduled_for?.toISOString() || payment.created_at?.toISOString(),
+        amount: Number(payment.amount_total || 0),
+        commission: Number(payment.platform_fee || 0),
+        netAmount: Number(payment.provider_amount || 0),
+        status: normalizePaymentStatus(payment.status, payment.paid_at),
+        paymentMethod: payment.payment_method || 'card',
+        createdAt: payment.created_at?.toISOString(),
+        source: 'admin',
+        providerId: payment.appointments?.provider_id,
+        providerName: payment.appointments?.providers?.commercial_name,
+        doctorBankAccount: bank ? {
+          bankName: bank.bank_name,
+          accountNumber: bank.account_number,
+          accountType: bank.account_type,
+          accountHolder: bank.account_holder,
+          identificationNumber: bank.identification_number || undefined,
+          email: bank.email || undefined,
+        } : undefined,
+      };
+    });
 
     console.log(`✅ [ADMIN] ${mappedPayments.length} pagos a médicos obtenidos (página ${page}, total: ${total})`);
     return paginatedResponse(mappedPayments, total, page, limit);
@@ -140,18 +170,20 @@ export async function getClinicPayments(event: APIGatewayProxyEventV2): Promise<
       prisma.payouts.count({ where }),
     ]);
 
-    // Obtener clínicas para mapear nombres
+    // Obtener clínicas para mapear nombres y cuentas bancarias
     const clinicIds = payouts.map(p => p.provider_id).filter((id): id is string => id !== null);
     const clinics = await prisma.clinics.findMany({
       where: { id: { in: clinicIds } },
-      select: { id: true, name: true },
+      select: { id: true, name: true, bank_account: true },
     });
     
-    const clinicMap = new Map(clinics.map(c => [c.id, c.name]));
+    const clinicMap = new Map(clinics.map(c => [c.id, { name: c.name, bankAccount: c.bank_account }]));
 
     // Mapear a formato del frontend
     const mappedPayouts = payouts.map((payout) => {
-      const clinicName = payout.provider_id ? clinicMap.get(payout.provider_id) || 'Clínica' : 'Clínica';
+      const clinicData = payout.provider_id ? clinicMap.get(payout.provider_id) : null;
+      const clinicName = clinicData?.name || 'Clínica';
+      const clinicBankAccount = clinicData?.bankAccount || null;
       const totalAmount = payout.payments.reduce((sum: number, p) => sum + Number(p.amount_total || 0), 0);
       const appCommission = payout.payments.reduce((sum: number, p) => sum + Number(p.platform_fee || 0), 0);
       const distributedAmount = payout.clinic_payment_distributions?.reduce(
@@ -180,6 +212,14 @@ export async function getClinicPayments(event: APIGatewayProxyEventV2): Promise<
         isDistributed: distributedAmount > 0,
         distributedAmount,
         remainingAmount: Number(payout.total_amount || 0) - distributedAmount,
+        clinicBankAccount: clinicBankAccount ? {
+          bankName: (clinicBankAccount as any).bankName,
+          accountNumber: (clinicBankAccount as any).accountNumber,
+          accountType: (clinicBankAccount as any).accountType,
+          accountHolder: (clinicBankAccount as any).accountHolder,
+          identificationNumber: (clinicBankAccount as any).identificationNumber || undefined,
+          email: (clinicBankAccount as any).email || undefined,
+        } : null,
       };
     });
 
