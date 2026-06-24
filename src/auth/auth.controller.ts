@@ -450,15 +450,25 @@ export async function register(
 
     if (isMultipart) {
       console.log("🔍 [REGISTER] Intentando parsear multipart...");
+      let parsed: any;
+      let parseSuccess = false;
 
       try {
-        const parsed = await parseMultipartBody({
+        parsed = await parseMultipartBody({
           body: event.body || undefined,
           isBase64Encoded: (event as any).isBase64Encoded,
           headers: event.headers as any,
           limits: { fileSize: 15 * 1024 * 1024, files: 20, fields: 200 },
         });
+        parseSuccess = true;
+      } catch (multipartError: any) {
+        console.error(
+          "❌ [REGISTER] Error al parsear multipart:",
+          multipartError.message,
+        );
+      }
 
+      if (parseSuccess && parsed && Object.keys(parsed.fields).length > 0) {
         console.log("🔍 [REGISTER] Parsing completado");
         console.log("🔍 [REGISTER] Archivos encontrados:", parsed.files.length);
 
@@ -475,73 +485,48 @@ export async function register(
           f["password"] ? "***" : undefined,
         );
 
-        // 🔧 FIX: Si el FormData está vacío, intentar parsear como JSON
-        if (Object.keys(f).length === 0 && event.body) {
-          console.log(
-            "⚠️ [REGISTER] FormData vacío, intentando parsear como JSON...",
-          );
-          try {
-            const jsonBody = JSON.parse(event.body);
-            console.log("✅ [REGISTER] JSON parseado exitosamente");
-            body = registerSchema.parse(jsonBody);
-            uploadedDocuments = [];
-          } catch (jsonError) {
-            console.error(
-              "❌ [REGISTER] Tampoco se pudo parsear como JSON:",
-              jsonError,
-            );
-            throw new Error(
-              "No se pudo parsear el body ni como FormData ni como JSON",
-            );
-          }
-        } else {
-          // FormData tiene campos, continuar normalmente
-          const specialtiesRaw = f["specialties"];
-          const specialties = Array.isArray(specialtiesRaw)
-            ? specialtiesRaw
-            : specialtiesRaw
-              ? [specialtiesRaw]
-              : undefined;
+        const specialtiesRaw = f["specialties"];
+        const specialties = Array.isArray(specialtiesRaw)
+          ? specialtiesRaw
+          : specialtiesRaw
+            ? [specialtiesRaw]
+            : undefined;
 
-          body = registerSchema.parse({
-            email: f["email"],
-            password: f["password"],
-            firstName: f["firstName"],
-            lastName: f["lastName"],
-            name: f["name"],
-            serviceName: f["serviceName"],
-            yearsOfExperience: f["yearsOfExperience"],
-            phone: f["phone"],
-            role: f["role"],
-            address: f["address"],
-            cityId: f["cityId"],
-            city: f["city"],
-            description: f["description"],
-            price: f["price"],
-            chainId: f["chainId"],
-            type: f["type"],
-            specialties,
-            whatsapp: f["whatsapp"],
-            invitationToken: f["invitationToken"],
-          });
+        body = registerSchema.parse({
+          email: f["email"],
+          password: f["password"],
+          firstName: f["firstName"],
+          lastName: f["lastName"],
+          name: f["name"],
+          serviceName: f["serviceName"],
+          yearsOfExperience: f["yearsOfExperience"],
+          phone: f["phone"],
+          role: f["role"],
+          address: f["address"],
+          cityId: f["cityId"],
+          city: f["city"],
+          description: f["description"],
+          price: f["price"],
+          chainId: f["chainId"],
+          type: f["type"],
+          specialties,
+          whatsapp: f["whatsapp"],
+          invitationToken: f["invitationToken"],
+        });
 
-          uploadedDocuments = await uploadFilesToCloudinary({
-            files: parsed.files.map((x) => ({
-              fieldname: x.fieldname,
-              filename: x.filename,
-              mimetype: x.mimetype,
-              buffer: x.buffer,
-              size: x.size,
-            })),
-          });
-        }
-      } catch (multipartError: any) {
-        console.error(
-          "❌ [REGISTER] Error al parsear multipart:",
-          multipartError.message,
-        );
-        // Intentar como JSON como fallback
-        console.log("⚠️ [REGISTER] Intentando parsear como JSON (fallback)...");
+        // Si falla la subida a Cloudinary, el error se propagará al catch principal
+        uploadedDocuments = await uploadFilesToCloudinary({
+          files: parsed.files.map((x: any) => ({
+            fieldname: x.fieldname,
+            filename: x.filename,
+            mimetype: x.mimetype,
+            buffer: x.buffer,
+            size: x.size,
+          })),
+        });
+      } else {
+        // Fallback a JSON si no es multipart o no tiene campos
+        console.log("⚠️ [REGISTER] Intentando parsear como JSON...");
         body = parseBody(event.body, registerSchema);
         uploadedDocuments = [];
       }
@@ -889,6 +874,7 @@ export async function register(
     );
   } catch (error: any) {
     console.error("❌ [REGISTER] Error al registrar usuario:", error.message);
+    if (error.stack) console.error(error.stack);
     if (error.message.includes("Validation error"))
       return errorResponse(error.message, 400);
     if (error.message === "Payload too large")
@@ -897,7 +883,7 @@ export async function register(
       return errorResponse("El usuario ya existe", 409);
     if (error.code === "P2002")
       return errorResponse("El usuario ya existe", 409);
-    return internalErrorResponse("Error al registrar usuario");
+    return internalErrorResponse("Error al registrar usuario: " + error.message);
   }
 }
 

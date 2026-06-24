@@ -126,17 +126,16 @@ export async function uploadBufferToCloudinary(
           public_id: publicId,
         },
         (error, result) => {
-          if (error) return reject(error);
+          if (error) {
+            console.error("❌ [CLOUDINARY] Error in upload_stream callback:", error);
+            return reject(error);
+          }
           resolve(result!.secure_url);
         }
       );
 
-      // Convertir buffer a readable stream y pipe al stream de subida
-      const readable = new Readable();
-      readable._read = () => {};
-      readable.push(buffer);
-      readable.push(null);
-      readable.pipe(uploadStream);
+      // Convert buffer directly to readable stream using standard stream adapter
+      Readable.from(buffer).pipe(uploadStream);
     });
   }
 }
