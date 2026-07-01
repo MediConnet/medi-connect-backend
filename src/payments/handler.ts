@@ -6,8 +6,9 @@ import {
   optionsResponse,
 } from "../shared/response";
 import {
-  generatePaymentLink,
-  handlePayphoneWebhook,
+  processNuveiPayment,
+  handleNuveiWebhook,
+  getClientAuthToken,
 } from "./payments.controller";
 
 export async function handler(
@@ -24,17 +25,24 @@ export async function handler(
   }
 
   try {
-    // --- RUTAS DE PAYPHONE ---
+    // --- RUTAS DE NUVEI ---
 
-    // POST /api/payments/payphone/link
-    // Genera el link de pago para una cita
-    if (path === "/api/payments/payphone/link" && method === "POST") {
-      return await generatePaymentLink(event);
+    // GET /api/payments/client-auth
+    // Genera el Auth-Token cliente para la tokenización directa desde la App
+    if (path === "/api/payments/client-auth" && method === "GET") {
+      return await getClientAuthToken(event);
     }
 
-    // POST /api/payments/NotificacionPago
-    if (path === "/api/payments/NotificacionPago" && method === "POST") {
-      return await handlePayphoneWebhook(event);
+    // POST /api/payments/charge
+    // Procesa el pago directo con tarjeta tokenizada
+    if (path === "/api/payments/charge" && method === "POST") {
+      return await processNuveiPayment(event);
+    }
+
+    // POST /api/payments/nuvei/webhook
+    // Callback para recibir notificaciones asíncronas de Nuvei
+    if (path === "/api/payments/nuvei/webhook" && method === "POST") {
+      return await handleNuveiWebhook(event);
     }
 
     console.warn(`⚠️ [PAYMENTS] Ruta no encontrada: ${method} ${path}`);

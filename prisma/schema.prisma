@@ -150,6 +150,7 @@ model payments {
   payout_id               String?       @db.Uuid
   amount_total            Decimal?      @db.Decimal
   platform_fee            Decimal?      @db.Decimal
+  gateway_fee             Decimal?      @db.Decimal
   provider_amount         Decimal?      @db.Decimal
   status                  String?       @db.VarChar(255)
   created_at              DateTime?     @default(now()) @db.Timestamp(6)

@@ -94,6 +94,7 @@ export async function getDoctorPayments(event: APIGatewayProxyEventV2): Promise<
         date: payment.appointments?.scheduled_for?.toISOString() || payment.created_at?.toISOString(),
         amount: Number(payment.amount_total || 0),
         commission: Number(payment.platform_fee || 0),
+        gatewayFee: Number(payment.gateway_fee || 0),
         netAmount: Number(payment.provider_amount || 0),
         status: normalizePaymentStatus(payment.status, payment.paid_at),
         paymentMethod: payment.payment_method || 'card',
