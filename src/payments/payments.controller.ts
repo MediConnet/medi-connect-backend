@@ -520,6 +520,8 @@ export async function getClientAuthToken(
 
     return successResponse({
       authToken,
+      clientAppCode: appCode,
+      clientAppKey: appKey,
     });
   } catch (error: any) {
     console.error("❌ Error en getClientAuthToken:", error.message);
