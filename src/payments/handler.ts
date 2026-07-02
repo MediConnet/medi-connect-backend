@@ -9,6 +9,7 @@ import {
   processNuveiPayment,
   handleNuveiWebhook,
   getClientAuthToken,
+  initNuveiCheckout,
 } from "./payments.controller";
 
 export async function handler(
@@ -31,6 +32,12 @@ export async function handler(
     // Genera el Auth-Token cliente para la tokenización directa desde la App
     if (path === "/api/payments/client-auth" && method === "GET") {
       return await getClientAuthToken(event);
+    }
+
+    // POST /api/payments/init-checkout
+    // Inicializa la referencia para el modal de Checkout
+    if (path === "/api/payments/init-checkout" && method === "POST") {
+      return await initNuveiCheckout(event);
     }
 
     // POST /api/payments/charge

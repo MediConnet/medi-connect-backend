@@ -529,3 +529,160 @@ export async function getClientAuthToken(
   }
 }
 
+/**
+ * Inicializa una transacción en Nuvei y devuelve el ID de referencia para el Checkout modal
+ * POST /api/payments/init-checkout
+ */
+export async function initNuveiCheckout(
+  event: APIGatewayProxyEventV2,
+): Promise<APIGatewayProxyResult> {
+  console.log("💰 [PAYMENTS] Iniciando checkout con initReference en Nuvei...");
+
+  const authResult = await requireAuth(event);
+  if ("statusCode" in authResult) return authResult;
+  const authContext = authResult as AuthContext;
+
+  const prisma = getPrismaClient();
+
+  try {
+    let body;
+    try {
+      body = typeof event.body === "string" ? JSON.parse(event.body) : event.body;
+    } catch (e) {
+      return errorResponse("Invalid JSON body", 400);
+    }
+
+    if (!body || !body.appointmentId) {
+      return errorResponse("El campo appointmentId es requerido", 400);
+    }
+
+    const appointment = await prisma.appointments.findUnique({
+      where: { id: body.appointmentId },
+      include: {
+        patients: {
+          include: {
+            users: true
+          }
+        },
+        providers: {
+          include: {
+            provider_branches: true
+          }
+        },
+      },
+    });
+
+    if (!appointment) return notFoundResponse("Cita no encontrada");
+
+    // Validar seguridad
+    if (appointment.patients?.user_id !== authContext.user.id) {
+      return errorResponse("No tienes permiso para pagar esta cita", 403);
+    }
+
+    // Validar estado
+    if (!["PENDING_PAYMENT", "PROCESSING"].includes(appointment.status || "")) {
+      return errorResponse(
+        `No se puede pagar una cita en estado: ${appointment.status}`,
+        400,
+      );
+    }
+
+    if (appointment.is_paid) {
+      return errorResponse("Esta cita ya se encuentra pagada", 400);
+    }
+
+    const costDecimal = Number(appointment.cost);
+
+    if (isNaN(costDecimal) || costDecimal <= 0) {
+      return errorResponse(
+        `El costo de la consulta ($${costDecimal}) no es válido para procesar el pago.`,
+        400,
+      );
+    }
+
+    // Obtener comisiones desde la base de datos (admin_settings)
+    let settings = await prisma.admin_settings.findUnique({
+      where: { id: 1 },
+    });
+    if (!settings) {
+      settings = await prisma.admin_settings.create({
+        data: { id: 1 },
+      });
+    }
+
+    const commissionPercent = appointment.clinic_id
+      ? Number(settings.commission_clinic)
+      : Number(settings.commission_doctor);
+
+    const platformFee = Number((costDecimal * (commissionPercent / 100)).toFixed(2));
+    const providerAmount = Number((costDecimal - platformFee).toFixed(2));
+
+    // Estimar gateway fee usando tarjeta de crédito (6.345% + $0.046) - se ajusta al recibir el webhook
+    const gatewayFee = Number((costDecimal * 0.06345 + 0.046).toFixed(2));
+
+    const clientTransactionId = generateClientTransactionId();
+
+    const doctorName = appointment.providers?.commercial_name || "Doctor";
+    const branchName = appointment.providers?.provider_branches?.[0]?.name || "Consultorio";
+    const description = `Consulta - ${doctorName} (${branchName})`;
+
+    // Registrar el pago inicialmente como PENDING
+    const paymentId = randomUUID();
+    await prisma.payments.create({
+      data: {
+        id: paymentId,
+        appointment_id: appointment.id,
+        amount_total: costDecimal,
+        provider_amount: providerAmount,
+        platform_fee: platformFee,
+        gateway_fee: gatewayFee,
+        status: "PENDING",
+        payment_source: "NUVEI",
+        payment_method: "CARD",
+        external_transaction_id: clientTransactionId,
+        clinic_id: appointment.clinic_id || null,
+      },
+    });
+
+    // Calcular IVA 15% requerido por el perfil de la cuenta de Nuvei
+    const vat = Number((costDecimal * 0.15 / 1.15).toFixed(2));
+    const taxableAmount = Number((costDecimal - vat).toFixed(2));
+
+    // Llamar a Nuvei para inicializar la referencia del checkout
+    const nuveiResult = await nuveiService.initReference({
+      userId: authContext.user.id,
+      userEmail: appointment.patients?.users?.email || authContext.user.email || "paciente@docalink.com",
+      amount: costDecimal,
+      description: description,
+      devReference: clientTransactionId,
+      vat,
+      taxableAmount,
+      phone: appointment.patients?.phone || undefined,
+    });
+
+    console.log("📡 [NUVEI] Referencia obtenida exitosamente:", JSON.stringify(nuveiResult));
+
+    const checkoutReference = nuveiResult?.reference;
+
+    if (!checkoutReference) {
+      throw new Error("No se pudo obtener el ID de referencia de Nuvei.");
+    }
+
+    // Actualizar el pago en DB con la referencia del checkout (opcional, dev_reference ya está guardado)
+    await prisma.payments.update({
+      where: { id: paymentId },
+      data: {
+        external_transaction_id: clientTransactionId, // Guardamos devReference para emparejar webhook
+      }
+    });
+
+    return successResponse({
+      reference: checkoutReference,
+    });
+
+  } catch (error: any) {
+    console.error("❌ Error en initNuveiCheckout:", error.message || error);
+    return internalErrorResponse("No se pudo inicializar la referencia de pago de Nuvei");
+  }
+}
+
