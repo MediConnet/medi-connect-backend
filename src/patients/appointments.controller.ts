@@ -734,6 +734,7 @@ export async function cancelAppointment(
       include: {
         patients: { include: { users: { select: { email: true } } } },
         providers: { select: { commercial_name: true } },
+        clinics: { select: { name: true } },
       },
     });
 
@@ -750,6 +751,92 @@ export async function cancelAppointment(
       new Date(appointment.scheduled_for) < new Date()
     ) {
       return errorResponse("Cannot cancel past appointments", 400);
+    }
+
+    // Regla de Negocio: Validar plazo de 12 horas si la cita ya fue pagada
+    if (appointment.is_paid) {
+      const scheduledTime = appointment.scheduled_for ? new Date(appointment.scheduled_for).getTime() : 0;
+      const limitTime = scheduledTime - (12 * 60 * 60 * 1000); // 12 horas antes
+      const now = Date.now();
+      if (now > limitTime) {
+        return errorResponse(
+          "No se puede cancelar ni solicitar reembolso para citas con menos de 12 horas de anticipación.",
+          400
+        );
+      }
+
+      // Iniciar reembolso en Nuvei
+      const paidPayment = await prisma.payments.findFirst({
+        where: {
+          appointment_id: appointmentId,
+          status: "PAID",
+        },
+      });
+
+      if (paidPayment && paidPayment.external_transaction_id) {
+        console.log(`📡 [REFUND] Reembolsando transacción de Nuvei: ${paidPayment.external_transaction_id}`);
+        const { nuveiService } = await import("../payments/nuvei.service");
+        
+        try {
+          const refundResult = await nuveiService.refund({
+            transactionId: paidPayment.external_transaction_id,
+            amount: Number(paidPayment.amount_total) || undefined,
+          });
+
+          console.log("📡 [REFUND] Respuesta de Nuvei:", JSON.stringify(refundResult));
+
+          if (refundResult?.transaction?.status === "error" || refundResult?.error) {
+            console.error("❌ [REFUND] Falló el reembolso en Nuvei:", refundResult);
+            return errorResponse("No se pudo procesar el reembolso en la pasarela de pagos. Por favor contacta a soporte.", 400);
+          }
+
+          // Actualizar estado del pago a REFUNDED en la base de datos
+          await prisma.payments.update({
+            where: { id: paidPayment.id },
+            data: {
+              status: "REFUNDED",
+            },
+          });
+
+          // Cancelar el payout asociado si existe
+          if (paidPayment.payout_id) {
+            await prisma.payouts.update({
+              where: { id: paidPayment.payout_id },
+              data: {
+                status: "cancelled",
+              },
+            }).catch((err: any) => console.error("❌ [REFUND] Error al cancelar payout:", err.message));
+          }
+
+          // Enviar correo de reembolso completado (asíncrono)
+          const aptPatient = (appointment as any).patients;
+          if (aptPatient?.users?.email) {
+            const { sendEmail } = await import("../shared/email-adapter");
+            const { generateRefundCompletedEmail } = await import("../shared/email");
+            const scheduledDate = appointment.scheduled_for ? new Date(appointment.scheduled_for) : new Date();
+            const dateStr = scheduledDate.toLocaleDateString("es-EC", { year: "numeric", month: "long", day: "numeric" });
+            const timeStr = scheduledDate.toLocaleTimeString("es-EC", { hour: "2-digit", minute: "2-digit" });
+
+            sendEmail({
+              to: aptPatient.users.email,
+              subject: "Confirmación de Reembolso - DOCALINK",
+              html: generateRefundCompletedEmail({
+                patientName: aptPatient.full_name || "Paciente",
+                doctorName: (appointment as any).providers?.commercial_name || "Médico",
+                clinicName: (appointment as any).clinics?.name || "Docalink",
+                date: dateStr,
+                time: timeStr,
+                amount: Number(paidPayment.amount_total) || 0,
+                transactionId: paidPayment.external_transaction_id || "N/A",
+              }),
+            }).then(() => console.log(`✉️ [REFUND] Correo de reembolso enviado a: ${aptPatient.users.email}`))
+              .catch((err: any) => console.error("❌ [REFUND] Error enviando email de reembolso:", err.message));
+          }
+        } catch (refundError: any) {
+          console.error("❌ [REFUND] Error de conexión al reembolsar:", refundError.message);
+          return errorResponse("Error de conexión al procesar el reembolso. Intente más tarde.", 500);
+        }
+      }
     }
 
     const updatedAppointment = await prisma.appointments.update({
@@ -769,7 +856,7 @@ export async function cancelAppointment(
       },
     });
 
-    console.log("✅ [PATIENTS] Cita y pago pendientes cancelados exitosamente");
+    console.log("✅ [PATIENTS] Cita y pagos cancelados/reembolsados exitosamente");
 
     // Email de cancelación al paciente (asíncrono)
     const aptPatient = (appointment as any).patients;

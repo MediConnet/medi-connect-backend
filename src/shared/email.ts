@@ -994,3 +994,83 @@ export function generatePaymentConfirmationEmail(data: {
   });
 }
 
+/**
+ * Genera el HTML del email de reembolso completado
+ */
+export function generateRefundCompletedEmail(data: {
+  patientName: string;
+  doctorName: string;
+  clinicName: string;
+  date: string;
+  time: string;
+  amount: number;
+  transactionId: string;
+}): string {
+  const content = `
+    <!-- Hero Section con fondo naranja/rojo de reembolso -->
+    <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #fff7ed; padding: 15px 40px;">
+      <tr>
+        <td width="60%" align="left">
+          <h2 class="title" style="color: #ea580c; margin: 0 0 5px 0;">Reembolso Exitoso</h2>
+          <p class="subtitle" style="color: #ea580c; opacity: 0.8; font-size: 14px; margin: 0;">Los fondos han sido devueltos a tu cuenta.</p>
+        </td>
+        <td width="40%" align="right">
+          <div class="illustration">
+            <img src="${getImageBase64('solicitud-aceptada.png')}" width="140" alt="Reembolso Completado" />
+          </div>
+        </td>
+      </tr>
+    </table>
+
+    <div style="padding: 40px;">
+      <p>Hola <strong>${data.patientName}</strong> 👋,</p>
+      <p>Te informamos que el reembolso de tu cita médica ha sido procesado de forma exitosa a través de nuestra pasarela de pagos Nuvei.</p>
+      
+      <h3 style="color: #1e293b; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; margin-top: 30px;">Detalles de la Cita Cancelada</h3>
+      
+      <table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin: 15px 0;">
+        <tr>
+          <td style="padding: 6px 0; color: #64748b; font-size: 14px;">Especialista:</td>
+          <td align="right" style="padding: 6px 0; color: #1e293b; font-size: 14px; font-weight: 600;">Dr./Dra. ${data.doctorName}</td>
+        </tr>
+        <tr>
+          <td style="padding: 6px 0; color: #64748b; font-size: 14px;">Establecimiento:</td>
+          <td align="right" style="padding: 6px 0; color: #1e293b; font-size: 14px;">${data.clinicName}</td>
+        </tr>
+        <tr>
+          <td style="padding: 6px 0; color: #64748b; font-size: 14px;">Fecha y Hora Original:</td>
+          <td align="right" style="padding: 6px 0; color: #1e293b; font-size: 14px;">${data.date} a las ${data.time}</td>
+        </tr>
+      </table>
+
+      <h3 style="color: #1e293b; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; margin-top: 25px;">Información del Reembolso</h3>
+      <table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin: 15px 0; background-color: #f8fafc; padding: 15px; border-radius: 8px;">
+        <tr>
+          <td style="padding: 4px 0; color: #64748b; font-size: 14px;">Monto Reembolsado:</td>
+          <td align="right" style="padding: 4px 0; color: #ea580c; font-size: 16px; font-weight: 700;">$${data.amount.toFixed(2)}</td>
+        </tr>
+        <tr>
+          <td style="padding: 4px 0; color: #64748b; font-size: 14px;">ID de Transacción (Ref):</td>
+          <td align="right" style="padding: 4px 0; color: #1e293b; font-size: 14px; font-weight: 600;">${data.transactionId}</td>
+        </tr>
+        <tr>
+          <td style="padding: 4px 0; color: #64748b; font-size: 14px;">Método de Devolución:</td>
+          <td align="right" style="padding: 4px 0; color: #1e293b; font-size: 14px;">Mismo método de pago utilizado</td>
+        </tr>
+      </table>
+
+      <p style="font-size: 12px; color: #64748b; margin-top: 30px; text-align: center;">
+        El tiempo que tarda el dinero en verse reflejado en tu cuenta depende exclusivamente de tu banco o entidad financiera (normalmente toma entre 1 y 7 días hábiles).
+      </p>
+    </div>
+  `;
+
+  return generateEmailTemplateBase({
+    title: 'Reembolso Procesado',
+    headerColor: '#ea580c',
+    footerColor: '#ea580c',
+    content,
+  });
+}
+
+
