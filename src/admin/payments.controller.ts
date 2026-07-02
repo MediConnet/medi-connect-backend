@@ -7,7 +7,8 @@ import { CARD_METHODS, CHARGED_PAYMENT_STATUSES, DIRECT_PAYMENT_SOURCES, PAYOUT_
 
 function normalizePaymentStatus(status?: string | null, paidAt?: Date | null): 'pending' | 'paid' {
   if (paidAt) return 'paid';
-  return status && CHARGED_PAYMENT_STATUSES.includes(status) ? 'paid' : 'pending';
+  if (status === 'paid' || status === 'PAID_OUT') return 'paid';
+  return 'pending';
 }
 
 /**
@@ -94,6 +95,7 @@ export async function getDoctorPayments(event: APIGatewayProxyEventV2): Promise<
         date: payment.appointments?.scheduled_for?.toISOString() || payment.created_at?.toISOString(),
         amount: Number(payment.amount_total || 0),
         commission: Number(payment.platform_fee || 0),
+        gatewayFee: Number(payment.gateway_fee || 0),
         netAmount: Number(payment.provider_amount || 0),
         status: normalizePaymentStatus(payment.status, payment.paid_at),
         paymentMethod: payment.payment_method || 'card',
@@ -135,10 +137,13 @@ export async function getClinicPayments(event: APIGatewayProxyEventV2): Promise<
   const offset = (page - 1) * limit;
 
   try {
-    const where = {
+    const statusQuery = queryParams.status;
+    const where: any = {
       payout_type: PAYOUT_TYPE_CLINIC,
-      status: 'pending',
     };
+    if (statusQuery && statusQuery !== 'all') {
+      where.status = statusQuery;
+    }
 
     const [payouts, total] = await Promise.all([
       prisma.payouts.findMany({
@@ -186,6 +191,7 @@ export async function getClinicPayments(event: APIGatewayProxyEventV2): Promise<
       const clinicBankAccount = clinicData?.bankAccount || null;
       const totalAmount = payout.payments.reduce((sum: number, p) => sum + Number(p.amount_total || 0), 0);
       const appCommission = payout.payments.reduce((sum: number, p) => sum + Number(p.platform_fee || 0), 0);
+      const gatewayFee = payout.payments.reduce((sum: number, p) => sum + Number(p.gateway_fee || 0), 0);
       const distributedAmount = payout.clinic_payment_distributions?.reduce(
         (sum: number, d) => sum + Number(d.amount), 
         0
@@ -197,6 +203,7 @@ export async function getClinicPayments(event: APIGatewayProxyEventV2): Promise<
         clinicName,
         totalAmount,
         appCommission,
+        gatewayFee,
         netAmount: Number(payout.total_amount || 0),
         status: payout.status || 'pending',
         paymentDate: payout.paid_at?.toISOString() || null,
@@ -207,6 +214,7 @@ export async function getClinicPayments(event: APIGatewayProxyEventV2): Promise<
           doctorName: 'Doctor', // TODO: Obtener nombre del médico
           patientName: p.appointments?.patients?.users?.email || 'Paciente',
           amount: Number(p.amount_total || 0),
+          gatewayFee: Number(p.gateway_fee || 0),
           date: p.appointments?.scheduled_for?.toISOString() || p.created_at?.toISOString(),
         })),
         isDistributed: distributedAmount > 0,
@@ -407,11 +415,137 @@ export async function getPaymentHistory(event: APIGatewayProxyEventV2): Promise<
 
     console.log(`✅ [ADMIN] Historial obtenido: ${mappedDoctorPayments.length} médicos, ${mappedClinicPayments.length} clínicas`);
     return successResponse({
+      doctorPayments: mappedDoctorPayments,
       clinicPayments: mappedClinicPayments,
     });
   } catch (error: any) {
     console.error('❌ [ADMIN] Error al obtener historial:', error.message);
     logger.error('Error getting payment history', error);
     return internalErrorResponse('Failed to get payment history');
+  }
+}
+
+/**
+ * GET /api/admin/payments/transactions
+ * Obtiene el historial de transacciones para auditoría de Docalink/Nuvei
+ */
+export async function getTransactionHistory(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  console.log('✅ [ADMIN] GET /api/admin/payments/transactions - Obteniendo auditoría de transacciones');
+  const prisma = getPrismaClient();
+  const queryParams = event.queryStringParameters || {};
+  const page = parseInt(queryParams.page || '1', 10);
+  const limit = parseInt(queryParams.limit || '10', 10);
+  const search = queryParams.search || '';
+  const offset = (page - 1) * limit;
+
+  try {
+    const where: any = {};
+
+    if (search) {
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(search.trim());
+      const conditions: any[] = [
+        { external_transaction_id: { contains: search, mode: 'insensitive' } },
+        {
+          appointments: {
+            patients: {
+              OR: [
+                { full_name: { contains: search, mode: 'insensitive' } },
+                { identification: { contains: search, mode: 'insensitive' } },
+              ],
+            },
+          },
+        },
+        {
+          appointments: {
+            providers: {
+              OR: [
+                { commercial_name: { contains: search, mode: 'insensitive' } },
+                {
+                  users: {
+                    email: { contains: search, mode: 'insensitive' },
+                  },
+                },
+              ],
+            },
+          },
+        },
+      ];
+      if (isUuid) {
+        conditions.push({ id: search.trim() });
+      }
+      where.OR = conditions;
+    }
+
+    const [transactions, total] = await Promise.all([
+      prisma.payments.findMany({
+        where,
+        include: {
+          appointments: {
+            include: {
+              patients: true,
+              providers: {
+                include: {
+                  users: true,
+                },
+              },
+              specialties: true,
+            },
+          },
+        },
+        orderBy: {
+          created_at: 'desc',
+        },
+        skip: offset,
+        take: limit,
+      }),
+      prisma.payments.count({ where }),
+    ]);
+
+    const mappedTransactions = transactions.map((p) => {
+      // Obtener nombre del médico
+      let doctorName = p.appointments?.providers?.commercial_name || 'Médico';
+      if (p.appointments?.providers?.users) {
+        const u = p.appointments.providers.users;
+        if (doctorName === 'Médico') {
+          doctorName = u.email ? u.email.split('@')[0] : 'Médico';
+        }
+      }
+
+      return {
+        id: p.id,
+        externalTransactionId: p.external_transaction_id || 'N/A',
+        status: p.status || 'PENDING',
+        createdAt: p.created_at?.toISOString(),
+        paidAt: p.paid_at?.toISOString() || null,
+        amount: Number(p.amount_total || 0),
+        paymentMethod: p.payment_method || 'CARD',
+        paymentSource: p.payment_source || 'NUVEI',
+        patient: {
+          name: p.appointments?.patients?.full_name || 'Paciente',
+          identification: p.appointments?.patients?.identification || 'N/A',
+        },
+        doctor: {
+          name: doctorName,
+          specialty: p.appointments?.specialties?.name || 'N/A',
+        },
+        appointment: {
+          date: p.appointments?.scheduled_for?.toISOString() || null,
+          reason: p.appointments?.reason || '',
+        },
+      };
+    });
+
+    return successResponse({
+      data: mappedTransactions,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    });
+  } catch (error: any) {
+    console.error('❌ [ADMIN] Error al obtener auditoría de transacciones:', error.message);
+    return internalErrorResponse('Failed to get transaction audit log');
   }
 }

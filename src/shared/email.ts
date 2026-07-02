@@ -890,3 +890,108 @@ export function generateRequestAcceptedEmail(data: {
     content,
   });
 }
+
+/**
+ * Genera el HTML del email de confirmación de pago obligatorio para Nuvei
+ */
+export function generatePaymentConfirmationEmail(data: {
+  patientName: string;
+  doctorName: string;
+  doctorSpecialty: string;
+  clinicName: string;
+  date: string;
+  time: string;
+  amount: number;
+  transactionId: string;
+  authorizationCode: string;
+}): string {
+  const vat = Number((data.amount * 0.15 / 1.15).toFixed(2));
+  const subtotal = Number((data.amount - vat).toFixed(2));
+
+  const content = `
+    <!-- Hero Section con fondo verde -->
+    <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f0fdf4; padding: 15px 40px;">
+      <tr>
+        <td width="60%" align="left">
+          <h2 class="title" style="color: #108369; margin: 0 0 5px 0;">¡Pago Confirmado!</h2>
+          <p class="subtitle" style="color: #108369; opacity: 0.8; font-size: 14px; margin: 0;">Tu transacción ha sido procesada con éxito.</p>
+        </td>
+        <td width="40%" align="right">
+          <div class="illustration">
+            <img src="${getImageBase64('solicitud-aceptada.png')}" width="140" alt="Pago Exitoso" />
+          </div>
+        </td>
+      </tr>
+    </table>
+
+    <div style="padding: 40px;">
+      <p>Hola <strong>${data.patientName}</strong> 👋,</p>
+      <p>Te confirmamos que el pago de tu cita médica ha sido procesado de forma segura y exitosa a través de nuestra pasarela de pagos Nuvei.</p>
+      
+      <h3 style="color: #1e293b; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; margin-top: 30px;">Detalle de la Compra</h3>
+      
+      <table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin: 15px 0;">
+        <tr>
+          <td style="padding: 6px 0; color: #64748b; font-size: 14px;">Servicio:</td>
+          <td align="right" style="padding: 6px 0; color: #1e293b; font-size: 14px; font-weight: 600;">Consulta Médica - Dr./Dra. ${data.doctorName}</td>
+        </tr>
+        <tr>
+          <td style="padding: 6px 0; color: #64748b; font-size: 14px;">Especialidad:</td>
+          <td align="right" style="padding: 6px 0; color: #1e293b; font-size: 14px;">${data.doctorSpecialty}</td>
+        </tr>
+        <tr>
+          <td style="padding: 6px 0; color: #64748b; font-size: 14px;">Establecimiento:</td>
+          <td align="right" style="padding: 6px 0; color: #1e293b; font-size: 14px;">${data.clinicName}</td>
+        </tr>
+        <tr>
+          <td style="padding: 6px 0; color: #64748b; font-size: 14px;">Fecha y Hora:</td>
+          <td align="right" style="padding: 6px 0; color: #1e293b; font-size: 14px;">${data.date} a las ${data.time}</td>
+        </tr>
+      </table>
+
+      <h3 style="color: #1e293b; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; margin-top: 25px;">Detalle de Facturación (Informativo)</h3>
+      <table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin: 15px 0; background-color: #f8fafc; padding: 15px; border-radius: 8px;">
+        <tr>
+          <td style="padding: 4px 0; color: #64748b; font-size: 14px;">Subtotal:</td>
+          <td align="right" style="padding: 4px 0; color: #1e293b; font-size: 14px;">$${subtotal.toFixed(2)}</td>
+        </tr>
+        <tr>
+          <td style="padding: 4px 0; color: #64748b; font-size: 14px;">IVA (15%):</td>
+          <td align="right" style="padding: 4px 0; color: #1e293b; font-size: 14px;">$${vat.toFixed(2)}</td>
+        </tr>
+        <tr style="font-weight: 700;">
+          <td style="padding: 8px 0 0 0; color: #1e293b; font-size: 16px; border-top: 1px dashed #cbd5e1;">Total Pagado:</td>
+          <td align="right" style="padding: 8px 0 0 0; color: #108369; font-size: 16px; border-top: 1px dashed #cbd5e1;">$${data.amount.toFixed(2)}</td>
+        </tr>
+      </table>
+
+      <h3 style="color: #1e293b; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; margin-top: 25px;">Información de la Transacción</h3>
+      <table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin: 15px 0;">
+        <tr>
+          <td style="padding: 6px 0; color: #64748b; font-size: 14px;">ID de Transacción (Ref):</td>
+          <td align="right" style="padding: 6px 0; color: #1e293b; font-size: 14px; font-weight: 600;">${data.transactionId}</td>
+        </tr>
+        <tr>
+          <td style="padding: 6px 0; color: #64748b; font-size: 14px;">Código de Autorización:</td>
+          <td align="right" style="padding: 6px 0; color: #1e293b; font-size: 14px; font-weight: 600;">${data.authorizationCode}</td>
+        </tr>
+        <tr>
+          <td style="padding: 6px 0; color: #64748b; font-size: 14px;">Medio de Pago:</td>
+          <td align="right" style="padding: 6px 0; color: #1e293b; font-size: 14px;">Tarjeta de Crédito/Débito (Nuvei)</td>
+        </tr>
+      </table>
+
+      <p style="font-size: 12px; color: #64748b; margin-top: 30px; text-align: center;">
+        Este correo sirve como comprobante del pago de tu cita. El médico o establecimiento correspondiente emitirá la factura fiscal respectiva.
+      </p>
+    </div>
+  `;
+
+  return generateEmailTemplateBase({
+    title: 'Confirmación de Pago',
+    headerColor: '#108369',
+    footerColor: '#108369',
+    content,
+  });
+}
+

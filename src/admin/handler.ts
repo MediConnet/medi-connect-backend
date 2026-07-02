@@ -13,7 +13,8 @@ import {
   getClinicPayments, 
   markDoctorPaymentsPaid, 
   markClinicPaymentPaid, 
-  getPaymentHistory 
+  getPaymentHistory,
+  getTransactionHistory
 } from './payments.controller';
 import {
   getUsers,
@@ -223,6 +224,14 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       console.log('✅ [ADMIN] GET /api/admin/payments/history - Obteniendo historial de pagos');
       const result = await getPaymentHistory(event);
       console.log(`✅ [ADMIN] GET /api/admin/payments/history - Completado con status ${result.statusCode}`);
+      return result;
+    }
+
+    // GET /api/admin/payments/transactions
+    if (method === 'GET' && (path === '/api/admin/payments/transactions' || path.startsWith('/api/admin/payments/transactions?'))) {
+      console.log('✅ [ADMIN] GET /api/admin/payments/transactions - Obteniendo auditoría de transacciones');
+      const result = await getTransactionHistory(event);
+      console.log(`✅ [ADMIN] GET /api/admin/payments/transactions - Completado con status ${result.statusCode}`);
       return result;
     }
 

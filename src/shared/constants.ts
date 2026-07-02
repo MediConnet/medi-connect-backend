@@ -99,6 +99,6 @@ export const PAYOUT_TYPE_DOCTOR = "doctor" as const;
 export const LAB_CATEGORY_SLUGS = ["laboratory", "laboratorio"];
 
 // ── Payment status groupings ──
-export const DIRECT_PAYMENT_SOURCES = ["admin", "ADMIN", "PAYPHONE", "payphone"];
+export const DIRECT_PAYMENT_SOURCES = ["admin", "ADMIN", "PAYPHONE", "payphone", "NUVEI", "nuvei"];
 export const CHARGED_PAYMENT_STATUSES = ["PAID", "paid", "completed", "COMPLETED"];
-export const CARD_METHODS = [PAYMENT_METHODS.CARD, "card"];
+export const CARD_METHODS = [PAYMENT_METHODS.CARD, "card", "CREDIT", "DEBIT", "credit", "debit"];

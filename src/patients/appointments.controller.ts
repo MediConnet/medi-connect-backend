@@ -81,9 +81,21 @@ export async function createAppointment(
       return errorResponse("Doctor not found or inactive", 404);
     }
     let branchId: string | null = null;
-    if (body.clinicId) {
+    let finalClinicId = body.clinicId || null;
+
+    if (!finalClinicId && doctor.user_id) {
+      const clinicDoc = await prisma.clinic_doctors.findFirst({
+        where: { user_id: doctor.user_id, is_active: true },
+        select: { clinic_id: true }
+      });
+      if (clinicDoc?.clinic_id) {
+        finalClinicId = clinicDoc.clinic_id;
+      }
+    }
+
+    if (finalClinicId) {
       const clinic = await prisma.clinics.findUnique({
-        where: { id: body.clinicId },
+        where: { id: finalClinicId },
         include: {
           users: {
             include: {
@@ -213,7 +225,7 @@ export async function createAppointment(
         patient_id: patient.id,
         provider_id: body.doctorId,
         branch_id: branchId,
-        clinic_id: body.clinicId || null,
+        clinic_id: finalClinicId,
         specialty_id: body.specialtyId,
         scheduled_for: scheduledFor,
         status: initialStatus,
@@ -247,6 +259,9 @@ export async function createAppointment(
     }
     if (body.fullName && body.fullName.trim()) {
       patientProfilePatch.full_name = body.fullName.trim();
+    }
+    if (body.identificacion && body.identificacion.trim()) {
+      patientProfilePatch.identification = body.identificacion.trim();
     }
     if (Object.keys(patientProfilePatch).length > 0) {
       await prisma.patients.update({
@@ -603,6 +618,20 @@ export async function getAppointmentById(
       return errorResponse("Access denied", 403);
     }
 
+    // Buscar si existe un pago asociado en la tabla payments
+    const payment = await prisma.payments.findFirst({
+      where: { appointment_id: appointment.id },
+      select: {
+        id: true,
+        amount_total: true,
+        status: true,
+        created_at: true,
+        payment_method: true,
+        payment_source: true,
+        external_transaction_id: true,
+      },
+    });
+
     const appointmentWithRelations = appointment as any;
     const provider = appointmentWithRelations.providers;
     const branch = appointmentWithRelations.provider_branches;
@@ -620,6 +649,14 @@ export async function getAppointmentById(
       cost: appointment.cost,
       paymentMethod: appointment.payment_method,
       createdAt: creationDate,
+      paymentDetail: payment ? {
+        transactionId: payment.external_transaction_id || payment.id,
+        amount: Number(payment.amount_total || appointment.cost || 0),
+        status: payment.status || 'PAID',
+        method: payment.payment_method || 'CARD',
+        source: payment.payment_source || 'NUVEI',
+        date: payment.created_at?.toISOString() || creationDate?.toISOString() || new Date().toISOString(),
+      } : null,
       specialty: specialtyInfo
         ? {
             id: specialtyInfo.id,

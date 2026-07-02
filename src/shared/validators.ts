@@ -753,6 +753,7 @@ export const createAppointmentSchema = z.object({
   clinicId: z.string().uuid("Clinic ID must be a valid UUID").optional().nullable(),
   fullName: z.string().min(2, "Full name is too short").optional(),
   phone: z.string().optional(),
+  identificacion: z.string().optional(),
   notes: z.string().optional(),
   date: z
     .string()

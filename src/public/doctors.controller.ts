@@ -75,7 +75,7 @@ function mapDoctorData(doctor: any) {
 
     especialidades: especialidadesList,
     clinica: clinicName,
-
+    clinicId: clinicData?.id || null,
     descripcion: doctor.description || "",
     experiencia: doctor.years_of_experience || 0,
     registro: "",
@@ -219,6 +219,7 @@ export async function getAllDoctors(
               select: {
                 clinics: {
                   select: {
+                    id: true,
                     name: true,
                     clinic_schedules: {
                       where: { enabled: true },
