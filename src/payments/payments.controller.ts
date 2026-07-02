@@ -22,6 +22,80 @@ const generateClientTransactionId = (): string => {
 };
 
 /**
+ * Helper para enviar el correo de confirmación de pago obligatorio requerido por Nuvei
+ */
+async function sendPaymentConfirmationEmailHelper(
+  appointmentId: string,
+  amount: number,
+  transactionId: string,
+  authorizationCode: string
+) {
+  try {
+    const prisma = getPrismaClient();
+    const appointment = await prisma.appointments.findUnique({
+      where: { id: appointmentId },
+      include: {
+        patients: {
+          include: {
+            users: true,
+          },
+        },
+        providers: true,
+        specialties: true,
+        clinics: true,
+      },
+    });
+
+    if (!appointment || !appointment.patients?.users?.email) {
+      console.warn(`⚠️ [PAYMENTS] No se pudo enviar el correo de confirmación: Cita o email del paciente no encontrado.`);
+      return;
+    }
+
+    const patientName = appointment.patients?.full_name || "Paciente";
+    
+    const doctorName = appointment.providers?.commercial_name || "Médico";
+    const doctorSpecialty = appointment.specialties?.name || "Medicina General";
+    const clinicName = appointment.clinics?.name || "DocaLink";
+    
+    const formattedDate = appointment.scheduled_for ? appointment.scheduled_for.toLocaleDateString("es-ES", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    }) : "";
+    
+    const formattedTime = appointment.scheduled_for ? appointment.scheduled_for.toLocaleTimeString("es-ES", {
+      hour: "2-digit",
+      minute: "2-digit",
+    }) : "";
+
+    const { sendEmail } = await import("../shared/email-adapter");
+    const { generatePaymentConfirmationEmail } = await import("../shared/email");
+
+    const emailHtml = generatePaymentConfirmationEmail({
+      patientName,
+      doctorName,
+      doctorSpecialty,
+      clinicName,
+      date: formattedDate,
+      time: formattedTime,
+      amount,
+      transactionId,
+      authorizationCode,
+    });
+
+    await sendEmail({
+      to: appointment.patients.users.email,
+      subject: `Comprobante de Pago - Cita con Dr(a). ${doctorName}`,
+      html: emailHtml,
+    });
+
+    console.log(`✉️ [PAYMENTS] Correo de confirmación de pago enviado a: ${appointment.patients.users.email}`);
+  } catch (err: any) {
+    console.error("❌ [PAYMENTS] Error al enviar correo de confirmación de pago:", err.message);
+  }
+}
+
+/**
  * Procesa un pago directo con tarjeta tokenizada usando Nuvei (Paymentez)
  * POST /api/payments/charge
  */
@@ -196,6 +270,14 @@ export async function processNuveiPayment(
           clinics: { select: { name: true } },
         },
       });
+
+      // Enviar correo de confirmación de pago obligatorio requerido por Nuvei
+      sendPaymentConfirmationEmailHelper(
+        appointment.id,
+        costDecimal,
+        transactionId || "N/A",
+        authorizationCode || "AUT-N/A"
+      ).catch(err => console.error("❌ [PAYMENTS] Error en envío de email de confirmación:", err));
 
       // Enviar notificaciones push
       if (updatedApp.patient_id) {
@@ -382,6 +464,14 @@ export async function handleNuveiWebhook(
             is_paid: true,
           },
         });
+
+        // Enviar correo de confirmación de pago obligatorio requerido por Nuvei
+        sendPaymentConfirmationEmailHelper(
+          payment.appointment_id,
+          Number(payment.amount_total) || 0,
+          transactionId || "N/A",
+          transaction?.authorization_code || "AUT-N/A"
+        ).catch(err => console.error("❌ [PAYMENTS] Error en envío de email de confirmación (webhook):", err));
       }
 
       console.log(`✅ [WEBHOOK] Pago ${transactionId} confirmado vía webhook.`);
