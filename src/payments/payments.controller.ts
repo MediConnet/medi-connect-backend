@@ -1,5 +1,5 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResult } from "aws-lambda";
-import { randomBytes, randomUUID } from "crypto";
+import { randomBytes, randomUUID, createHash } from "crypto";
 import { AuthContext, requireAuth } from "../shared/auth";
 import { logger } from "../shared/logger";
 import { getPrismaClient } from "../shared/prisma";
@@ -10,6 +10,7 @@ import {
   successResponse,
 } from "../shared/response";
 import { nuveiService } from "./nuvei.service";
+import { PAYOUT_TYPE_CLINIC, PAYOUT_TYPE_DOCTOR } from "../shared/constants";
 
 /**
  * Genera un ID de transacción corto y único (Máx 15 chars)
@@ -96,8 +97,21 @@ export async function processNuveiPayment(
       );
     }
 
-    // Comisión total fija del 15% de la plataforma
-    const platformFee = Number((costDecimal * 0.15).toFixed(2));
+    // Obtener comisiones desde la base de datos (admin_settings)
+    let settings = await prisma.admin_settings.findUnique({
+      where: { id: 1 },
+    });
+    if (!settings) {
+      settings = await prisma.admin_settings.create({
+        data: { id: 1 },
+      });
+    }
+
+    const commissionPercent = appointment.clinic_id
+      ? Number(settings.commission_clinic)
+      : Number(settings.commission_doctor);
+
+    const platformFee = Number((costDecimal * (commissionPercent / 100)).toFixed(2));
     const providerAmount = Number((costDecimal - platformFee).toFixed(2));
 
     // Cálculo informativo del costo de Nuvei + Banco
@@ -111,7 +125,7 @@ export async function processNuveiPayment(
     }
 
     console.log(
-      `💰 [DEBUG] Comisión plataforma (15%): $${platformFee} | Fee Nuvei: $${gatewayFee} | Neto médico: $${providerAmount}`
+      `💰 [DEBUG] Comisión plataforma (${commissionPercent}%): $${platformFee} | Fee Nuvei: $${gatewayFee} | Neto médico: $${providerAmount}`
     );
 
     const clientTransactionId = generateClientTransactionId();
@@ -138,6 +152,10 @@ export async function processNuveiPayment(
       },
     });
 
+    // Calcular IVA 15% requerido por el perfil de la cuenta de Nuvei
+    const vat = Number((costDecimal * 0.15 / 1.15).toFixed(2));
+    const taxableAmount = Number((costDecimal - vat).toFixed(2));
+
     // Llamar a la API de Nuvei para procesar el cargo
     const nuveiResult = await nuveiService.debitWithToken({
       cardToken: body.cardToken,
@@ -147,6 +165,8 @@ export async function processNuveiPayment(
       amount: costDecimal,
       description: description,
       devReference: clientTransactionId,
+      vat,
+      taxableAmount,
     });
 
     console.log("📡 [NUVEI] Respuesta recibida:", JSON.stringify(nuveiResult));
@@ -162,7 +182,6 @@ export async function processNuveiPayment(
         where: { id: payment.id },
         data: {
           status: "PAID",
-          paid_at: new Date(),
         },
       });
 
@@ -204,6 +223,49 @@ export async function processNuveiPayment(
           },
         }).catch((err: any) => console.error("❌ [PAYMENTS] Error enviando push:", err.message));
       }
+
+      // Crear el payout correspondiente (clínica o médico independiente)
+      const payoutId = randomUUID();
+      const isClinicAppointment = !!updatedApp.clinic_id;
+      let finalProviderId = appointment.provider_id || null;
+
+      if (isClinicAppointment && updatedApp.clinic_id) {
+        finalProviderId = updatedApp.clinic_id;
+        
+        // Bypassear el constraint de llave foránea creando un provider placeholder para la clínica si no existe
+        const existingProvider = await prisma.providers.findUnique({
+          where: { id: updatedApp.clinic_id }
+        });
+        
+        if (!existingProvider) {
+          console.log(`🏥 [PAYMENTS] Creando provider placeholder para clínica: ${updatedApp.clinic_id}`);
+          const clinic = await prisma.clinics.findUnique({
+            where: { id: updatedApp.clinic_id }
+          });
+          
+          await prisma.providers.create({
+            data: {
+              id: updatedApp.clinic_id,
+              user_id: clinic?.user_id || null,
+              commercial_name: clinic?.name || "Clínica",
+              verification_status: "APPROVED"
+            }
+          }).catch((err: any) => console.error("❌ [PAYMENTS] Error creando provider placeholder para clínica:", err.message));
+        }
+      }
+
+      await prisma.payouts.create({
+        data: {
+          id: payoutId,
+          provider_id: finalProviderId,
+          total_amount: providerAmount,
+          currency: "USD",
+          status: "pending",
+          payout_type: isClinicAppointment ? PAYOUT_TYPE_CLINIC : PAYOUT_TYPE_DOCTOR,
+          payments: { connect: { id: payment.id } },
+        },
+      });
+      console.log(`📦 [PAYMENTS] Payout creado: tipo=${isClinicAppointment ? "clinic" : "doctor"}, monto=$${providerAmount}`);
 
       console.log(`✅ [PAYMENTS] Transacción ${transactionId} aprobada y cita confirmada.`);
 
@@ -362,7 +424,7 @@ export async function getClientAuthToken(
     const appKey = process.env.NUVEI_CLIENT_APP_KEY || "rvpKAv2tc49x6YL38fvtv5jJxRRiPs";
 
     const timestamp = Math.floor(Date.now() / 1000).toString();
-    const signature = crypto.createHash("sha256").update(timestamp + appKey).digest("hex");
+    const signature = createHash("sha256").update(appKey + timestamp).digest("hex");
     const tokenString = `${appCode};${timestamp};${signature}`;
     const authToken = Buffer.from(tokenString).toString("base64");
 

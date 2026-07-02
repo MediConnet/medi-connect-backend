@@ -33,7 +33,7 @@ function getAuthHeaders() {
   const appKey = process.env.NUVEI_SERVER_APP_KEY || "Kn9v6ICvoRXQozQG2rK92WtjG6l08a";
 
   const timestamp = Math.floor(Date.now() / 1000).toString();
-  const signature = crypto.createHash("sha256").update(timestamp + appKey).digest("hex");
+  const signature = crypto.createHash("sha256").update(appKey + timestamp).digest("hex");
   const tokenString = `${appCode};${timestamp};${signature}`;
   const authToken = Buffer.from(tokenString).toString("base64");
 

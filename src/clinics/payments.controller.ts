@@ -66,7 +66,7 @@ export async function getClinicPayments(event: APIGatewayProxyEventV2): Promise<
       ? await prisma.payments.groupBy({
           by: ['payout_id'],
           where: { payout_id: { in: payoutIds } },
-          _sum: { amount_total: true, platform_fee: true },
+          _sum: { amount_total: true, platform_fee: true, gateway_fee: true },
         })
       : [];
 
@@ -85,6 +85,7 @@ export async function getClinicPayments(event: APIGatewayProxyEventV2): Promise<
         {
           totalAmount: Number(x._sum.amount_total || 0),
           appCommission: Number(x._sum.platform_fee || 0),
+          gatewayFee: Number(x._sum.gateway_fee || 0),
         },
       ]),
     );
@@ -94,7 +95,7 @@ export async function getClinicPayments(event: APIGatewayProxyEventV2): Promise<
 
     // Mapear a formato del frontend
     const mappedPayouts = payouts.map((payout) => {
-      const sums = paymentAggMap.get(payout.id) || { totalAmount: 0, appCommission: 0 };
+      const sums = paymentAggMap.get(payout.id) || { totalAmount: 0, appCommission: 0, gatewayFee: 0 };
       const distributedAmount = distAggMap.get(payout.id) || 0;
 
       return {
@@ -103,6 +104,7 @@ export async function getClinicPayments(event: APIGatewayProxyEventV2): Promise<
         clinicName: clinic.name,
         totalAmount: sums.totalAmount,
         appCommission: sums.appCommission,
+        gatewayFee: sums.gatewayFee,
         netAmount: Number(payout.total_amount || 0),
         status: payout.status || 'pending',
         paymentDate: payout.paid_at?.toISOString() || null,
@@ -185,6 +187,7 @@ export async function getClinicPaymentDetail(event: APIGatewayProxyEventV2): Pro
     // Mapear a formato del frontend
     const totalAmount = payout.payments.reduce((sum: number, p) => sum + Number(p.amount_total || 0), 0);
     const appCommission = payout.payments.reduce((sum: number, p) => sum + Number(p.platform_fee || 0), 0);
+    const gatewayFee = payout.payments.reduce((sum: number, p) => sum + Number(p.gateway_fee || 0), 0);
     const distributedAmount = payout.clinic_payment_distributions?.reduce(
       (sum: number, d) => sum + Number(d.amount), 
       0
@@ -196,6 +199,7 @@ export async function getClinicPaymentDetail(event: APIGatewayProxyEventV2): Pro
       clinicName: clinic.name,
       totalAmount,
       appCommission,
+      gatewayFee,
       netAmount: Number(payout.total_amount || 0),
       status: payout.status || 'pending',
       paymentDate: payout.paid_at?.toISOString() || null,
@@ -206,6 +210,7 @@ export async function getClinicPaymentDetail(event: APIGatewayProxyEventV2): Pro
         doctorName: 'Doctor',
         patientName: p.appointments?.patients?.users?.email || 'Paciente',
         amount: Number(p.amount_total || 0),
+        gatewayFee: Number(p.gateway_fee || 0),
         date: p.appointments?.scheduled_for?.toISOString() || p.created_at?.toISOString(),
       })),
       isDistributed: distributedAmount > 0,
@@ -676,6 +681,7 @@ export async function getAdminClinicPaymentsList(event: APIGatewayProxyEventV2):
       const clinicName = payout.provider_id ? clinicMap.get(payout.provider_id) || 'Clínica' : 'Clínica';
       const totalAmount = payout.payments.reduce((sum: number, p) => sum + Number(p.amount_total || 0), 0);
       const appCommission = payout.payments.reduce((sum: number, p) => sum + Number(p.platform_fee || 0), 0);
+      const gatewayFee = payout.payments.reduce((sum: number, p) => sum + Number(p.gateway_fee || 0), 0);
       const distributedAmount = payout.clinic_payment_distributions?.reduce(
         (sum: number, d) => sum + Number(d.amount), 0
       ) || 0;
@@ -686,6 +692,7 @@ export async function getAdminClinicPaymentsList(event: APIGatewayProxyEventV2):
         clinicName,
         totalAmount,
         appCommission,
+        gatewayFee,
         netAmount: Number(payout.total_amount || 0),
         status: payout.status || 'pending',
         paymentDate: payout.paid_at?.toISOString() || null,
@@ -696,6 +703,7 @@ export async function getAdminClinicPaymentsList(event: APIGatewayProxyEventV2):
           doctorName: 'Doctor',
           patientName: p.appointments?.patients?.users?.email || 'Paciente',
           amount: Number(p.amount_total || 0),
+          gatewayFee: Number(p.gateway_fee || 0),
           date: p.appointments?.scheduled_for?.toISOString() || p.created_at?.toISOString(),
         })),
         isDistributed: distributedAmount > 0,
