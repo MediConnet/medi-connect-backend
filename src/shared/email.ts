@@ -210,10 +210,9 @@ function generateEmailTemplateBase(options: {
                 <p style="font-size: 14px; font-weight: 700; color: #1e293b; margin: 0 0 15px 0; font-family: Arial, sans-serif;">Síguenos en nuestras redes sociales</p>
                 <table border="0" cellspacing="0" cellpadding="0">
                   <tr>
-                    <td style="padding: 0 8px;"><a href="#"><img src="https://cdn-icons-png.flaticon.com/512/124/124010.png" width="28" height="28" alt="FB" /></a></td>
-                    <td style="padding: 0 8px;"><a href="#"><img src="https://cdn-icons-png.flaticon.com/512/174/174855.png" width="28" height="28" alt="IG" /></a></td>
-                    <td style="padding: 0 8px;"><a href="#"><img src="https://cdn-icons-png.flaticon.com/512/3046/3046121.png" width="28" height="28" alt="TK" /></a></td>
-                    <td style="padding: 0 8px;"><a href="#"><img src="https://cdn-icons-png.flaticon.com/512/1384/1384060.png" width="28" height="28" alt="YT" /></a></td>
+                    <td style="padding: 0 8px;"><a href="https://www.facebook.com/share/1Lmuf2rTyh/?mibextid=wwXIfr" target="_blank"><img src="https://cdn-icons-png.flaticon.com/512/124/124010.png" width="28" height="28" alt="FB" /></a></td>
+                    <td style="padding: 0 8px;"><a href="https://www.instagram.com/docalink1?igsh=ZGs1Y2N4dHExMHl3&utm_source=qr" target="_blank"><img src="https://cdn-icons-png.flaticon.com/512/174/174855.png" width="28" height="28" alt="IG" /></a></td>
+                    <td style="padding: 0 8px;"><a href="https://www.tiktok.com/@docalink4" target="_blank"><img src="https://cdn-icons-png.flaticon.com/512/3046/3046121.png" width="28" height="28" alt="TK" /></a></td>
                   </tr>
                 </table>
               </td>
