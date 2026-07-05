@@ -4,6 +4,7 @@ import { sendAppointmentReminders } from './appointment-reminders';
 import { checkAppointmentReminders } from './appointment-reminders-check';
 import { updateFeaturedBranches } from './featured.job';
 import { initializeReminderCache, triggerCacheReload } from './reminder-cache';
+import { expirePendingPayments } from './expire-pending-payments.job';
 
 export function startScheduler(): void {
   console.log('⏰ [SCHEDULER] Iniciando cron jobs...');
@@ -28,6 +29,15 @@ export function startScheduler(): void {
       await checkAppointmentReminders();
     } catch (error) {
       console.error('❌ [SCHEDULER] Error en checkAppointmentReminders:', error);
+    }
+  });
+
+  // Cada 5 minutos: cancelar citas PENDING_PAYMENT / PROCESSING que llevan más de 15 min sin pagar
+  cron.schedule('*/5 * * * *', async () => {
+    try {
+      await expirePendingPayments();
+    } catch (error) {
+      console.error('❌ [SCHEDULER] Error en expirePendingPayments:', error);
     }
   });
 
@@ -62,6 +72,7 @@ export function startScheduler(): void {
 
   console.log('✅ [SCHEDULER] Cron jobs activos:');
   console.log('   - checkReminders: cada minuto');
+  console.log('   - expirePendingPayments: cada 5 minutos (libera slots abandonados)');
   console.log('   - triggerCacheReload: cada hora (seguridad)');
   console.log('   - checkAppointmentReminders: cada 30 minutos');
   console.log('   - sendAppointmentReminders: diario 8:00 AM Ecuador');

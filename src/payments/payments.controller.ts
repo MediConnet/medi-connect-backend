@@ -160,6 +160,29 @@ export async function processNuveiPayment(
       return errorResponse("Esta cita ya se encuentra pagada", 400);
     }
 
+    // --- IDEMPOTENCIA ---
+    // Verificar si ya existe un pago PAID para esta cita (protege contra doble tap y retries de red)
+    const existingPaid = await prisma.payments.findFirst({
+      where: { appointment_id: appointment.id, status: "PAID" },
+    });
+    if (existingPaid) {
+      console.log(`⚠️ [IDEMPOTENCY] Pago duplicado detectado para cita ${appointment.id} — retornando éxito sin cobrar.`);
+      return successResponse({ status: "success", message: "El pago ya fue procesado anteriormente." });
+    }
+
+    // --- LOCK ATÓMICO ---
+    // Pasar a PROCESSING de forma atómica: solo una petición puede hacer este cambio.
+    // Si llegan 2 peticiones simultáneas para el mismo appointmentId, solo una tendrá count > 0.
+    const locked = await prisma.appointments.updateMany({
+      where: { id: appointment.id, status: "PENDING_PAYMENT" },
+      data: { status: "PROCESSING" },
+    });
+    if (locked.count === 0) {
+      console.warn(`⚠️ [LOCK] No se pudo adquirir lock para cita ${appointment.id} — ya está siendo procesada.`);
+      return errorResponse("El pago ya está siendo procesado. Por favor espera un momento.", 409);
+    }
+    console.log(`🔒 [LOCK] Cita ${appointment.id} pasó a PROCESSING — lock adquirido.`);
+
     const costDecimal = Number(appointment.cost);
 
     console.log(`💰 [DEBUG] Costo Consulta (USD): ${costDecimal}`);
@@ -359,12 +382,17 @@ export async function processNuveiPayment(
       });
     } else {
       // Transacción rechazada o fallida
+      // Liberar el horario inmediatamente para que otros pacientes puedan reservarlo
       await prisma.payments.update({
         where: { id: payment.id },
         data: { status: "FAILED" },
       });
+      await prisma.appointments.update({
+        where: { id: appointment.id },
+        data: { status: "CANCELLED" },
+      });
 
-      console.warn(`❌ [PAYMENTS] Pago fallido. Status: ${status}, Detail: ${statusDetail}`);
+      console.warn(`❌ [PAYMENTS] Pago fallido. Status: ${status}, Detail: ${statusDetail} — cita ${appointment.id} cancelada y slot liberado.`);
       return errorResponse(
         nuveiResult?.transaction?.message || "La transacción fue rechazada. Por favor verifica tus fondos o intenta con otra tarjeta.",
         400
@@ -476,11 +504,20 @@ export async function handleNuveiWebhook(
 
       console.log(`✅ [WEBHOOK] Pago ${transactionId} confirmado vía webhook.`);
     } else {
+      // Marcar pago como fallido y liberar el horario del doctor
       await prisma.payments.update({
         where: { id: payment.id },
         data: { status: "FAILED" },
       });
-      console.log(`❌ [WEBHOOK] Pago ${transactionId} fallido/rechazado.`);
+      if (payment.appointment_id) {
+        await prisma.appointments.update({
+          where: { id: payment.appointment_id },
+          data: { status: "CANCELLED" },
+        });
+        console.log(`❌ [WEBHOOK] Pago ${transactionId} fallido/rechazado — cita ${payment.appointment_id} cancelada y slot liberado.`);
+      } else {
+        console.log(`❌ [WEBHOOK] Pago ${transactionId} fallido/rechazado.`);
+      }
     }
 
     return {
@@ -686,3 +723,250 @@ export async function initNuveiCheckout(
   }
 }
 
+/**
+ * Reintento de pago sobre una cita cancelada por fallo de pago previo.
+ * Valida atómicamente que el slot sigue disponible antes de cobrar.
+ * POST /api/payments/retry
+ */
+export async function retryNuveiPayment(
+  event: APIGatewayProxyEventV2,
+): Promise<APIGatewayProxyResult> {
+  console.log("🔄 [PAYMENTS] Iniciando reintento de pago...");
+
+  const authResult = await requireAuth(event);
+  if ("statusCode" in authResult) return authResult;
+  const authContext = authResult as AuthContext;
+
+  const prisma = getPrismaClient();
+
+  try {
+    let body;
+    try {
+      body = typeof event.body === "string" ? JSON.parse(event.body) : event.body;
+    } catch (e) {
+      return errorResponse("Invalid JSON body", 400);
+    }
+
+    if (!body || !body.appointmentId || !body.cardToken) {
+      return errorResponse("Los campos appointmentId y cardToken son requeridos", 400);
+    }
+
+    const cardType = (body.cardType || "credit").toLowerCase();
+    if (cardType !== "credit" && cardType !== "debit") {
+      return errorResponse("El tipo de tarjeta debe ser 'credit' o 'debit'", 400);
+    }
+
+    // Buscar la cita original (debe estar CANCELLED con al menos un pago FAILED)
+    const originalAppointment = await prisma.appointments.findUnique({
+      where: { id: body.appointmentId },
+      include: {
+        patients: { include: { users: true } },
+        providers: true,
+        provider_branches: true,
+      },
+    });
+
+    if (!originalAppointment) return notFoundResponse("Cita no encontrada");
+
+    // Seguridad: solo el dueño puede reintentar
+    if (originalAppointment.patients?.user_id !== authContext.user.id) {
+      return errorResponse("No tienes permiso para reintentar este pago", 403);
+    }
+
+    // La cita debe estar CANCELLED (liberada por fallo de pago)
+    if (originalAppointment.status !== "CANCELLED") {
+      return errorResponse(
+        `No se puede reintentar el pago de una cita en estado: ${originalAppointment.status}`,
+        400,
+      );
+    }
+
+    // Verificar que el motivo de cancelación fue un pago fallido (no una cancelación manual)
+    const failedPayment = await prisma.payments.findFirst({
+      where: { appointment_id: originalAppointment.id, status: "FAILED" },
+    });
+    if (!failedPayment) {
+      return errorResponse("Esta cita no puede ser reintentada (no hay pago fallido registrado)", 400);
+    }
+
+    // --- VERIFICACIÓN ATÓMICA DE DISPONIBILIDAD DEL SLOT ---
+    const scheduledFor = originalAppointment.scheduled_for;
+    if (!scheduledFor) {
+      return errorResponse("La cita original no tiene fecha registrada", 400);
+    }
+
+    // Validar que el slot no esté en el pasado
+    if (scheduledFor < new Date()) {
+      return errorResponse("No se puede reintentar: la fecha de la cita ya pasó", 400);
+    }
+
+    const conflict = await prisma.appointments.findFirst({
+      where: {
+        provider_id: originalAppointment.provider_id,
+        scheduled_for: scheduledFor,
+        status: { in: ["PENDING", "CONFIRMED", "COMPLETED", "PENDING_PAYMENT", "PROCESSING"] },
+      },
+    });
+
+    if (conflict) {
+      console.warn(`⚠️ [RETRY] Slot ocupado por cita ${conflict.id} al reintentar pago de cita ${originalAppointment.id}`);
+      return errorResponse(
+        "Lo sentimos, este horario ya fue reservado por otra persona. Por favor selecciona un nuevo horario.",
+        409,
+      );
+    }
+
+    // Obtener comisiones
+    let settings = await prisma.admin_settings.findUnique({ where: { id: 1 } });
+    if (!settings) settings = await prisma.admin_settings.create({ data: { id: 1 } });
+
+    const costDecimal = Number(originalAppointment.cost);
+    if (isNaN(costDecimal) || costDecimal <= 0) {
+      return errorResponse(`El costo de la consulta ($${costDecimal}) no es válido.`, 400);
+    }
+
+    const commissionPercent = originalAppointment.clinic_id
+      ? Number(settings.commission_clinic)
+      : Number(settings.commission_doctor);
+
+    const platformFee = Number((costDecimal * (commissionPercent / 100)).toFixed(2));
+    const providerAmount = Number((costDecimal - platformFee).toFixed(2));
+
+    let gatewayFee = 0;
+    if (cardType === "credit") {
+      gatewayFee = Number((costDecimal * 0.06345 + 0.046).toFixed(2));
+    } else {
+      gatewayFee = Number((costDecimal * 0.02875 + 0.046).toFixed(2));
+    }
+
+    const clientTransactionId = generateClientTransactionId();
+    const doctorName = originalAppointment.providers?.commercial_name || "Doctor";
+    const branchName = originalAppointment.provider_branches?.name || "Consultorio";
+    const description = `Consulta - ${doctorName} (${branchName})`;
+
+    // Crear NUEVA cita para el mismo slot en estado PROCESSING (lock inmediato)
+    // La cita original cancelada queda en el historial para auditoría
+    const newAppointmentId = randomUUID();
+    const newAppointment = await prisma.appointments.create({
+      data: {
+        id: newAppointmentId,
+        patient_id: originalAppointment.patient_id,
+        provider_id: originalAppointment.provider_id,
+        branch_id: originalAppointment.branch_id,
+        clinic_id: originalAppointment.clinic_id,
+        specialty_id: originalAppointment.specialty_id,
+        scheduled_for: scheduledFor,
+        status: "PROCESSING",
+        reason: originalAppointment.reason,
+        reception_notes: originalAppointment.reception_notes,
+        payment_method: originalAppointment.payment_method,
+        is_paid: false,
+        cost: costDecimal,
+      },
+    });
+
+    console.log(`🆕 [RETRY] Nueva cita creada: ${newAppointmentId} en PROCESSING para slot ${scheduledFor.toISOString()}`);
+
+    // Registrar pago como PENDING
+    const paymentId = randomUUID();
+    const payment = await prisma.payments.create({
+      data: {
+        id: paymentId,
+        appointment_id: newAppointmentId,
+        amount_total: costDecimal,
+        provider_amount: providerAmount,
+        platform_fee: platformFee,
+        gateway_fee: gatewayFee,
+        status: "PENDING",
+        payment_source: "NUVEI",
+        payment_method: cardType.toUpperCase(),
+        external_transaction_id: clientTransactionId,
+        clinic_id: originalAppointment.clinic_id || null,
+      },
+    });
+
+    // Calcular IVA 15%
+    const vat = Number((costDecimal * 0.15 / 1.15).toFixed(2));
+    const taxableAmount = Number((costDecimal - vat).toFixed(2));
+
+    // Llamar a Nuvei
+    const nuveiResult = await nuveiService.debitWithToken({
+      cardToken: body.cardToken,
+      userId: authContext.user.id,
+      userEmail: originalAppointment.patients?.users?.email || authContext.user.email || "paciente@docalink.com",
+      userPhone: body.userPhone || undefined,
+      amount: costDecimal,
+      description,
+      devReference: clientTransactionId,
+      vat,
+      taxableAmount,
+    });
+
+    console.log("📡 [NUVEI RETRY] Respuesta:", JSON.stringify(nuveiResult));
+
+    const status = nuveiResult?.transaction?.status || "";
+    const statusDetail = Number(nuveiResult?.transaction?.status_detail);
+    const transactionId = nuveiResult?.transaction?.id;
+    const authorizationCode = nuveiResult?.transaction?.authorization_code;
+
+    if (status === "success" && statusDetail === 3) {
+      await prisma.payments.update({ where: { id: payment.id }, data: { status: "PAID" } });
+      await prisma.appointments.update({
+        where: { id: newAppointmentId },
+        data: { status: "CONFIRMED", is_paid: true },
+      });
+
+      sendPaymentConfirmationEmailHelper(
+        newAppointmentId,
+        costDecimal,
+        transactionId || "N/A",
+        authorizationCode || "AUT-N/A",
+      ).catch(err => console.error("❌ [RETRY] Error enviando email de confirmación:", err));
+
+      // Crear payout
+      const payoutId = randomUUID();
+      const isClinicAppointment = !!newAppointment.clinic_id;
+      await prisma.payouts.create({
+        data: {
+          id: payoutId,
+          provider_id: isClinicAppointment ? newAppointment.clinic_id : newAppointment.provider_id,
+          total_amount: providerAmount,
+          currency: "USD",
+          status: "pending",
+          payout_type: isClinicAppointment ? PAYOUT_TYPE_CLINIC : PAYOUT_TYPE_DOCTOR,
+          payments: { connect: { id: payment.id } },
+        },
+      });
+
+      console.log(`✅ [RETRY] Reintento exitoso. Nueva cita: ${newAppointmentId}, Transacción: ${transactionId}`);
+
+      return successResponse({
+        status: "success",
+        appointmentId: newAppointmentId,
+        transactionId,
+        authorizationCode,
+        amount: costDecimal,
+      });
+    } else {
+      // Fallo en reintento: liberar la nueva cita también
+      await prisma.payments.update({ where: { id: payment.id }, data: { status: "FAILED" } });
+      await prisma.appointments.update({
+        where: { id: newAppointmentId },
+        data: { status: "CANCELLED" },
+      });
+
+      console.warn(`❌ [RETRY] Pago fallido. Status: ${status}, Detail: ${statusDetail} — nueva cita ${newAppointmentId} cancelada.`);
+      return errorResponse(
+        nuveiResult?.transaction?.message || "La transacción fue rechazada. Por favor verifica tus fondos o intenta con otra tarjeta.",
+        400,
+      );
+    }
+
+  } catch (error: any) {
+    let detailedError = error.message;
+    if (error.response?.data) detailedError = JSON.stringify(error.response.data);
+    console.error(`❌ Error en retryNuveiPayment:`, detailedError);
+    logger.error("Retry payment processing failed", error);
+    return internalErrorResponse("No se pudo procesar el reintento de pago. Por favor intenta de nuevo.");
+  }
+}
