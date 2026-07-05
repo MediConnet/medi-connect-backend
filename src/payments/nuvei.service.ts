@@ -150,4 +150,57 @@ export const nuveiService = {
       throw error;
     }
   },
+
+  /**
+   * Inicializa una referencia de transacción para el Checkout (PCI-compliant)
+   */
+  async initReference(data: {
+    userId: string;
+    userEmail: string;
+    amount: number;
+    description: string;
+    devReference: string;
+    vat?: number;
+    taxableAmount?: number;
+    phone?: string;
+  }) {
+    const url = `${NUVEI_BASE_URL}/v2/transaction/init_reference`;
+    
+    const requestBody = {
+      user: {
+        id: data.userId,
+        email: data.userEmail,
+        phone: data.phone || "",
+      },
+      order: {
+        amount: data.amount,
+        description: data.description.substring(0, 250),
+        dev_reference: data.devReference,
+        vat: data.vat || 0,
+        taxable_amount: data.taxableAmount || 0,
+      },
+      conf: {
+        style_version: "2",
+        theme: {
+          logo: "https://cdn.paymentez.com/img/nv/nuvei_logo.png",
+          primary_color: "#C800A1"
+        }
+      }
+    };
+
+    console.log(`📡 [NUVEI] Inicializando Referencia contra: ${url}`);
+    
+    try {
+      const response = await axios.post(url, requestBody, {
+        headers: getAuthHeaders(),
+      });
+      return response.data;
+    } catch (error: any) {
+      if (error.response) {
+        console.error("❌ [NUVEI] Error en initReference:", error.response.data);
+        throw new Error(JSON.stringify(error.response.data));
+      }
+      throw error;
+    }
+  },
 };

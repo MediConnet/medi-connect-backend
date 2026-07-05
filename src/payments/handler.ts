@@ -9,6 +9,8 @@ import {
   processNuveiPayment,
   handleNuveiWebhook,
   getClientAuthToken,
+  initNuveiCheckout,
+  retryNuveiPayment,
 } from "./payments.controller";
 
 export async function handler(
@@ -33,6 +35,12 @@ export async function handler(
       return await getClientAuthToken(event);
     }
 
+    // POST /api/payments/init-checkout
+    // Inicializa la referencia para el modal de Checkout
+    if (path === "/api/payments/init-checkout" && method === "POST") {
+      return await initNuveiCheckout(event);
+    }
+
     // POST /api/payments/charge
     // Procesa el pago directo con tarjeta tokenizada
     if (path === "/api/payments/charge" && method === "POST") {
@@ -43,6 +51,12 @@ export async function handler(
     // Callback para recibir notificaciones asíncronas de Nuvei
     if (path === "/api/payments/nuvei/webhook" && method === "POST") {
       return await handleNuveiWebhook(event);
+    }
+
+    // POST /api/payments/retry
+    // Reintenta el pago sobre una cita cancelada por fallo, validando disponibilidad del slot
+    if (path === "/api/payments/retry" && method === "POST") {
+      return await retryNuveiPayment(event);
     }
 
     console.warn(`⚠️ [PAYMENTS] Ruta no encontrada: ${method} ${path}`);
