@@ -24,7 +24,7 @@ const generateClientTransactionId = (): string => {
 /**
  * Helper para enviar el correo de confirmación de pago obligatorio requerido por Nuvei
  */
-async function sendPaymentConfirmationEmailHelper(
+export async function sendPaymentConfirmationEmailHelper(
   appointmentId: string,
   amount: number,
   transactionId: string,
