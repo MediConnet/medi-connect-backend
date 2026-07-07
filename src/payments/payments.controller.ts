@@ -279,6 +279,7 @@ export async function processNuveiPayment(
         where: { id: payment.id },
         data: {
           status: "PAID",
+          external_transaction_id: transactionId, // Guardar el ID de transacción real de Nuvei
         },
       });
 
@@ -481,6 +482,7 @@ export async function handleNuveiWebhook(
         data: {
           status: "PAID",
           paid_at: new Date(),
+          external_transaction_id: transactionId, // Guardar el ID de transacción real de Nuvei
         },
       });
 
@@ -910,7 +912,13 @@ export async function retryNuveiPayment(
     const authorizationCode = nuveiResult?.transaction?.authorization_code;
 
     if (status === "success" && statusDetail === 3) {
-      await prisma.payments.update({ where: { id: payment.id }, data: { status: "PAID" } });
+      await prisma.payments.update({
+        where: { id: payment.id },
+        data: {
+          status: "PAID",
+          external_transaction_id: transactionId, // Guardar el ID de transacción real de Nuvei
+        },
+      });
       await prisma.appointments.update({
         where: { id: newAppointmentId },
         data: { status: "CONFIRMED", is_paid: true },
