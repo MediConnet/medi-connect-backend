@@ -32,6 +32,7 @@ export async function getDoctorPayments(event: APIGatewayProxyEventV2): Promise<
       appointments: {
         clinic_id: null,
       },
+      status: { notIn: ['REFUNDED', 'refunded', 'FAILED', 'failed'] },
       OR: [
         { paid_at: { not: null } },
         { status: { in: CHARGED_PAYMENT_STATUSES } },
@@ -352,6 +353,7 @@ export async function getPaymentHistory(event: APIGatewayProxyEventV2): Promise<
     // Se mantiene sin paginación de lista porque combina dos fuentes (doctors + clinics).
     const doctorWhere = {
       payment_source: { in: DIRECT_PAYMENT_SOURCES },
+      status: { notIn: ['REFUNDED', 'refunded', 'FAILED', 'failed'] },
       OR: [
         { paid_at: { not: null } },
         { status: { in: CHARGED_PAYMENT_STATUSES } },
@@ -547,5 +549,227 @@ export async function getTransactionHistory(event: APIGatewayProxyEventV2): Prom
   } catch (error: any) {
     console.error('❌ [ADMIN] Error al obtener auditoría de transacciones:', error.message);
     return internalErrorResponse('Failed to get transaction audit log');
+  }
+}
+
+/**
+ * GET /api/admin/payments/refund-requests
+ * Obtener solicitudes de reembolso pendientes (REFUND_REQUESTED)
+ */
+export async function getRefundRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  console.log('✅ [ADMIN] GET /api/admin/payments/refund-requests');
+  const prisma = getPrismaClient();
+
+  try {
+    const refundRequests = await prisma.payments.findMany({
+      where: {
+        status: 'REFUND_REQUESTED',
+      },
+      include: {
+        appointments: {
+          include: {
+            patients: true,
+            providers: {
+              include: {
+                users: true,
+              },
+            },
+            specialties: true,
+          },
+        },
+      },
+      orderBy: {
+        created_at: 'desc',
+      },
+    });
+
+    const mapped = refundRequests.map((p) => {
+      let doctorName = p.appointments?.providers?.commercial_name || 'Médico';
+      if (p.appointments?.providers?.users) {
+        const u = p.appointments.providers.users;
+        if (doctorName === 'Médico') {
+          doctorName = u.email ? u.email.split('@')[0] : 'Médico';
+        }
+      }
+
+      return {
+        id: p.id,
+        appointmentId: p.appointment_id,
+        externalTransactionId: p.external_transaction_id || 'N/A',
+        amount: Number(p.amount_total || 0),
+        createdAt: p.created_at?.toISOString(),
+        patient: {
+          name: p.appointments?.patients?.full_name || 'Paciente',
+          identification: p.appointments?.patients?.identification || 'N/A',
+        },
+        doctor: {
+          name: doctorName,
+          specialty: p.appointments?.specialties?.name || 'N/A',
+        },
+        reason: p.appointments?.reason || 'Cancelado por el paciente',
+      };
+    });
+
+    return successResponse(mapped);
+  } catch (error: any) {
+    console.error('❌ [ADMIN] Error al obtener solicitudes de reembolso:', error.message);
+    return internalErrorResponse('Failed to get refund requests');
+  }
+}
+
+/**
+ * POST /api/admin/payments/refund-requests/:paymentId/approve
+ * Aprobar reembolso llamando a Nuvei
+ */
+export async function approveRefund(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  console.log('✅ [ADMIN] POST /api/admin/payments/refund-requests/:paymentId/approve');
+  const prisma = getPrismaClient();
+
+  try {
+    const pathParts = event.requestContext.http.path.split('/');
+    // Formato de ruta esperado: /api/admin/payments/refund-requests/{id}/approve
+    // Si la ruta termina en /approve, el ID del pago es el penúltimo segmento
+    const paymentId = pathParts[pathParts.length - 2];
+
+    if (!paymentId) {
+      return errorResponse('paymentId es requerido', 400);
+    }
+
+    const payment = await prisma.payments.findUnique({
+      where: { id: paymentId },
+      include: {
+        appointments: {
+          include: {
+            patients: { include: { users: { select: { email: true } } } },
+            providers: true,
+            clinics: true,
+          },
+        },
+      },
+    });
+
+    if (!payment) {
+      return errorResponse('Pago no encontrado', 404);
+    }
+
+    if (payment.status !== 'REFUND_REQUESTED') {
+      return errorResponse('El pago no está en estado de solicitud de reembolso', 400);
+    }
+
+    if (!payment.external_transaction_id) {
+      return errorResponse('ID de transacción externa no disponible para el reembolso', 400);
+    }
+
+    console.log(`📡 [ADMIN-REFUND] Iniciando reembolso en Nuvei para trans: ${payment.external_transaction_id}`);
+    const { nuveiService } = await import('../payments/nuvei.service');
+
+    const refundResult = await nuveiService.refund({
+      transactionId: payment.external_transaction_id,
+      amount: Number(payment.amount_total) || undefined,
+    });
+
+    console.log("📡 [ADMIN-REFUND] Respuesta de Nuvei:", JSON.stringify(refundResult));
+
+    if (refundResult?.transaction?.status === 'error' || refundResult?.error) {
+      console.error('❌ [ADMIN-REFUND] Falló el reembolso en Nuvei:', refundResult);
+      return errorResponse(`Error en pasarela Nuvei: ${refundResult?.transaction?.message || refundResult?.error?.message || 'Error desconocido'}`, 400);
+    }
+
+    // Actualizar estado del pago a REFUNDED en la base de datos
+    await prisma.payments.update({
+      where: { id: payment.id },
+      data: {
+        status: 'REFUNDED',
+      },
+    });
+
+    // Cancelar el payout asociado si existe
+    if (payment.payout_id) {
+      await prisma.payouts.update({
+        where: { id: payment.payout_id },
+        data: {
+          status: 'cancelled',
+        },
+      }).catch((err: any) => console.error('❌ [ADMIN-REFUND] Error al cancelar payout:', err.message));
+    }
+
+    // Enviar correo de reembolso completado (asíncrono)
+    const aptPatient = payment.appointments?.patients;
+    if (aptPatient?.users?.email) {
+      const { sendEmail } = await import('../shared/email-adapter');
+      const { generateRefundCompletedEmail } = await import('../shared/email');
+      const scheduledDate = payment.appointments?.scheduled_for ? new Date(payment.appointments.scheduled_for) : new Date();
+      const dateStr = scheduledDate.toLocaleDateString("es-EC", { year: "numeric", month: "long", day: "numeric" });
+      const timeStr = scheduledDate.toLocaleTimeString("es-EC", { hour: "2-digit", minute: "2-digit" });
+
+      sendEmail({
+        to: aptPatient.users.email,
+        subject: "Confirmación de Reembolso - DOCALINK",
+        html: generateRefundCompletedEmail({
+          patientName: aptPatient.full_name || "Paciente",
+          doctorName: payment.appointments?.providers?.commercial_name || "Médico",
+          clinicName: payment.appointments?.clinics?.name || "Docalink",
+          date: dateStr,
+          time: timeStr,
+          amount: Number(payment.amount_total) || 0,
+          transactionId: payment.external_transaction_id || "N/A",
+        }),
+      }).then(() => console.log(`✉️ [ADMIN-REFUND] Correo de reembolso enviado a: ${aptPatient?.users?.email || 'N/A'}`))
+        .catch((err: any) => console.error("❌ [ADMIN-REFUND] Error enviando email de reembolso:", err.message));
+    }
+
+    return successResponse({
+      message: 'Reembolso aprobado y procesado correctamente',
+      transactionId: payment.external_transaction_id,
+    });
+  } catch (error: any) {
+    console.error('❌ [ADMIN-REFUND] Error al procesar aprobación de reembolso:', error.message);
+    return internalErrorResponse('Failed to approve refund');
+  }
+}
+
+/**
+ * POST /api/admin/payments/refund-requests/:paymentId/reject
+ * Rechazar solicitud de reembolso (regresar pago a PAID)
+ */
+export async function rejectRefund(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  console.log('✅ [ADMIN] POST /api/admin/payments/refund-requests/:paymentId/reject');
+  const prisma = getPrismaClient();
+
+  try {
+    const pathParts = event.requestContext.http.path.split('/');
+    // Formato de ruta esperado: /api/admin/payments/refund-requests/{id}/reject
+    const paymentId = pathParts[pathParts.length - 2];
+
+    if (!paymentId) {
+      return errorResponse('paymentId es requerido', 400);
+    }
+
+    const payment = await prisma.payments.findUnique({
+      where: { id: paymentId },
+    });
+
+    if (!payment) {
+      return errorResponse('Pago no encontrado', 404);
+    }
+
+    if (payment.status !== 'REFUND_REQUESTED') {
+      return errorResponse('El pago no está en estado de solicitud de reembolso', 400);
+    }
+
+    // Regresar el pago a estado PAID
+    await prisma.payments.update({
+      where: { id: payment.id },
+      data: {
+        status: 'PAID',
+      },
+    });
+
+    return successResponse({
+      message: 'Solicitud de reembolso rechazada. Los fondos permanecen cobrados.',
+    });
+  } catch (error: any) {
+    console.error('❌ [ADMIN-REFUND] Error al rechazar reembolso:', error.message);
+    return internalErrorResponse('Failed to reject refund');
   }
 }
