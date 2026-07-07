@@ -476,7 +476,11 @@ export async function handleNuveiWebhook(
       };
     }
 
-    if (status === "success" && statusDetail === 3) {
+    const isApproved = 
+      (status === "success" || String(status) === "1") && 
+      (statusDetail === 3 || Number(statusDetail) === 3);
+
+    if (isApproved) {
       await prisma.payments.update({
         where: { id: payment.id },
         data: {
