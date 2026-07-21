@@ -403,6 +403,12 @@ export async function getDoctorById(
       return errorResponse("Doctor no encontrado", 404, undefined, event);
     }
 
+    // Increment real profile views counter
+    prisma.providers.update({
+      where: { id: doctor.id },
+      data: { profile_views: { increment: 1 } },
+    }).catch(err => console.error("❌ Error incrementing profile_views:", err));
+
     const formattedDoctor = mapDoctorData(doctor);
 
     const response = successResponse(formattedDoctor, 200, event);

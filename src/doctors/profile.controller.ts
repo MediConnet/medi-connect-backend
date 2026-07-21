@@ -277,7 +277,8 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
         commercial_name: body.full_name,
         description: body.bio,
         years_of_experience: body.years_of_experience,
-        medical_center: body.medicalCenter !== undefined ? body.medicalCenter : body.medical_center,
+        medical_center: body.medicalCenter !== undefined ? body.medicalCenter : (body as any).medical_center,
+        logo_url: uploadedProfilePictureUrl !== undefined ? uploadedProfilePictureUrl : undefined,
       };
       
       // Limpieza de undefined
@@ -299,8 +300,8 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
         console.log('✅ [DOCTORS] profile_picture_url guardado en users:', uploadedProfilePictureUrl);
       }
 
-      // A2. Actualizar especialidades con tarifas
-      if (body.specialties && Array.isArray(body.specialties)) {
+      // A2. Actualizar especialidades con tarifas (Garantizando que la tarifa siempre se guarde)
+      if (body.specialties && Array.isArray(body.specialties) && body.specialties.length > 0) {
         // Eliminar especialidades existentes
         await tx.provider_specialties.deleteMany({
           where: { provider_id: profile.id }
@@ -308,33 +309,55 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
 
         // Agregar nuevas especialidades con tarifas
         for (const spec of body.specialties) {
-          // Si viene como string (nombre), buscar la especialidad
+          let specialty: any = null;
+
           if (typeof spec === 'string') {
-            const specialty = await tx.specialties.findFirst({
-              where: { name: spec }
+            specialty = await tx.specialties.findFirst({
+              where: { name: { equals: spec, mode: 'insensitive' } }
             });
-            if (specialty) {
-              await tx.provider_specialties.create({
-                data: {
-                  provider_id: profile.id,
-                  specialty_id: specialty.id,
-                  fee: body.consultation_fee || 0
-                }
-              });
+            if (!specialty) {
+              // Fallback a cualquier especialidad por defecto
+              specialty = await tx.specialties.findFirst();
             }
-          } 
-          // Si viene como objeto con specialtyId y fee
-          else if (typeof spec === 'object' && spec !== null) {
+          } else if (typeof spec === 'object' && spec !== null) {
             const specObj = spec as any;
-            if (specObj.specialtyId && specObj.fee !== undefined) {
-              await tx.provider_specialties.create({
-                data: {
-                  provider_id: profile.id,
-                  specialty_id: specObj.specialtyId,
-                  fee: specObj.fee
-                }
-              });
+            if (specObj.specialtyId) {
+              specialty = { id: specObj.specialtyId };
             }
+          }
+
+          if (specialty) {
+            await tx.provider_specialties.create({
+              data: {
+                provider_id: profile.id,
+                specialty_id: specialty.id,
+                fee: body.consultation_fee !== undefined ? body.consultation_fee : 0
+              }
+            });
+          }
+        }
+      } else if (body.consultation_fee !== undefined) {
+        // Si no vienen especialidades explícitas pero sí viene tarifa de consulta
+        const existingSpecialties = await tx.provider_specialties.findMany({
+          where: { provider_id: profile.id }
+        });
+
+        if (existingSpecialties.length > 0) {
+          await tx.provider_specialties.updateMany({
+            where: { provider_id: profile.id },
+            data: { fee: body.consultation_fee }
+          });
+        } else {
+          // Si no tiene especialidades creadas aún, vincular a la especialidad por defecto
+          const defaultSpec = await tx.specialties.findFirst();
+          if (defaultSpec) {
+            await tx.provider_specialties.create({
+              data: {
+                provider_id: profile.id,
+                specialty_id: defaultSpec.id,
+                fee: body.consultation_fee
+              }
+            });
           }
         }
       }

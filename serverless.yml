@@ -294,6 +294,18 @@ functions:
           method: GET
       # Clinic Info
       - httpApi:
+          path: /api/doctors/services
+          method: GET
+      - httpApi:
+          path: /api/doctors/services
+          method: POST
+      - httpApi:
+          path: /api/doctors/services/{id}
+          method: PUT
+      - httpApi:
+          path: /api/doctors/services/{id}
+          method: DELETE
+      - httpApi:
           path: /api/doctors/clinic-info
           method: GET
       - httpApi:

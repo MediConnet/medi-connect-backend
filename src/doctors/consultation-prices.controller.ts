@@ -74,6 +74,7 @@ export async function getConsultationPrices(event: APIGatewayProxyEventV2): Prom
       specialtyName: cp.specialties?.name || null,
       description: cp.description,
       durationMinutes: cp.duration_minutes,
+      isActive: cp.is_active ?? true,
       createdAt: cp.created_at.toISOString(),
       updatedAt: cp.updated_at.toISOString(),
     }));
@@ -155,7 +156,7 @@ export async function createConsultationPrice(event: APIGatewayProxyEventV2): Pr
         specialty_id: body.specialtyId || null,
         description: body.description || null,
         duration_minutes: body.durationMinutes || null,
-        is_active: true,
+        is_active: body.isActive !== undefined ? body.isActive : (body.is_active !== undefined ? body.is_active : true),
         updated_at: new Date(),
       },
       include: {
@@ -178,6 +179,7 @@ export async function createConsultationPrice(event: APIGatewayProxyEventV2): Pr
       specialtyName: consultationPrice.specialties?.name || null,
       description: consultationPrice.description,
       durationMinutes: consultationPrice.duration_minutes,
+      isActive: consultationPrice.is_active ?? true,
     });
   } catch (error: any) {
     console.error('❌ [DOCTORS] Error al crear tipo de consulta:', error.message);
@@ -250,6 +252,8 @@ export async function updateConsultationPrice(event: APIGatewayProxyEventV2): Pr
     if (body.specialtyId !== undefined) updateData.specialty_id = body.specialtyId;
     if (body.description !== undefined) updateData.description = body.description;
     if (body.durationMinutes !== undefined) updateData.duration_minutes = body.durationMinutes;
+    if (body.isActive !== undefined) updateData.is_active = body.isActive;
+    if (body.is_active !== undefined) updateData.is_active = body.is_active;
 
     // Actualizar
     const updatedPrice = await prisma.consultation_prices.update({
@@ -275,6 +279,7 @@ export async function updateConsultationPrice(event: APIGatewayProxyEventV2): Pr
       specialtyName: updatedPrice.specialties?.name || null,
       description: updatedPrice.description,
       durationMinutes: updatedPrice.duration_minutes,
+      isActive: updatedPrice.is_active ?? true,
     });
   } catch (error: any) {
     console.error('❌ [DOCTORS] Error al actualizar tipo de consulta:', error.message);
