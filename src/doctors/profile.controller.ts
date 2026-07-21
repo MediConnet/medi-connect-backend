@@ -134,6 +134,7 @@ export async function getProfile(event: APIGatewayProxyEventV2): Promise<APIGate
     is_published: mainBranch?.is_active ?? false,
     commission_percentage: profile.commission_percentage,
     bankAccount,
+    medical_center: profile.medical_center || '',
 
     // Mapeo de horarios para el frontend - Estructura completa con todos los días
     schedules: (() => {
@@ -276,6 +277,7 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
         commercial_name: body.full_name,
         description: body.bio,
         years_of_experience: body.years_of_experience,
+        medical_center: body.medicalCenter !== undefined ? body.medicalCenter : body.medical_center,
       };
       
       // Limpieza de undefined

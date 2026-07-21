@@ -54,6 +54,7 @@ export const registerSchema = z.object({
   chainId: z.string().optional(),
   type: z.string().optional(),
   invitationToken: z.string().optional(), // Token de invitación de clínica
+  medicalCenter: z.string().optional(),
 });
 
 export const loginSchema = z.object({
@@ -170,6 +171,7 @@ export const updateDoctorProfileSchema = z.object({
   preview_images: z.array(z.string()).optional(), // Array de base64 o URLs — galería de imágenes
   workSchedule: z.array(scheduleItemSchema).optional(),
   bankAccount: doctorProfileBankAccountSchema.optional().nullable(),
+  medicalCenter: z.string().optional(),
 });
 
 export const createDiagnosisSchema = z.object({

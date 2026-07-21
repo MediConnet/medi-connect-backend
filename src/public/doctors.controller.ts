@@ -76,6 +76,7 @@ function mapDoctorData(doctor: any) {
     especialidades: especialidadesList,
     clinica: clinicName,
     clinicId: clinicData?.id || null,
+    medical_center: doctor.medical_center || "",
     descripcion: doctor.description || "",
     experiencia: doctor.years_of_experience || 0,
     registro: "",
