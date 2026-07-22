@@ -24,14 +24,6 @@ const createServiceSchema = z.object({
 
 const updateServiceSchema = createServiceSchema.partial();
 
-const INITIAL_AESTHETIC_TREATMENTS = [
-  { name: "Limpieza Facial Profunda + Alta Frecuencia", duration: 60, price: 35.0, description: "Tratamiento facial purificante e hidratante profundo." },
-  { name: "Peeling Químico Renovador", duration: 45, price: 45.0, description: "Exfoliación médica para renovar las capas superficiales de la piel." },
-  { name: "Masaje Descontracturante / Relajante", duration: 60, price: 40.0, description: "Terapia corporal para liberar tensión muscular y estrés." },
-  { name: "Tratamiento Corporal Reductor", duration: 50, price: 50.0, description: "Sesión intensiva para remodelación corporal y firmeza." },
-  { name: "Hidratación Facial con Ácido Hialurónico", duration: 45, price: 60.0, description: "Nutrición celular profunda para devolver elasticidad y brillo." },
-];
-
 async function getProviderByUserId(prisma: ReturnType<typeof getPrismaClient>, userId: string) {
   return prisma.providers.findFirst({
     where: { user_id: userId },
@@ -60,26 +52,7 @@ export async function getServices(event: APIGatewayProxyEventV2): Promise<APIGat
 
     const where = { provider_id: provider.id };
 
-    let total = await prisma.provider_catalog.count({ where });
-
-    // Si el catálogo está totalmente vacío, sembrar los 5 tratamientos iniciales automáticamente
-    if (total === 0) {
-      console.log(`🌱 [AESTHETIC] Sembrando catálogo inicial para el proveedor ${provider.id}...`);
-      await prisma.provider_catalog.createMany({
-        data: INITIAL_AESTHETIC_TREATMENTS.map((t) => ({
-          id: randomUUID(),
-          provider_id: provider.id,
-          name: t.name,
-          description: t.description,
-          price: t.price,
-          stock: t.duration, // usamos stock para almacenar la duración en minutos
-          is_available: true,
-          type: "aesthetic_treatment",
-        })),
-      });
-
-      total = await prisma.provider_catalog.count({ where });
-    }
+    const total = await prisma.provider_catalog.count({ where });
 
     const items = await prisma.provider_catalog.findMany({
       where,

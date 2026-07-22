@@ -113,7 +113,7 @@ export async function getPublicProviders(event: APIGatewayProxyEventV2): Promise
     const formatted = await Promise.all(providersRaw.map(async (p: any) => {
       const mainBranch = p.provider_branches?.find((b: any) => b.is_main) || p.provider_branches?.[0];
       const branchId = mainBranch?.id;
-      let rating = 5.0;
+      let rating = 0;
       let totalReviews = 0;
 
       if (branchId) {
@@ -190,7 +190,7 @@ export async function getPublicProviderById(event: APIGatewayProxyEventV2): Prom
     }
 
     const mainBranch = provider.provider_branches?.find((b: any) => b.is_main) || provider.provider_branches?.[0];
-    let rating = 5.0;
+    let rating = 0;
     let totalReviews = 0;
 
     if (mainBranch?.id) {
@@ -211,22 +211,18 @@ export async function getPublicProviderById(event: APIGatewayProxyEventV2): Prom
       totalReviews = count;
     }
 
-    const images: string[] = [];
-    if (provider.logo_url) images.push(provider.logo_url);
-    if (provider.users?.profile_picture_url && !images.includes(provider.users.profile_picture_url)) {
-      images.push(provider.users.profile_picture_url);
-    }
-    if (Array.isArray(mainBranch?.preview_images)) {
-      images.push(...mainBranch.preview_images);
+    let images: string[] = [];
+    if (Array.isArray(mainBranch?.preview_images) && mainBranch.preview_images.length > 0) {
+      images = mainBranch.preview_images;
+    } else if (provider.logo_url) {
+      images = [provider.logo_url];
+    } else if (provider.users?.profile_picture_url) {
+      images = [provider.users.profile_picture_url];
+    } else {
+      images = ["https://images.unsplash.com/photo-1560750588-73207b1ef5b8?w=800"];
     }
 
-    const services = (provider.provider_catalog && provider.provider_catalog.length > 0)
-      ? provider.provider_catalog
-      : [
-          { id: "s1", name: "Limpieza Facial Profunda", price: 45.0, duration_minutes: 60, description: "Exfoliación, extracción de impurezas e hidratación médica." },
-          { id: "s2", name: "Tratamiento de Rejuvenecimiento", price: 80.0, duration_minutes: 90, description: "Tecnología láser y ácido hialurónico." },
-          { id: "s3", name: "Masaje Relajante & Spa", price: 55.0, duration_minutes: 60, description: "Alivio de tensión corporal e hidroterapia." }
-        ];
+    const services = provider.provider_catalog || [];
 
     const specPriceRecord = await prisma.provider_specialties.findFirst({
       where: { provider_id: providerId },

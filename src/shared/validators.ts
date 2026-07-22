@@ -751,7 +751,7 @@ export const createProviderReviewSchema = z.object({
 // Appointment validators
 export const createAppointmentSchema = z.object({
   doctorId: z.string().uuid("Doctor ID must be a valid UUID"),
-  specialtyId: z.string().uuid("Specialty ID must be a valid UUID"),
+  specialtyId: z.string().uuid("Specialty ID must be a valid UUID").optional().nullable(),
   clinicId: z.string().uuid("Clinic ID must be a valid UUID").optional().nullable(),
   fullName: z.string().min(2, "Full name is too short").optional(),
   phone: z.string().optional(),
@@ -785,6 +785,7 @@ export const createAppointmentSchema = z.object({
     .uuid("Consultation price ID must be a valid UUID")
     .optional()
     .nullable(),
+  price: z.number().optional(),
   discount: z.union([z.number(), z.string()]).optional(),
 });
 

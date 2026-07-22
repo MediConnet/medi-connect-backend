@@ -57,10 +57,6 @@ export async function createAppointment(
           include: { users: { select: { email: true } } },
         });
 
-    if (!body.specialtyId) {
-      return errorResponse("El campo specialtyId es requerido", 400);
-    }
-
     const doctor = await prisma.providers.findUnique({
       where: { id: body.doctorId },
       include: {
@@ -70,16 +66,26 @@ export async function createAppointment(
           where: { is_main: true, is_active: true },
           take: 1,
         },
-        provider_specialties: {
-          where: { specialty_id: body.specialtyId },
-          take: 1,
-        },
+        provider_specialties: body.specialtyId
+          ? { where: { specialty_id: body.specialtyId }, take: 1 }
+          : { take: 1 },
       },
     });
 
     if (!doctor || !doctor.users?.is_active) {
-      return errorResponse("Doctor not found or inactive", 404);
+      return errorResponse("Doctor or provider not found or inactive", 404);
     }
+
+    let finalSpecialtyId = body.specialtyId || doctor.provider_specialties[0]?.specialty_id || null;
+    if (!finalSpecialtyId) {
+      const anySpec = await prisma.specialties.findFirst();
+      finalSpecialtyId = anySpec?.id || null;
+    }
+
+    if (!finalSpecialtyId) {
+      return errorResponse("No se encontró una especialidad para asignar a la cita", 400);
+    }
+
     let branchId: string | null = null;
     let finalClinicId = body.clinicId || null;
 
@@ -127,14 +133,9 @@ export async function createAppointment(
     }
 
     const specialtyRecord = doctor.provider_specialties[0];
-    if (!specialtyRecord) {
-      return errorResponse(
-        "El doctor no ofrece la especialidad seleccionada o no tiene tarifa configurada",
-        400,
-      );
-    }
-
-    let appointmentCost = specialtyRecord.fee ? Number(specialtyRecord.fee) : 0;
+    let appointmentCost = body.price != null
+      ? Number(body.price)
+      : (specialtyRecord?.fee ? Number(specialtyRecord.fee) : 0);
 
     // Si se envía consultationPriceId, usar el precio del servicio en lugar de la tarifa de especialidad
     if (body.consultationPriceId) {
@@ -226,7 +227,7 @@ export async function createAppointment(
         provider_id: body.doctorId,
         branch_id: branchId,
         clinic_id: finalClinicId,
-        specialty_id: body.specialtyId,
+        specialty_id: finalSpecialtyId,
         scheduled_for: scheduledFor,
         status: initialStatus,
         reason: body.reason,
