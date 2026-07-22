@@ -139,20 +139,46 @@ export async function addFavorite(event: APIGatewayProxyEventV2): Promise<APIGat
       });
     }
 
-    // Verificar que la sucursal existe
-    const branch = await prisma.provider_branches.findUnique({
+    // Verificar que la sucursal existe (buscar por branchId o por provider_id)
+    let branch = await prisma.provider_branches.findUnique({
       where: { id: body.branchId },
     });
+
+    if (!branch) {
+      branch = await prisma.provider_branches.findFirst({
+        where: { provider_id: body.branchId },
+      });
+    }
+
+    if (!branch) {
+      const provider = await prisma.providers.findUnique({
+        where: { id: body.branchId },
+      });
+
+      if (provider) {
+        branch = await prisma.provider_branches.create({
+          data: {
+            id: randomUUID(),
+            provider_id: provider.id,
+            name: provider.commercial_name || "Sucursal Principal",
+            is_main: true,
+            is_active: true,
+          },
+        });
+      }
+    }
 
     if (!branch) {
       return notFoundResponse('Branch not found');
     }
 
+    const targetBranchId = branch.id;
+
     // Verificar que no esté ya en favoritos
     const existingFavorite = await prisma.patient_favorites.findFirst({
       where: {
         patient_id: patient.id,
-        branch_id: body.branchId,
+        branch_id: targetBranchId,
       },
     });
 
@@ -165,7 +191,7 @@ export async function addFavorite(event: APIGatewayProxyEventV2): Promise<APIGat
       data: {
         id: randomUUID(),
         patient_id: patient.id,
-        branch_id: body.branchId,
+        branch_id: targetBranchId,
       },
       include: {
         provider_branches: {

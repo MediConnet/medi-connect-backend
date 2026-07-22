@@ -20,7 +20,7 @@ import {
   createProviderReview,
   getProviderReviews,
 } from "./provider-reviews.controller";
-import { getCities, getPublicSettings } from "./public.controller";
+import { getCities, getPublicSettings, getPublicProviders, getPublicProviderById } from "./public.controller";
 import { getPublicSpecialties } from "./specialties.controller";
 import { getClinics, getClinicById, getClinicSpecialties, getClinicDoctors } from "./clinics.controller";
 
@@ -66,6 +66,15 @@ export async function handler(
     // Configuración pública (para registro)
     if (path === "/api/public/settings" && method === "GET") {
       return await getPublicSettings(event);
+    }
+
+    // Listar proveedores públicos (estética, laboratorios, insumos, etc.)
+    if (path === "/api/public/providers" && method === "GET") {
+      return await getPublicProviders(event);
+    }
+
+    if (path.startsWith("/api/public/providers/") && method === "GET") {
+      return await getPublicProviderById(event);
     }
 
     // --- RUTAS GENÉRICAS DE RESEÑAS (Proveedores) ---

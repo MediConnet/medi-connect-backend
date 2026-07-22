@@ -362,6 +362,32 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
         }
       }
 
+      if (body.consultation_fee !== undefined) {
+        const existingPrice = await tx.consultation_prices.findFirst({
+          where: { provider_id: profile.id }
+        });
+        if (existingPrice) {
+          await tx.consultation_prices.update({
+            where: { id: existingPrice.id },
+            data: { price: body.consultation_fee }
+          });
+        } else {
+          const defaultSpec = await tx.specialties.findFirst();
+          if (defaultSpec) {
+            await tx.consultation_prices.create({
+              data: {
+                id: randomUUID(),
+                provider_id: profile.id,
+                specialty_id: defaultSpec.id,
+                consultation_type: "Consulta General",
+                price: body.consultation_fee,
+                is_active: true
+              }
+            });
+          }
+        }
+      }
+
       // B. Actualizar Sucursal Principal
       const mainBranch = profile?.provider_branches[0];
       if (mainBranch) {

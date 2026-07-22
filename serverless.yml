@@ -106,6 +106,10 @@ functions:
       - httpApi:
           path: /api/ads/active
           method: GET
+      # Public Providers (Centros Estéticos, etc.)
+      - httpApi:
+          path: /api/public/providers
+          method: GET
       # Public Ambulances
       - httpApi:
           path: /api/ambulances
