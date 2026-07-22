@@ -57,10 +57,6 @@ export async function createAppointment(
           include: { users: { select: { email: true } } },
         });
 
-    if (!body.specialtyId) {
-      return errorResponse("El campo specialtyId es requerido", 400);
-    }
-
     const doctor = await prisma.providers.findUnique({
       where: { id: body.doctorId },
       include: {
@@ -70,16 +66,26 @@ export async function createAppointment(
           where: { is_main: true, is_active: true },
           take: 1,
         },
-        provider_specialties: {
-          where: { specialty_id: body.specialtyId },
-          take: 1,
-        },
+        provider_specialties: body.specialtyId
+          ? { where: { specialty_id: body.specialtyId }, take: 1 }
+          : { take: 1 },
       },
     });
 
     if (!doctor || !doctor.users?.is_active) {
-      return errorResponse("Doctor not found or inactive", 404);
+      return errorResponse("Doctor or provider not found or inactive", 404);
     }
+
+    let finalSpecialtyId = body.specialtyId || doctor.provider_specialties[0]?.specialty_id || null;
+    if (!finalSpecialtyId) {
+      const anySpec = await prisma.specialties.findFirst();
+      finalSpecialtyId = anySpec?.id || null;
+    }
+
+    if (!finalSpecialtyId) {
+      return errorResponse("No se encontró una especialidad para asignar a la cita", 400);
+    }
+
     let branchId: string | null = null;
     let finalClinicId = body.clinicId || null;
 
@@ -127,14 +133,9 @@ export async function createAppointment(
     }
 
     const specialtyRecord = doctor.provider_specialties[0];
-    if (!specialtyRecord) {
-      return errorResponse(
-        "El doctor no ofrece la especialidad seleccionada o no tiene tarifa configurada",
-        400,
-      );
-    }
-
-    let appointmentCost = specialtyRecord.fee ? Number(specialtyRecord.fee) : 0;
+    let appointmentCost = body.price != null
+      ? Number(body.price)
+      : (specialtyRecord?.fee ? Number(specialtyRecord.fee) : 0);
 
     // Si se envía consultationPriceId, usar el precio del servicio en lugar de la tarifa de especialidad
     if (body.consultationPriceId) {
@@ -226,7 +227,7 @@ export async function createAppointment(
         provider_id: body.doctorId,
         branch_id: branchId,
         clinic_id: finalClinicId,
-        specialty_id: body.specialtyId,
+        specialty_id: finalSpecialtyId,
         scheduled_for: scheduledFor,
         status: initialStatus,
         reason: body.reason,
@@ -765,7 +766,20 @@ export async function cancelAppointment(
         );
       }
 
-      // Iniciar reembolso en Nuvei
+      // Obtener motivo de la cancelación/reembolso desde el cuerpo de la petición
+      let cancelReason = "Cancelado por el paciente";
+      if (event.body) {
+        try {
+          const parsedBody = typeof event.body === "string" ? JSON.parse(event.body) : event.body;
+          if (parsedBody.reason && typeof parsedBody.reason === "string") {
+            cancelReason = parsedBody.reason;
+          }
+        } catch (e) {
+          // Ignorar error de parsing
+        }
+      }
+
+      // Iniciar solicitud de reembolso
       const paidPayment = await prisma.payments.findFirst({
         where: {
           appointment_id: appointmentId,
@@ -773,76 +787,34 @@ export async function cancelAppointment(
         },
       });
 
-      if (paidPayment && paidPayment.external_transaction_id) {
-        console.log(`📡 [REFUND] Reembolsando transacción de Nuvei: ${paidPayment.external_transaction_id}`);
-        const { nuveiService } = await import("../payments/nuvei.service");
-        
-        try {
-          const refundResult = await nuveiService.refund({
-            transactionId: paidPayment.external_transaction_id,
-            amount: Number(paidPayment.amount_total) || undefined,
-          });
-
-          console.log("📡 [REFUND] Respuesta de Nuvei:", JSON.stringify(refundResult));
-
-          if (refundResult?.transaction?.status === "error" || refundResult?.error) {
-            console.error("❌ [REFUND] Falló el reembolso en Nuvei:", refundResult);
-            return errorResponse("No se pudo procesar el reembolso en la pasarela de pagos. Por favor contacta a soporte.", 400);
-          }
-
-          // Actualizar estado del pago a REFUNDED en la base de datos
-          await prisma.payments.update({
-            where: { id: paidPayment.id },
-            data: {
-              status: "REFUNDED",
-            },
-          });
-
-          // Cancelar el payout asociado si existe
-          if (paidPayment.payout_id) {
-            await prisma.payouts.update({
-              where: { id: paidPayment.payout_id },
-              data: {
-                status: "cancelled",
-              },
-            }).catch((err: any) => console.error("❌ [REFUND] Error al cancelar payout:", err.message));
-          }
-
-          // Enviar correo de reembolso completado (asíncrono)
-          const aptPatient = (appointment as any).patients;
-          if (aptPatient?.users?.email) {
-            const { sendEmail } = await import("../shared/email-adapter");
-            const { generateRefundCompletedEmail } = await import("../shared/email");
-            const scheduledDate = appointment.scheduled_for ? new Date(appointment.scheduled_for) : new Date();
-            const dateStr = scheduledDate.toLocaleDateString("es-EC", { year: "numeric", month: "long", day: "numeric" });
-            const timeStr = scheduledDate.toLocaleTimeString("es-EC", { hour: "2-digit", minute: "2-digit" });
-
-            sendEmail({
-              to: aptPatient.users.email,
-              subject: "Confirmación de Reembolso - DOCALINK",
-              html: generateRefundCompletedEmail({
-                patientName: aptPatient.full_name || "Paciente",
-                doctorName: (appointment as any).providers?.commercial_name || "Médico",
-                clinicName: (appointment as any).clinics?.name || "Docalink",
-                date: dateStr,
-                time: timeStr,
-                amount: Number(paidPayment.amount_total) || 0,
-                transactionId: paidPayment.external_transaction_id || "N/A",
-              }),
-            }).then(() => console.log(`✉️ [REFUND] Correo de reembolso enviado a: ${aptPatient.users.email}`))
-              .catch((err: any) => console.error("❌ [REFUND] Error enviando email de reembolso:", err.message));
-          }
-        } catch (refundError: any) {
-          console.error("❌ [REFUND] Error de conexión al reembolsar:", refundError.message);
-          return errorResponse("Error de conexión al procesar el reembolso. Intente más tarde.", 500);
-        }
+      if (paidPayment) {
+        // En lugar de llamar a Nuvei, registramos la solicitud de reembolso
+        await prisma.payments.update({
+          where: { id: paidPayment.id },
+          data: {
+            status: "REFUND_REQUESTED",
+          },
+        });
+        console.log(`✅ [REFUND] Pago ${paidPayment.id} cambiado a REFUND_REQUESTED.`);
       }
+    }
+
+    // Obtener motivo de la cancelación para citas no pagadas también
+    let cancelReason = "Cancelado por el paciente";
+    if (event.body) {
+      try {
+        const parsedBody = typeof event.body === "string" ? JSON.parse(event.body) : event.body;
+        if (parsedBody.reason && typeof parsedBody.reason === "string") {
+          cancelReason = parsedBody.reason;
+        }
+      } catch (e) {}
     }
 
     const updatedAppointment = await prisma.appointments.update({
       where: { id: appointmentId },
       data: {
         status: "CANCELLED",
+        reason: cancelReason,
       },
     });
 
@@ -856,7 +828,7 @@ export async function cancelAppointment(
       },
     });
 
-    console.log("✅ [PATIENTS] Cita y pagos cancelados/reembolsados exitosamente");
+    console.log("✅ [PATIENTS] Cita cancelada y solicitud de reembolso registrada");
 
     // Email de cancelación al paciente (asíncrono)
     const aptPatient = (appointment as any).patients;

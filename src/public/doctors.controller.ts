@@ -76,6 +76,7 @@ function mapDoctorData(doctor: any) {
     especialidades: especialidadesList,
     clinica: clinicName,
     clinicId: clinicData?.id || null,
+    medical_center: doctor.medical_center || "",
     descripcion: doctor.description || "",
     experiencia: doctor.years_of_experience || 0,
     registro: "",
@@ -401,6 +402,12 @@ export async function getDoctorById(
     if (!doctor) {
       return errorResponse("Doctor no encontrado", 404, undefined, event);
     }
+
+    // Increment real profile views counter
+    prisma.providers.update({
+      where: { id: doctor.id },
+      data: { profile_views: { increment: 1 } },
+    }).catch(err => console.error("❌ Error incrementing profile_views:", err));
 
     const formattedDoctor = mapDoctorData(doctor);
 

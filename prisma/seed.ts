@@ -156,6 +156,17 @@ async function main() {
     }
   );
 
+  const aestheticCategory = await findOrCreate<service_categories>(
+    prisma.service_categories,
+    { slug: 'aesthetic' },
+    {
+      name: 'Centro Estético',
+      slug: 'aesthetic',
+      default_color_hex: '#ec4899',
+      allows_booking: true,
+    }
+  );
+
   console.log('✅ Categorías de servicio creadas');
   console.log('🏥 Las especialidades médicas son gestionadas por el administrador vía API');
 
@@ -1409,6 +1420,74 @@ async function main() {
       }
     );
     console.log(`✅ Cita creada para el Dr. Juan Pérez con el paciente ${patientProfile.full_name}`);
+  }
+
+  // 14. Crear Centro Estético Demo
+  console.log('✨ Creando Centro Estético Demo...');
+  const aestheticPassword = await bcrypt.hash('estetica123', 10);
+  const aestheticUser = await findOrCreate<users>(
+    prisma.users,
+    { email: 'estetica@medicones.com' },
+    {
+      id: randomUUID(),
+      email: 'estetica@medicones.com',
+      password_hash: aestheticPassword,
+      role: 'provider',
+      is_active: true,
+    }
+  );
+
+  const aestheticProvider = await findOrCreate<providers>(
+    prisma.providers,
+    { user_id: aestheticUser.id },
+    {
+      id: randomUUID(),
+      user_id: aestheticUser.id,
+      category_id: aestheticCategory.id,
+      commercial_name: 'Centro Estético Glow & Spa',
+      description: 'Especialistas en tratamientos faciales, corporales, limpieza profunda y bienestar integral.',
+      verification_status: 'APPROVED',
+      years_of_experience: 5,
+    }
+  );
+
+  const quitoCityObj = await prisma.cities.findFirst({ where: { name: 'Quito' } });
+  const aestheticBranch = await findOrCreate<provider_branches>(
+    prisma.provider_branches,
+    { provider_id: aestheticProvider.id },
+    {
+      id: randomUUID(),
+      provider_id: aestheticProvider.id,
+      city_id: quitoCityObj?.id || null,
+      name: 'Sucursal Principal Quito',
+      address_text: 'Av. de los Shyris y Naciones Unidas, Quito',
+      phone_contact: '0987654321',
+      latitude: -0.180653,
+      longitude: -78.467838,
+      is_main: true,
+      is_active: true,
+    }
+  );
+
+  // Horarios del Centro Estético
+  for (let day = 1; day <= 6; day++) {
+    const existingSch = await prisma.provider_schedules.findFirst({
+      where: { branch_id: aestheticBranch.id, day_of_week: day },
+    });
+    if (!existingSch) {
+      await prisma.provider_schedules.create({
+        data: {
+          id: randomUUID(),
+          branch_id: aestheticBranch.id,
+          day_of_week: day,
+          start_time: new Date('1970-01-01T09:00:00Z'),
+          end_time: new Date('1970-01-01T19:00:00Z'),
+          break_start: new Date('1970-01-01T13:00:00Z'),
+          break_end: new Date('1970-01-01T14:00:00Z'),
+          is_active: true,
+        },
+      });
+    }
   }
 
   console.log('🎉 Seed completado exitosamente!');

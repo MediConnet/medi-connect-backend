@@ -439,6 +439,10 @@ export async function handleNuveiWebhook(
       };
     }
 
+    // CAPTURAR EL JSON COMPLETO DE CALLBACK
+    console.log("🔔 [PAYMENTS] Webhook Nuvei invocado con payload completo:", JSON.stringify(body, null, 2));
+    logger.info("Nuvei webhook callback full payload received", { body });
+
     const transaction = body?.transaction;
     const clientTransactionId = transaction?.dev_reference;
     const status = transaction?.status;
@@ -455,15 +459,48 @@ export async function handleNuveiWebhook(
     }
 
     const payment = await prisma.payments.findFirst({
-      where: { external_transaction_id: clientTransactionId },
+      where: {
+        OR: [
+          { external_transaction_id: clientTransactionId },
+          { external_transaction_id: transactionId }
+        ]
+      },
     });
 
     if (!payment) {
-      console.warn(`⚠️ [WEBHOOK] Pago no encontrado: ${clientTransactionId}`);
+      console.warn(`⚠️ [WEBHOOK] Pago no encontrado: ${clientTransactionId} / ${transactionId}`);
       return {
         statusCode: 404,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ success: false }),
+      };
+    }
+
+    const isRefund = 
+      (status === "success" || String(status) === "1" || String(status) === "7") && 
+      (statusDetail === 7 || Number(statusDetail) === 7);
+
+    if (isRefund) {
+      console.log(`📡 [WEBHOOK] Procesando notificación de REEMBOLSO para dev_reference: ${clientTransactionId}`);
+      await prisma.payments.update({
+        where: { id: payment.id },
+        data: {
+          status: "REFUNDED",
+        },
+      });
+
+      if (payment.payout_id) {
+        await prisma.payouts.update({
+          where: { id: payment.payout_id },
+          data: { status: "cancelled" },
+        }).catch((err: any) => console.error("❌ [WEBHOOK] Error al cancelar payout:", err.message));
+      }
+
+      console.log(`✅ [WEBHOOK] Reembolso procesado exitosamente para el pago: ${payment.id}`);
+      return {
+        statusCode: 200,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ success: true }),
       };
     }
 

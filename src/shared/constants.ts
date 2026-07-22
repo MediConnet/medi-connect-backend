@@ -52,6 +52,9 @@ export const TYPE_TO_SLUG: Record<string, string> = {
   clinic: "clinica",
   clinica: "clinica",
   clinics: "clinica",
+  aesthetic: "aesthetic",
+  estetica: "aesthetic",
+  centro_estetico: "aesthetic",
 };
 
 /** Canonical provider type returned in auth (login/me) for clinic admins. */

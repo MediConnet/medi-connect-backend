@@ -36,6 +36,12 @@ import { getDoctorPaymentById, getDoctorPayments } from "./payments.controller";
 import { getProfile, updateProfile } from "./profile.controller";
 import { getSpecialties } from "./specialties.controller";
 import { getDoctorReviews } from "./reviews.controller";
+import {
+  getServices,
+  createService,
+  updateService,
+  deleteService,
+} from "./services.controller";
 
 export async function handler(
   event: APIGatewayProxyEventV2,
@@ -50,6 +56,19 @@ export async function handler(
   }
 
   try {
+    // --- Services Catalog (Aesthetic Treatments / Provider Services) ---
+    if (path === "/api/doctors/services") {
+      if (method === "GET") return await getServices(event);
+      if (method === "POST") return await createService(event);
+    }
+
+    if (path.startsWith("/api/doctors/services/")) {
+      const serviceId = path.split("/").pop();
+      if (serviceId && serviceId !== "services") {
+        if (method === "PUT") return await updateService(event);
+        if (method === "DELETE") return await deleteService(event);
+      }
+    }
     // --- Profile ---
     if (path === "/api/doctors/profile") {
       if (method === "GET") return await getProfile(event);

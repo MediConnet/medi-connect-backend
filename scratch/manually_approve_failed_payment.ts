@@ -7,44 +7,22 @@ import { sendPaymentConfirmationEmailHelper } from "../src/payments/payments.con
 async function run() {
   const prisma = getPrismaClient();
 
-  const devReference = "TX-04134AC3AD20";
+  const paymentId = "2cb1cc49-9d07-4191-8441-ec65bbd0087d";
   const nuveiTransactionId = "DF-37615443";
   const authCode = "366988";
   const amount = 1.0;
 
-  console.log(`⏳ Starting manual reparation for payment of dev_reference: ${devReference}...`);
+  console.log(`⏳ Triggering email resend for payment UUID: ${paymentId}...`);
 
-  const payment = await prisma.payments.findFirst({
-    where: { external_transaction_id: devReference }
+  const payment = await prisma.payments.findUnique({
+    where: { id: paymentId }
   });
 
   if (!payment) {
-    throw new Error(`Payment with dev_reference ${devReference} not found!`);
+    throw new Error(`Payment with UUID ${paymentId} not found!`);
   }
 
-  // 1. Update payment status to PAID, and set the actual Nuvei transaction ID as external_transaction_id
-  await prisma.payments.update({
-    where: { id: payment.id },
-    data: {
-      status: "PAID",
-      paid_at: new Date(),
-      external_transaction_id: nuveiTransactionId
-    }
-  });
-  console.log("✅ Payment status updated to PAID in database.");
-
-  // 2. Update appointment status to CONFIRMED and is_paid to true
   if (payment.appointment_id) {
-    await prisma.appointments.update({
-      where: { id: payment.appointment_id },
-      data: {
-        status: "CONFIRMED",
-        is_paid: true
-      }
-    });
-    console.log(`✅ Appointment ${payment.appointment_id} updated to CONFIRMED and is_paid=true.`);
-
-    // 3. Send confirmation email using Nuvei's exact transaction and authorization codes
     console.log("📡 Sending confirmation email...");
     await sendPaymentConfirmationEmailHelper(
       payment.appointment_id,

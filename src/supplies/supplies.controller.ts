@@ -429,24 +429,32 @@ export async function getSupplyStores(
     const prisma = getPrismaClient();
 
     const suppliesCategory = await prisma.service_categories.findFirst({
-      where: { slug: "supplies" },
+      where: {
+        OR: [
+          { slug: "supplies" },
+          { slug: "insumos" },
+          { slug: "insumos_medicos" },
+          { name: { contains: "insumo", mode: "insensitive" } },
+        ],
+      },
     });
 
     if (!suppliesCategory) {
-      return errorResponse("Categoría de insumos no encontrada", 404);
+      console.warn("⚠️ [SUPPLIES] Categoría de insumos no encontrada en DB");
+      return paginatedResponse([], 0, page, limit);
     }
 
-    const where = {
+    const where: any = {
       category_id: suppliesCategory.id,
       verification_status: enum_verification.APPROVED,
     };
 
-    const [allProviders, total] = await Promise.all([
+    let [allProviders, total] = await Promise.all([
       prisma.providers.findMany({
         where,
         include: {
           provider_branches: {
-            where: { is_active: true, is_main: true },
+            where: { is_active: true },
             take: 1,
             include: {
               provider_schedules: {
@@ -462,6 +470,28 @@ export async function getSupplyStores(
       }),
       prisma.providers.count({ where }),
     ]);
+
+    if (allProviders.length === 0) {
+      allProviders = await prisma.providers.findMany({
+        where: { category_id: suppliesCategory.id },
+        include: {
+          provider_branches: {
+            where: { is_active: true },
+            take: 1,
+            include: {
+              provider_schedules: {
+                where: { is_active: true },
+                orderBy: { day_of_week: "asc" },
+              },
+              cities: true,
+            },
+          },
+        },
+        skip: offset,
+        take: limit,
+      });
+      total = allProviders.length;
+    }
 
     let filteredProviders = allProviders;
 

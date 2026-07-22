@@ -14,7 +14,10 @@ import {
   markDoctorPaymentsPaid, 
   markClinicPaymentPaid, 
   getPaymentHistory,
-  getTransactionHistory
+  getTransactionHistory,
+  getRefundRequests,
+  approveRefund,
+  rejectRefund
 } from './payments.controller';
 import {
   getUsers,
@@ -232,6 +235,30 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       console.log('✅ [ADMIN] GET /api/admin/payments/transactions - Obteniendo auditoría de transacciones');
       const result = await getTransactionHistory(event);
       console.log(`✅ [ADMIN] GET /api/admin/payments/transactions - Completado con status ${result.statusCode}`);
+      return result;
+    }
+
+    // GET /api/admin/payments/refund-requests
+    if (method === 'GET' && path === '/api/admin/payments/refund-requests') {
+      console.log('✅ [ADMIN] GET /api/admin/payments/refund-requests - Obteniendo solicitudes de reembolso');
+      const result = await getRefundRequests(event);
+      console.log(`✅ [ADMIN] GET /api/admin/payments/refund-requests - Completado con status ${result.statusCode}`);
+      return result;
+    }
+
+    // POST /api/admin/payments/refund-requests/:paymentId/approve
+    if (method === 'POST' && path.match(/^\/api\/admin\/payments\/refund-requests\/[^/]+\/approve$/)) {
+      console.log('✅ [ADMIN] POST /api/admin/payments/refund-requests/:paymentId/approve - Aprobando reembolso');
+      const result = await approveRefund(event);
+      console.log(`✅ [ADMIN] POST /api/admin/payments/refund-requests/:paymentId/approve - Completado con status ${result.statusCode}`);
+      return result;
+    }
+
+    // POST /api/admin/payments/refund-requests/:paymentId/reject
+    if (method === 'POST' && path.match(/^\/api\/admin\/payments\/refund-requests\/[^/]+\/reject$/)) {
+      console.log('✅ [ADMIN] POST /api/admin/payments/refund-requests/:paymentId/reject - Rechazando reembolso');
+      const result = await rejectRefund(event);
+      console.log(`✅ [ADMIN] POST /api/admin/payments/refund-requests/:paymentId/reject - Completado con status ${result.statusCode}`);
       return result;
     }
 

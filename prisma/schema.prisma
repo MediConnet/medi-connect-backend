@@ -347,6 +347,8 @@ model providers {
   chain_id              String?                 @db.Uuid
   documents             Json?                   @default("[]") @db.Json
   rejection_reason      String?
+  medical_center        String?                 @db.VarChar(255)
+  profile_views         Int?                    @default(0)
   appointments          appointments[]
   consultation_prices   consultation_prices[]
   medical_history       medical_history[]

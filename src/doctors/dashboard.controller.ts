@@ -356,9 +356,12 @@ export async function getDashboard(event: APIGatewayProxyEventV2): Promise<APIGa
       commercial_name: provider.commercial_name,
       description: provider.description,
       logoUrl: provider.logo_url,
+      profile_picture_url: provider.logo_url || null,
+      preview_images: provider.documents || [],
       email: provider.users?.email || null,
       consultation_fee: 0,
       years_of_experience: provider.years_of_experience ?? 0,
+      profile_views: provider.profile_views || 0,
       specialty: null, // Placeholder
       category: provider.service_categories,
       address_text: mainBranch?.address_text || "",

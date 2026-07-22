@@ -194,6 +194,8 @@ async function createProviderProfile(prisma: any, userId: string, body: any) {
       years_of_experience: yearsExp,
 
       documents: body.documents ?? [],
+
+      medical_center: body.medicalCenter || body.medical_center || null,
     },
   });
 

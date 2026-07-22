@@ -54,6 +54,7 @@ export const registerSchema = z.object({
   chainId: z.string().optional(),
   type: z.string().optional(),
   invitationToken: z.string().optional(), // Token de invitación de clínica
+  medicalCenter: z.string().optional(),
 });
 
 export const loginSchema = z.object({
@@ -170,6 +171,7 @@ export const updateDoctorProfileSchema = z.object({
   preview_images: z.array(z.string()).optional(), // Array de base64 o URLs — galería de imágenes
   workSchedule: z.array(scheduleItemSchema).optional(),
   bankAccount: doctorProfileBankAccountSchema.optional().nullable(),
+  medicalCenter: z.string().optional(),
 });
 
 export const createDiagnosisSchema = z.object({
@@ -749,7 +751,7 @@ export const createProviderReviewSchema = z.object({
 // Appointment validators
 export const createAppointmentSchema = z.object({
   doctorId: z.string().uuid("Doctor ID must be a valid UUID"),
-  specialtyId: z.string().uuid("Specialty ID must be a valid UUID"),
+  specialtyId: z.string().uuid("Specialty ID must be a valid UUID").optional().nullable(),
   clinicId: z.string().uuid("Clinic ID must be a valid UUID").optional().nullable(),
   fullName: z.string().min(2, "Full name is too short").optional(),
   phone: z.string().optional(),
@@ -783,6 +785,7 @@ export const createAppointmentSchema = z.object({
     .uuid("Consultation price ID must be a valid UUID")
     .optional()
     .nullable(),
+  price: z.number().optional(),
   discount: z.union([z.number(), z.string()]).optional(),
 });
 
