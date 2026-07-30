@@ -76,13 +76,18 @@ export async function createAppointment(
       return errorResponse("Doctor or provider not found or inactive", 404);
     }
 
+    // Solo los proveedores de categoría "doctor" requieren una especialidad médica.
+    // Para el resto (estética, farmacia, laboratorio, etc.) no tiene sentido forzar
+    // una especialidad médica aleatoria como comodín — la cita queda sin specialty_id.
+    const isMedicalDoctor = doctor.service_categories?.slug === "doctor";
+
     let finalSpecialtyId = body.specialtyId || doctor.provider_specialties[0]?.specialty_id || null;
-    if (!finalSpecialtyId) {
+    if (!finalSpecialtyId && isMedicalDoctor) {
       const anySpec = await prisma.specialties.findFirst();
       finalSpecialtyId = anySpec?.id || null;
     }
 
-    if (!finalSpecialtyId) {
+    if (!finalSpecialtyId && isMedicalDoctor) {
       return errorResponse("No se encontró una especialidad para asignar a la cita", 400);
     }
 

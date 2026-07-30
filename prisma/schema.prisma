@@ -632,6 +632,7 @@ model admin_settings {
   commission_pharmacy           Decimal  @default(8.00) @db.Decimal(5, 2)
   commission_supplies           Decimal  @default(10.00) @db.Decimal(5, 2)
   commission_ambulance          Decimal  @default(15.00) @db.Decimal(5, 2)
+  commission_aesthetic          Decimal  @default(15.00) @db.Decimal(5, 2)
   notify_new_requests           Boolean  @default(true)
   notify_email_summary          Boolean  @default(true)
   auto_approve_services         Boolean  @default(false)

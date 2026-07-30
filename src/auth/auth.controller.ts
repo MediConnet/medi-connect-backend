@@ -140,6 +140,7 @@ async function createProviderProfile(prisma: any, userId: string, body: any) {
     ambulance: 'commission_ambulance',
     supplies: 'commission_supplies',
     clinica: 'commission_clinic',
+    aesthetic: 'commission_aesthetic',
   };
   const commissionField = commissionFieldMap[categorySlug] || 'commission_doctor';
   const settings = await prisma.admin_settings.findFirst();

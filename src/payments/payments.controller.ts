@@ -11,6 +11,7 @@ import {
 } from "../shared/response";
 import { nuveiService } from "./nuvei.service";
 import { PAYOUT_TYPE_CLINIC, PAYOUT_TYPE_DOCTOR } from "../shared/constants";
+import { resolveCommissionPercent } from "../shared/commission";
 
 /**
  * Genera un ID de transacción corto y único (Máx 15 chars)
@@ -136,7 +137,11 @@ export async function processNuveiPayment(
             users: true
           }
         },
-        providers: true,
+        providers: {
+          include: {
+            service_categories: { select: { slug: true } },
+          },
+        },
         provider_branches: true,
       },
     });
@@ -204,9 +209,7 @@ export async function processNuveiPayment(
       });
     }
 
-    const commissionPercent = appointment.clinic_id
-      ? Number(settings.commission_clinic)
-      : Number(settings.commission_doctor);
+    const commissionPercent = resolveCommissionPercent(appointment, settings);
 
     const platformFee = Number((costDecimal * (commissionPercent / 100)).toFixed(2));
     const providerAmount = Number((costDecimal - platformFee).toFixed(2));
@@ -646,7 +649,8 @@ export async function initNuveiCheckout(
         },
         providers: {
           include: {
-            provider_branches: true
+            provider_branches: true,
+            service_categories: { select: { slug: true } },
           }
         },
       },
@@ -690,9 +694,7 @@ export async function initNuveiCheckout(
       });
     }
 
-    const commissionPercent = appointment.clinic_id
-      ? Number(settings.commission_clinic)
-      : Number(settings.commission_doctor);
+    const commissionPercent = resolveCommissionPercent(appointment, settings);
 
     const platformFee = Number((costDecimal * (commissionPercent / 100)).toFixed(2));
     const providerAmount = Number((costDecimal - platformFee).toFixed(2));
@@ -804,7 +806,11 @@ export async function retryNuveiPayment(
       where: { id: body.appointmentId },
       include: {
         patients: { include: { users: true } },
-        providers: true,
+        providers: {
+          include: {
+            service_categories: { select: { slug: true } },
+          },
+        },
         provider_branches: true,
       },
     });
@@ -868,9 +874,7 @@ export async function retryNuveiPayment(
       return errorResponse(`El costo de la consulta ($${costDecimal}) no es válido.`, 400);
     }
 
-    const commissionPercent = originalAppointment.clinic_id
-      ? Number(settings.commission_clinic)
-      : Number(settings.commission_doctor);
+    const commissionPercent = resolveCommissionPercent(originalAppointment, settings);
 
     const platformFee = Number((costDecimal * (commissionPercent / 100)).toFixed(2));
     const providerAmount = Number((costDecimal - platformFee).toFixed(2));
