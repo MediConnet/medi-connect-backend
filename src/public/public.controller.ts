@@ -1,7 +1,7 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResult } from 'aws-lambda';
 import { logger } from '../shared/logger';
 import { getPrismaClient } from '../shared/prisma';
-import { internalErrorResponse, successResponse } from '../shared/response';
+import { internalErrorResponse, paginatedResponse, successResponse } from '../shared/response';
 import { TYPE_TO_SLUG } from '../shared/constants';
 
 export async function getCities(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
@@ -47,6 +47,9 @@ export async function getPublicProviders(event: APIGatewayProxyEventV2): Promise
   const rawType = (queryParams.type || queryParams.providerType || "").toLowerCase();
   const targetSlug = TYPE_TO_SLUG[rawType] || rawType;
   const search = queryParams.q || queryParams.search || "";
+  const page = parseInt(queryParams.page || "1", 10);
+  const limit = parseInt(queryParams.limit || "20", 10);
+  const offset = (page - 1) * limit;
   const prisma = getPrismaClient();
 
   try {
@@ -74,7 +77,7 @@ export async function getPublicProviders(event: APIGatewayProxyEventV2): Promise
       ];
     }
 
-    let providersRaw: any[] = await (prisma.providers as any).findMany({
+    const findArgs = {
       where,
       include: {
         users: { select: { email: true, profile_picture_url: true } },
@@ -87,27 +90,30 @@ export async function getPublicProviders(event: APIGatewayProxyEventV2): Promise
           where: { is_available: true },
         },
       },
-    });
+      skip: offset,
+      take: limit,
+    };
+
+    let [providersRaw, total]: [any[], number] = await Promise.all([
+      (prisma.providers as any).findMany(findArgs),
+      (prisma.providers as any).count({ where }),
+    ]);
 
     // Fallback: Si no hay proveedores estrictos con el slug "aesthetic", retornar proveedores activos
-    if (providersRaw.length === 0 && (targetSlug === "aesthetic" || targetSlug === "estetica")) {
-      providersRaw = await (prisma.providers as any).findMany({
-        where: {
-          users: { is_active: true },
-          provider_branches: { some: { is_active: true } },
-        },
-        include: {
-          users: { select: { email: true, profile_picture_url: true } },
-          provider_branches: {
-            where: { is_active: true },
-            include: { cities: true },
-          },
-          service_categories: true,
-          provider_catalog: {
-            where: { is_available: true },
-          },
-        },
-      });
+    if (providersRaw.length === 0 && page === 1 && (targetSlug === "aesthetic" || targetSlug === "estetica")) {
+      const fallbackWhere = {
+        users: { is_active: true },
+        provider_branches: { some: { is_active: true } },
+      };
+      [providersRaw, total] = await Promise.all([
+        (prisma.providers as any).findMany({
+          where: fallbackWhere,
+          include: findArgs.include,
+          skip: offset,
+          take: limit,
+        }),
+        (prisma.providers as any).count({ where: fallbackWhere }),
+      ]);
     }
 
     const formatted = await Promise.all(providersRaw.map(async (p: any) => {
@@ -150,7 +156,7 @@ export async function getPublicProviders(event: APIGatewayProxyEventV2): Promise
       };
     }));
 
-    return successResponse(formatted);
+    return paginatedResponse(formatted, total, page, limit, 200, event);
   } catch (error: any) {
     logger.error("Error fetching public providers", error);
     return internalErrorResponse("Failed to fetch public providers");
