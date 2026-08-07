@@ -23,7 +23,7 @@ function initializeEmailService(): Resend | null {
   }
 
   // API Key de Resend desde variables de entorno (soporta ambos nombres por compatibilidad)
-  const resendApiToken = process.env.RESEND_API_KEY || process.env.RESEND_API_TOKEN || 're_SSG1TwXf_7c58f9HHEiPPaHbAverY4DKb';
+  const resendApiToken = process.env.RESEND_API_KEY || process.env.RESEND_API_TOKEN;
 
   // Email desde el que se enviarán los correos (debe estar verificado en Resend)
   const fromEmail = process.env.RESEND_FROM_EMAIL || process.env.SMTP_FROM || 'noreply@docalink.com';
@@ -119,6 +119,78 @@ function getLogoBase64(): string {
 }
 
 /**
+ * Construye el link "Ver en mapa" priorizando la URL guardada por el proveedor,
+ * luego coordenadas, y por último una búsqueda por dirección de texto.
+ */
+function buildMapsUrl(opts: {
+  googleMapsUrl?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  address?: string | null;
+}): string | null {
+  if (opts.googleMapsUrl) return opts.googleMapsUrl;
+  if (opts.latitude != null && opts.longitude != null) {
+    return `https://www.google.com/maps/search/?api=1&query=${opts.latitude},${opts.longitude}`;
+  }
+  if (opts.address) {
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(opts.address)}`;
+  }
+  return null;
+}
+
+/**
+ * URL de imagen de un código QR (servicio público, mismo patrón que los íconos del correo).
+ */
+function buildQrCodeUrl(data: string): string {
+  return `https://api.qrserver.com/v1/create-qr-code/?size=140x140&margin=8&data=${encodeURIComponent(data)}`;
+}
+
+/**
+ * Bloque reutilizable "Detalles de tu cita": establecimiento, fecha/hora y ubicación con link a mapa.
+ */
+function renderAppointmentDetailsBox(opts: {
+  establishmentLabel: string;
+  establishmentName: string;
+  date: string;
+  time: string;
+  address: string;
+  mapsUrl: string | null;
+}): string {
+  return `
+    <table width="100%" border="0" cellspacing="0" cellpadding="0" class="details-box" style="background-color: #f8fafc; border: 1px solid #e2e8f0; margin: 20px 0;">
+      <tr>
+        <td style="padding: 18px 20px;">
+          <p style="margin: 0 0 12px 0; font-size: 13px; font-weight: 700; color: #108369; text-transform: uppercase; letter-spacing: 0.5px;">Detalles de tu cita</p>
+          <table width="100%" border="0" cellspacing="0" cellpadding="0">
+            <tr>
+              <td style="padding-bottom: 10px; font-size: 13px; color: #64748b;">${opts.establishmentLabel}:</td>
+              <td align="right" style="padding-bottom: 10px; font-size: 13px; color: #1e293b; font-weight: 600;">${opts.establishmentName}</td>
+            </tr>
+            <tr>
+              <td style="padding-bottom: 10px; font-size: 13px; color: #64748b;">Fecha y hora:</td>
+              <td align="right" style="padding-bottom: 10px; font-size: 13px; color: #1e293b; font-weight: 600;">${opts.date} a las ${opts.time}</td>
+            </tr>
+            <tr>
+              <td colspan="2" style="padding-top: 4px; border-top: 1px solid #e2e8f0;">
+                <table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin-top: 10px;">
+                  <tr>
+                    <td style="font-size: 13px; color: #64748b; vertical-align: top;">Ubicación:</td>
+                    <td align="right" style="font-size: 13px; color: #1e293b; font-weight: 600;">
+                      ${opts.address}
+                      ${opts.mapsUrl ? `<br/><a href="${opts.mapsUrl}" style="font-size: 12px; color: #108369; font-weight: 700; text-decoration: none;">Ver en mapa ↗</a>` : ""}
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  `;
+}
+
+/**
  * Plantilla base para emails con el nuevo diseño de DocaLink
  */
 function generateEmailTemplateBase(options: {
@@ -150,7 +222,7 @@ function generateEmailTemplateBase(options: {
             <!-- Header -->
             <tr>
               <td align="center" style="padding: 20px; border-bottom: 1px solid #f1f5f9;">
-                <table border="0" cellspacing="0" cellpadding="0">
+                <table align="center" border="0" cellspacing="0" cellpadding="0" style="margin: 0 auto;">
                   <tr>
                     <td align="left" style="padding-right: 15px;">
                       <img src="${logoDataUri}" alt="DocaLink" width="60" style="display: block;" />
@@ -253,18 +325,24 @@ export function generateDoctorNewAppointmentEmail(data: {
   doctorName: string;
   clinicName: string;
   patientName: string;
+  patientPhone?: string;
+  patientEmail?: string;
   date: string;
   time: string;
   reason?: string;
   clinicAddress: string;
+  isAesthetic?: boolean;
+  amount?: number;
+  isPaid?: boolean;
 }): string {
+  const greetingName = data.isAesthetic ? data.doctorName : `Dr./Dra. ${data.doctorName}`;
   const content = `
     <!-- Hero Section con fondo celeste -->
     <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #e0f2fe; padding: 15px 40px;">
       <tr>
         <td width="60%" align="left">
-          <h2 class="title" style="color: #004aad; margin: 0 0 5px 0;">Nueva Cita Agendada</h2>
-          <p class="subtitle" style="color: #004aad; opacity: 0.8; font-size: 14px; margin: 0;">Tienes un nuevo paciente en espera.</p>
+          <h2 class="title" style="color: #004aad; margin: 0 0 5px 0;">¡Nueva Cita Agendada!</h2>
+          <p class="subtitle" style="color: #004aad; opacity: 0.8; font-size: 14px; margin: 0;">Tienes un nuevo${data.isAesthetic ? " cliente" : " paciente"} en espera.</p>
         </td>
         <td width="40%" align="right">
           <div class="illustration">
@@ -275,36 +353,75 @@ export function generateDoctorNewAppointmentEmail(data: {
     </table>
 
     <div style="padding: 40px;">
-      <p>Hola Dr./Dra. <strong>${data.doctorName}</strong> 👋,</p>
-      <p>Se ha registrado una nueva cita médica en tu agenda:</p>
-      
+      <p>Hola <strong>${greetingName}</strong> 👋,</p>
+      <p>Se ha registrado una nueva cita${data.isAesthetic ? "" : " médica"} en tu agenda:</p>
+
       <center>
-        <table width="100%" border="0" cellspacing="0" cellpadding="0" class="details-box" style="background-color: #f8fafc; border: 1px solid #e2e8f0; margin: 25px 0; max-width: 450px;">
+        <table width="100%" border="0" cellspacing="0" cellpadding="0" class="details-box" style="background-color: #f8fafc; border: 1px solid #e2e8f0; margin: 20px 0;">
           <tr>
-            <td style="padding: 20px;">
-              <p style="color: #004aad; font-weight: 700; margin: 0 0 15px 0; font-size: 14px;">Detalles de la cita</p>
+            <td style="padding: 18px 20px;">
+              <p style="color: #004aad; font-weight: 700; margin: 0 0 12px 0; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;">Detalles de la cita</p>
               <table width="100%" border="0" cellspacing="0" cellpadding="0">
                 <tr>
-                  <td width="30" style="padding-bottom: 10px;"><img src="https://cdn-icons-png.flaticon.com/512/2838/2838779.png" width="18" style="filter: brightness(0.5);" /></td>
-                  <td style="padding-bottom: 10px; font-size: 13px; color: #64748b;">Fecha:</td>
-                  <td align="right" style="padding-bottom: 10px; font-size: 13px; color: #1e293b; font-weight: 600;">${data.date}</td>
+                  <td style="padding-bottom: 10px; font-size: 13px; color: #64748b;">${data.isAesthetic ? "Cliente" : "Paciente"}:</td>
+                  <td align="right" style="padding-bottom: 10px; font-size: 13px; color: #1e293b; font-weight: 600;">${data.patientName}</td>
                 </tr>
+                ${data.patientPhone ? `
                 <tr>
-                  <td width="30" style="padding-bottom: 10px;"><img src="https://cdn-icons-png.flaticon.com/512/2088/2088617.png" width="18" style="filter: brightness(0.5);" /></td>
-                  <td style="padding-bottom: 10px; font-size: 13px; color: #64748b;">Hora:</td>
-                  <td align="right" style="padding-bottom: 10px; font-size: 13px; color: #1e293b; font-weight: 600;">${data.time}</td>
-                </tr>
+                  <td style="padding-bottom: 10px; font-size: 13px; color: #64748b;">Teléfono:</td>
+                  <td align="right" style="padding-bottom: 10px; font-size: 13px; color: #1e293b; font-weight: 600;">${data.patientPhone}</td>
+                </tr>` : ""}
+                ${data.patientEmail ? `
                 <tr>
-                  <td width="30"><img src="https://cdn-icons-png.flaticon.com/512/1077/1077114.png" width="18" style="filter: brightness(0.5);" /></td>
-                  <td style="font-size: 13px; color: #64748b;">Paciente:</td>
-                  <td align="right" style="font-size: 13px; color: #1e293b; font-weight: 600;">${data.patientName}</td>
+                  <td style="padding-bottom: 10px; font-size: 13px; color: #64748b;">Email:</td>
+                  <td align="right" style="padding-bottom: 10px; font-size: 13px; color: #1e293b; font-weight: 600;">${data.patientEmail}</td>
+                </tr>` : ""}
+                <tr>
+                  <td style="padding-bottom: 10px; font-size: 13px; color: #64748b;">Fecha y hora:</td>
+                  <td align="right" style="padding-bottom: 10px; font-size: 13px; color: #1e293b; font-weight: 600;">${data.date} a las ${data.time}</td>
                 </tr>
+                ${data.reason ? `
+                <tr>
+                  <td style="font-size: 13px; color: #64748b; vertical-align: top;">Motivo:</td>
+                  <td align="right" style="font-size: 13px; color: #1e293b; font-weight: 600;">${data.reason}</td>
+                </tr>` : ""}
               </table>
             </td>
           </tr>
         </table>
       </center>
-      <p>Puedes revisar los detalles completos y el historial clínico del paciente desde tu panel de control.</p>
+
+      ${data.amount != null ? `
+      <center>
+        ${data.isPaid ? `
+        <table width="100%" border="0" cellspacing="0" cellpadding="0" class="details-box" style="background-color: #f0fdf4; border: 1px solid #dcfce7; border-left: 4px solid #108369; margin: 20px 0;">
+          <tr>
+            <td style="padding: 18px 20px;">
+              <p style="margin: 0 0 6px 0; font-size: 13px; font-weight: 700; color: #108369;">
+                Pago con tarjeta
+                <span style="display: inline-block; background-color: #dcfce7; color: #108369; font-size: 10px; font-weight: 800; letter-spacing: 0.5px; padding: 2px 8px; border-radius: 10px; margin-left: 6px;">YA COBRADO</span>
+              </p>
+              <p style="margin: 0; font-size: 14px; color: #1e293b;">Monto: <strong>$${data.amount.toFixed(2)} USD</strong> — no necesitas cobrar nada al llegar.</p>
+            </td>
+          </tr>
+        </table>
+        ` : `
+        <table width="100%" border="0" cellspacing="0" cellpadding="0" class="details-box" style="background-color: #fffbeb; border: 1px solid #fde68a; border-left: 4px solid #f59e0b; margin: 20px 0;">
+          <tr>
+            <td style="padding: 18px 20px;">
+              <p style="margin: 0 0 6px 0; font-size: 13px; font-weight: 700; color: #b45309;">
+                Pago presencial
+                <span style="display: inline-block; background-color: #fef3c7; color: #b45309; font-size: 10px; font-weight: 800; letter-spacing: 0.5px; padding: 2px 8px; border-radius: 10px; margin-left: 6px;">POR COBRAR</span>
+              </p>
+              <p style="margin: 0; font-size: 14px; color: #1e293b;">Monto a cobrar: <strong>$${data.amount.toFixed(2)} USD</strong> directamente en tu establecimiento.</p>
+            </td>
+          </tr>
+        </table>
+        `}
+      </center>
+      ` : ""}
+
+      <p>Puedes revisar los detalles completos desde tu panel de control.</p>
     </div>
   `;
 
@@ -390,14 +507,27 @@ export function generatePatientNewAppointmentEmail(data: {
   date: string;
   time: string;
   reason?: string;
+  isAesthetic?: boolean;
+  amount?: number;
+  googleMapsUrl?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
 }): string {
+  const establishmentLabel = data.isAesthetic ? "Centro Estético" : "Establecimiento";
+  const mapsUrl = buildMapsUrl({
+    googleMapsUrl: data.googleMapsUrl,
+    latitude: data.latitude,
+    longitude: data.longitude,
+    address: data.clinicAddress,
+  });
+
   const content = `
     <!-- Hero Section con fondo verde -->
     <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f0fdf4; padding: 15px 40px;">
       <tr>
         <td width="60%" align="left">
           <h2 class="title" style="color: #108369; margin: 0 0 5px 0;">¡Cita Confirmada!</h2>
-          <p class="subtitle" style="color: #108369; opacity: 0.8; font-size: 14px; margin: 0;">Tu salud es nuestra prioridad.</p>
+          <p class="subtitle" style="color: #108369; opacity: 0.8; font-size: 14px; margin: 0;">Tu cita en ${data.clinicName} ha sido confirmada exitosamente.</p>
         </td>
         <td width="40%" align="right">
           <div class="illustration">
@@ -409,33 +539,36 @@ export function generatePatientNewAppointmentEmail(data: {
 
     <div style="padding: 40px;">
       <p>Hola <strong>${data.patientName}</strong> 👋,</p>
-      <p>Tu cita médica ha sido confirmada exitosamente. Aquí tienes los detalles para tu visita:</p>
-      
+      <p>Gracias por confiar en DocaLink. Aquí tienes los detalles de tu cita:</p>
+
       <center>
-        <table width="100%" border="0" cellspacing="0" cellpadding="0" class="details-box" style="background-color: #f0fdf4; border: 1px solid #dcfce7; margin: 25px 0; max-width: 450px;">
+        ${renderAppointmentDetailsBox({
+          establishmentLabel,
+          establishmentName: data.clinicName,
+          date: data.date,
+          time: data.time,
+          address: data.clinicAddress,
+          mapsUrl,
+        })}
+      </center>
+
+      ${data.amount != null ? `
+      <center>
+        <table width="100%" border="0" cellspacing="0" cellpadding="0" class="details-box" style="background-color: #fffbeb; border: 1px solid #fde68a; border-left: 4px solid #f59e0b; margin: 20px 0;">
           <tr>
-            <td style="padding: 20px;">
-              <table width="100%" border="0" cellspacing="0" cellpadding="0">
-                <tr>
-                  <td width="30" style="padding-bottom: 10px;"><img src="https://cdn-icons-png.flaticon.com/512/3304/3304567.png" width="18" style="filter: hue-rotate(100deg);" /></td>
-                  <td style="padding-bottom: 10px; font-size: 13px; color: #64748b;">Especialista:</td>
-                  <td align="right" style="padding-bottom: 10px; font-size: 13px; color: #1e293b; font-weight: 600;">Dr./Dra. ${data.doctorName}</td>
-                </tr>
-                <tr>
-                  <td width="30" style="padding-bottom: 10px;"><img src="https://cdn-icons-png.flaticon.com/512/2838/2838779.png" width="18" style="filter: hue-rotate(100deg);" /></td>
-                  <td style="padding-bottom: 10px; font-size: 13px; color: #64748b;">Fecha:</td>
-                  <td align="right" style="padding-bottom: 10px; font-size: 13px; color: #1e293b; font-weight: 600;">${data.date} a las ${data.time}</td>
-                </tr>
-                <tr>
-                  <td width="30"><img src="https://cdn-icons-png.flaticon.com/512/684/684908.png" width="18" style="filter: hue-rotate(100deg);" /></td>
-                  <td style="font-size: 13px; color: #64748b;">Lugar:</td>
-                  <td align="right" style="font-size: 13px; color: #1e293b; font-weight: 600;">${data.clinicName}</td>
-                </tr>
-              </table>
+            <td style="padding: 18px 20px;">
+              <p style="margin: 0 0 6px 0; font-size: 13px; font-weight: 700; color: #b45309;">
+                Pago presencial en el establecimiento
+                <span style="display: inline-block; background-color: #fef3c7; color: #b45309; font-size: 10px; font-weight: 800; letter-spacing: 0.5px; padding: 2px 8px; border-radius: 10px; margin-left: 6px;">PENDIENTE</span>
+              </p>
+              <p style="margin: 0 0 6px 0; font-size: 14px; color: #1e293b;">Monto a cancelar: <strong>$${data.amount.toFixed(2)} USD</strong></p>
+              <p style="margin: 0; font-size: 12px; color: #92400e;">Este pago deberá ser realizado el día de tu cita, directamente en el establecimiento.</p>
             </td>
           </tr>
         </table>
       </center>
+      ` : ""}
+
       <p style="text-align: center; font-weight: 600; color: #108369;">Recuerda asistir 10 minutos antes de tu cita.</p>
     </div>
   `;
@@ -458,7 +591,9 @@ export function generatePatientReminderEmail(data: {
   clinicAddress: string;
   date: string;
   time: string;
+  isAesthetic?: boolean;
 }): string {
+  const providerLabel = data.isAesthetic ? "Centro Estético" : "Médico";
   const content = `
     <!-- Hero Section con fondo naranja -->
     <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #fff7ed; padding: 15px 40px;">
@@ -486,7 +621,7 @@ export function generatePatientReminderEmail(data: {
               <table width="100%" border="0" cellspacing="0" cellpadding="0">
                 <tr>
                   <td width="30" style="padding-bottom: 10px;"><img src="https://cdn-icons-png.flaticon.com/512/3304/3304567.png" width="18" style="filter: sepia(1) saturate(5) hue-rotate(340deg);" /></td>
-                  <td style="padding-bottom: 10px; font-size: 13px; color: #64748b;">Médico:</td>
+                  <td style="padding-bottom: 10px; font-size: 13px; color: #64748b;">${providerLabel}:</td>
                   <td align="right" style="padding-bottom: 10px; font-size: 13px; color: #1e293b; font-weight: 600;">${data.doctorName}</td>
                 </tr>
                 <tr>
@@ -584,14 +719,17 @@ export function generatePatientCancellationEmail(data: {
   time: string;
   doctorName: string;
   clinicName: string;
+  isAesthetic?: boolean;
 }): string {
+  const providerLabel = data.isAesthetic ? "Centro Estético" : "Médico";
+  const providerDisplayName = data.isAesthetic ? data.doctorName : `Dr./Dra. ${data.doctorName}`;
   const content = `
     <!-- Hero Section con fondo rojo -->
     <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #fef2f2; padding: 15px 40px;">
       <tr>
         <td width="60%" align="left">
           <h2 class="title" style="color: #b91c1c; margin: 0 0 5px 0;">Cita Cancelada</h2>
-          <p class="subtitle" style="color: #b91c1c; opacity: 0.8; font-size: 14px; margin: 0;">Hubo un cambio en tu cita médica.</p>
+          <p class="subtitle" style="color: #b91c1c; opacity: 0.8; font-size: 14px; margin: 0;">Hubo un cambio en tu cita${data.isAesthetic ? "" : " médica"}.</p>
         </td>
         <td width="40%" align="right">
           <div class="illustration">
@@ -612,8 +750,8 @@ export function generatePatientCancellationEmail(data: {
               <table width="100%" border="0" cellspacing="0" cellpadding="0">
                 <tr>
                   <td width="30" style="padding-bottom: 10px;"><img src="https://cdn-icons-png.flaticon.com/512/3304/3304567.png" width="18" style="filter: hue-rotate(340deg) saturate(3);" /></td>
-                  <td style="padding-bottom: 10px; font-size: 13px; color: #64748b;">Médico:</td>
-                  <td align="right" style="padding-bottom: 10px; font-size: 13px; color: #1e293b; font-weight: 600;">Dr./Dra. ${data.doctorName}</td>
+                  <td style="padding-bottom: 10px; font-size: 13px; color: #64748b;">${providerLabel}:</td>
+                  <td align="right" style="padding-bottom: 10px; font-size: 13px; color: #1e293b; font-weight: 600;">${providerDisplayName}</td>
                 </tr>
                 <tr>
                   <td width="30"><img src="https://cdn-icons-png.flaticon.com/512/2838/2838779.png" width="18" style="filter: hue-rotate(340deg) saturate(3);" /></td>
@@ -898,22 +1036,38 @@ export function generatePaymentConfirmationEmail(data: {
   doctorName: string;
   doctorSpecialty: string;
   clinicName: string;
+  clinicAddress?: string;
   date: string;
   time: string;
   amount: number;
   transactionId: string;
   authorizationCode: string;
+  isAesthetic?: boolean;
+  googleMapsUrl?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
 }): string {
   const vat = Number((data.amount * 0.15 / 1.15).toFixed(2));
   const subtotal = Number((data.amount - vat).toFixed(2));
+  const serviceLine = data.isAesthetic
+    ? `Tratamiento Estético - ${data.doctorName}`
+    : `Consulta Médica - Dr./Dra. ${data.doctorName}`;
+  const establishmentLabel = data.isAesthetic ? "Centro Estético" : "Establecimiento";
+  const mapsUrl = buildMapsUrl({
+    googleMapsUrl: data.googleMapsUrl,
+    latitude: data.latitude,
+    longitude: data.longitude,
+    address: data.clinicAddress,
+  });
+  const qrCodeUrl = buildQrCodeUrl(data.transactionId);
 
   const content = `
     <!-- Hero Section con fondo verde -->
     <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f0fdf4; padding: 15px 40px;">
       <tr>
         <td width="60%" align="left">
-          <h2 class="title" style="color: #108369; margin: 0 0 5px 0;">¡Pago Confirmado!</h2>
-          <p class="subtitle" style="color: #108369; opacity: 0.8; font-size: 14px; margin: 0;">Tu transacción ha sido procesada con éxito.</p>
+          <h2 class="title" style="color: #108369; margin: 0 0 5px 0;">¡Cita Confirmada!</h2>
+          <p class="subtitle" style="color: #108369; opacity: 0.8; font-size: 14px; margin: 0;">Tu cita en ${data.clinicName} ha sido confirmada exitosamente.</p>
         </td>
         <td width="40%" align="right">
           <div class="illustration">
@@ -925,31 +1079,66 @@ export function generatePaymentConfirmationEmail(data: {
 
     <div style="padding: 40px;">
       <p>Hola <strong>${data.patientName}</strong> 👋,</p>
-      <p>Te confirmamos que el pago de tu cita médica ha sido procesado de forma segura y exitosa a través de nuestra pasarela de pagos Nuvei.</p>
-      
-      <h3 style="color: #1e293b; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; margin-top: 30px;">Detalle de la Compra</h3>
-      
-      <table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin: 15px 0;">
-        <tr>
-          <td style="padding: 6px 0; color: #64748b; font-size: 14px;">Servicio:</td>
-          <td align="right" style="padding: 6px 0; color: #1e293b; font-size: 14px; font-weight: 600;">Consulta Médica - Dr./Dra. ${data.doctorName}</td>
-        </tr>
-        <tr>
-          <td style="padding: 6px 0; color: #64748b; font-size: 14px;">Especialidad:</td>
-          <td align="right" style="padding: 6px 0; color: #1e293b; font-size: 14px;">${data.doctorSpecialty}</td>
-        </tr>
-        <tr>
-          <td style="padding: 6px 0; color: #64748b; font-size: 14px;">Establecimiento:</td>
-          <td align="right" style="padding: 6px 0; color: #1e293b; font-size: 14px;">${data.clinicName}</td>
-        </tr>
-        <tr>
-          <td style="padding: 6px 0; color: #64748b; font-size: 14px;">Fecha y Hora:</td>
-          <td align="right" style="padding: 6px 0; color: #1e293b; font-size: 14px;">${data.date} a las ${data.time}</td>
-        </tr>
-      </table>
+      <p>Gracias por confiar en DocaLink. Aquí tienes los detalles de tu cita:</p>
+
+      <center>
+        ${renderAppointmentDetailsBox({
+          establishmentLabel,
+          establishmentName: data.clinicName,
+          date: data.date,
+          time: data.time,
+          address: data.clinicAddress || "No especificada",
+          mapsUrl,
+        })}
+      </center>
+
+      <center>
+        <table width="100%" border="0" cellspacing="0" cellpadding="0" class="details-box" style="background-color: #f0fdf4; border: 1px solid #dcfce7; border-left: 4px solid #108369; margin: 20px 0;">
+          <tr>
+            <td style="padding: 18px 20px;">
+              <table width="100%" border="0" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td valign="top">
+                    <p style="margin: 0 0 6px 0; font-size: 13px; font-weight: 700; color: #108369;">
+                      Pago con tarjeta
+                      <span style="display: inline-block; background-color: #dcfce7; color: #108369; font-size: 10px; font-weight: 800; letter-spacing: 0.5px; padding: 2px 8px; border-radius: 10px; margin-left: 6px;">PAGADO</span>
+                    </p>
+                    <p style="margin: 0 0 4px 0; font-size: 14px; color: #1e293b;">El pago de tu cita ha sido realizado exitosamente.</p>
+                  </td>
+                  <td align="right" valign="top">
+                    <p style="margin: 0; font-size: 12px; color: #64748b;">Monto pagado</p>
+                    <p style="margin: 0; font-size: 18px; color: #108369; font-weight: 800;">$${data.amount.toFixed(2)} USD</p>
+                  </td>
+                </tr>
+              </table>
+              <table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin-top: 14px; padding-top: 14px; border-top: 1px dashed #bbf7d0;">
+                <tr>
+                  <td valign="middle">
+                    <p style="margin: 0; font-size: 12px; color: #64748b;">Número de transacción</p>
+                    <p style="margin: 0; font-size: 14px; color: #1e293b; font-weight: 700; letter-spacing: 0.5px;">${data.transactionId}</p>
+                    <p style="margin: 4px 0 0 0; font-size: 11px; color: #64748b;">Presenta este número en el establecimiento para confirmar.</p>
+                  </td>
+                  <td align="right" width="90">
+                    <img src="${qrCodeUrl}" width="80" height="80" alt="Código QR de confirmación" style="display: block; border-radius: 6px;" />
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </center>
 
       <h3 style="color: #1e293b; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; margin-top: 25px;">Detalle de Facturación (Informativo)</h3>
       <table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin: 15px 0; background-color: #f8fafc; padding: 15px; border-radius: 8px;">
+        <tr>
+          <td style="padding: 4px 0; color: #64748b; font-size: 14px;">Servicio:</td>
+          <td align="right" style="padding: 4px 0; color: #1e293b; font-size: 14px;">${serviceLine}</td>
+        </tr>
+        ${data.doctorSpecialty && !data.isAesthetic ? `
+        <tr>
+          <td style="padding: 4px 0; color: #64748b; font-size: 14px;">Especialidad:</td>
+          <td align="right" style="padding: 4px 0; color: #1e293b; font-size: 14px;">${data.doctorSpecialty}</td>
+        </tr>` : ""}
         <tr>
           <td style="padding: 4px 0; color: #64748b; font-size: 14px;">Subtotal:</td>
           <td align="right" style="padding: 4px 0; color: #1e293b; font-size: 14px;">$${subtotal.toFixed(2)}</td>
@@ -964,23 +1153,8 @@ export function generatePaymentConfirmationEmail(data: {
         </tr>
       </table>
 
-      <h3 style="color: #1e293b; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; margin-top: 25px;">Información de la Transacción</h3>
-      <table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin: 15px 0;">
-        <tr>
-          <td style="padding: 6px 0; color: #64748b; font-size: 14px;">ID de Transacción (Ref):</td>
-          <td align="right" style="padding: 6px 0; color: #1e293b; font-size: 14px; font-weight: 600;">${data.transactionId}</td>
-        </tr>
-        <tr>
-          <td style="padding: 6px 0; color: #64748b; font-size: 14px;">Código de Autorización:</td>
-          <td align="right" style="padding: 6px 0; color: #1e293b; font-size: 14px; font-weight: 600;">${data.authorizationCode}</td>
-        </tr>
-        <tr>
-          <td style="padding: 6px 0; color: #64748b; font-size: 14px;">Medio de Pago:</td>
-          <td align="right" style="padding: 6px 0; color: #1e293b; font-size: 14px;">Tarjeta de Crédito/Débito (Nuvei)</td>
-        </tr>
-      </table>
-
-      <p style="font-size: 12px; color: #64748b; margin-top: 30px; text-align: center;">
+      <p style="font-size: 12px; color: #64748b; margin-top: 20px; text-align: center;">
+        Código de autorización: ${data.authorizationCode} · Medio de pago: Tarjeta de Crédito/Débito (Nuvei)<br/>
         Este correo sirve como comprobante del pago de tu cita. El médico o establecimiento correspondiente emitirá la factura fiscal respectiva.
       </p>
     </div>
@@ -1005,7 +1179,10 @@ export function generateRefundCompletedEmail(data: {
   time: string;
   amount: number;
   transactionId: string;
+  isAesthetic?: boolean;
 }): string {
+  const providerLabel = data.isAesthetic ? "Centro Estético" : "Especialista";
+  const providerDisplayName = data.isAesthetic ? data.doctorName : `Dr./Dra. ${data.doctorName}`;
   const content = `
     <!-- Hero Section con fondo naranja/rojo de reembolso -->
     <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #fff7ed; padding: 15px 40px;">
@@ -1024,14 +1201,14 @@ export function generateRefundCompletedEmail(data: {
 
     <div style="padding: 40px;">
       <p>Hola <strong>${data.patientName}</strong> 👋,</p>
-      <p>Te informamos que el reembolso de tu cita médica ha sido procesado de forma exitosa a través de nuestra pasarela de pagos Nuvei.</p>
-      
+      <p>Te informamos que el reembolso de tu cita${data.isAesthetic ? "" : " médica"} ha sido procesado de forma exitosa a través de nuestra pasarela de pagos Nuvei.</p>
+
       <h3 style="color: #1e293b; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; margin-top: 30px;">Detalles de la Cita Cancelada</h3>
-      
+
       <table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin: 15px 0;">
         <tr>
-          <td style="padding: 6px 0; color: #64748b; font-size: 14px;">Especialista:</td>
-          <td align="right" style="padding: 6px 0; color: #1e293b; font-size: 14px; font-weight: 600;">Dr./Dra. ${data.doctorName}</td>
+          <td style="padding: 6px 0; color: #64748b; font-size: 14px;">${providerLabel}:</td>
+          <td align="right" style="padding: 6px 0; color: #1e293b; font-size: 14px; font-weight: 600;">${providerDisplayName}</td>
         </tr>
         <tr>
           <td style="padding: 6px 0; color: #64748b; font-size: 14px;">Establecimiento:</td>

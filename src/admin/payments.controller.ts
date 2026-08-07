@@ -12,12 +12,17 @@ function normalizePaymentStatus(status?: string | null, paidAt?: Date | null): '
 }
 
 /**
- * GET /api/admin/payments/doctors
- * Obtener pagos pendientes a médicos independientes
+ * Lógica compartida para listar pagos con tarjeta de un proveedor independiente
+ * (no-clínica), filtrado por la categoría real del proveedor (service_categories.slug).
+ * Usada por getDoctorPayments (categorySlug: "doctor") y getAestheticPayments
+ * (categorySlug: "aesthetic") — antes ambos tipos de proveedor quedaban mezclados
+ * bajo "pagos a médicos" porque solo se filtraba por clinic_id: null.
  */
-export async function getDoctorPayments(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
-  console.log('✅ [ADMIN] GET /api/admin/payments/doctors - Obteniendo pagos a médicos');
-  
+async function getProviderPaymentsByCategory(
+  event: APIGatewayProxyEventV2,
+  categorySlug: string,
+  logLabel: string,
+): Promise<APIGatewayProxyResult> {
   const prisma = getPrismaClient();
   const queryParams = event.queryStringParameters || {};
   const page = parseInt(queryParams.page || '1', 10);
@@ -31,6 +36,9 @@ export async function getDoctorPayments(event: APIGatewayProxyEventV2): Promise<
       clinic_id: null,
       appointments: {
         clinic_id: null,
+        providers: {
+          service_categories: { slug: categorySlug },
+        },
       },
       status: { notIn: ['REFUNDED', 'refunded', 'FAILED', 'failed'] },
       OR: [
@@ -72,22 +80,22 @@ export async function getDoctorPayments(event: APIGatewayProxyEventV2): Promise<
       prisma.payments.count({ where }),
     ]);
 
-    // Fetch doctor bank accounts
-    const doctorUserIds = payments
+    // Fetch bank accounts
+    const providerUserIds = payments
       .map((p) => p.appointments?.providers?.user_id)
       .filter((id): id is string => !!id);
 
-    const bankAccounts = doctorUserIds.length > 0
+    const bankAccounts = providerUserIds.length > 0
       ? await prisma.doctor_bank_accounts.findMany({
-          where: { user_id: { in: doctorUserIds } },
+          where: { user_id: { in: providerUserIds } },
         })
       : [];
     const bankAccountMap = new Map(bankAccounts.map((b) => [b.user_id, b]));
 
     // Mapear a formato del frontend
     const mappedPayments = payments.map((payment) => {
-      const docUser = payment.appointments?.providers?.user_id;
-      const bank = docUser ? bankAccountMap.get(docUser) : null;
+      const providerUser = payment.appointments?.providers?.user_id;
+      const bank = providerUser ? bankAccountMap.get(providerUser) : null;
 
       return {
         id: payment.id,
@@ -115,13 +123,31 @@ export async function getDoctorPayments(event: APIGatewayProxyEventV2): Promise<
       };
     });
 
-    console.log(`✅ [ADMIN] ${mappedPayments.length} pagos a médicos obtenidos (página ${page}, total: ${total})`);
+    console.log(`✅ [ADMIN] ${mappedPayments.length} ${logLabel} obtenidos (página ${page}, total: ${total})`);
     return paginatedResponse(mappedPayments, total, page, limit);
   } catch (error: any) {
-    console.error('❌ [ADMIN] Error al obtener pagos a médicos:', error.message);
-    logger.error('Error getting doctor payments', error);
-    return internalErrorResponse('Failed to get doctor payments');
+    console.error(`❌ [ADMIN] Error al obtener ${logLabel}:`, error.message);
+    logger.error(`Error getting ${logLabel}`, error);
+    return internalErrorResponse(`Failed to get ${logLabel}`);
   }
+}
+
+/**
+ * GET /api/admin/payments/doctors
+ * Obtener pagos pendientes a médicos independientes
+ */
+export async function getDoctorPayments(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  console.log('✅ [ADMIN] GET /api/admin/payments/doctors - Obteniendo pagos a médicos');
+  return getProviderPaymentsByCategory(event, 'doctor', 'pagos a médicos');
+}
+
+/**
+ * GET /api/admin/payments/aesthetic
+ * Obtener pagos pendientes a centros estéticos independientes
+ */
+export async function getAestheticPayments(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
+  console.log('✅ [ADMIN] GET /api/admin/payments/aesthetic - Obteniendo pagos a centros estéticos');
+  return getProviderPaymentsByCategory(event, 'aesthetic', 'pagos a centros estéticos');
 }
 
 /**
@@ -641,7 +667,11 @@ export async function approveRefund(event: APIGatewayProxyEventV2): Promise<APIG
         appointments: {
           include: {
             patients: { include: { users: { select: { email: true } } } },
-            providers: true,
+            providers: {
+              include: {
+                service_categories: { select: { slug: true } },
+              },
+            },
             clinics: true,
           },
         },
@@ -713,6 +743,7 @@ export async function approveRefund(event: APIGatewayProxyEventV2): Promise<APIG
           time: timeStr,
           amount: Number(payment.amount_total) || 0,
           transactionId: payment.external_transaction_id || "N/A",
+          isAesthetic: payment.appointments?.providers?.service_categories?.slug === "aesthetic",
         }),
       }).then(() => console.log(`✉️ [ADMIN-REFUND] Correo de reembolso enviado a: ${aptPatient?.users?.email || 'N/A'}`))
         .catch((err: any) => console.error("❌ [ADMIN-REFUND] Error enviando email de reembolso:", err.message));

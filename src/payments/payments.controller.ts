@@ -41,9 +41,15 @@ export async function sendPaymentConfirmationEmailHelper(
             users: true,
           },
         },
-        providers: true,
+        providers: {
+          include: {
+            service_categories: { select: { slug: true } },
+            users: { select: { email: true } },
+          },
+        },
         specialties: true,
         clinics: true,
+        provider_branches: true,
       },
     });
 
@@ -53,10 +59,12 @@ export async function sendPaymentConfirmationEmailHelper(
     }
 
     const patientName = appointment.patients?.full_name || "Paciente";
-    
+
     const doctorName = appointment.providers?.commercial_name || "Médico";
     const doctorSpecialty = appointment.specialties?.name || "Medicina General";
-    const clinicName = appointment.clinics?.name || "DocaLink";
+    const clinicName = appointment.providers?.commercial_name || appointment.clinics?.name || "DocaLink";
+    const clinicAddress = (appointment as any).provider_branches?.address_text || undefined;
+    const isAestheticProvider = appointment.providers?.service_categories?.slug === "aesthetic";
     
     const formattedDate = appointment.scheduled_for ? appointment.scheduled_for.toLocaleDateString("es-ES", {
       day: "numeric",
@@ -77,20 +85,49 @@ export async function sendPaymentConfirmationEmailHelper(
       doctorName,
       doctorSpecialty,
       clinicName,
+      clinicAddress,
       date: formattedDate,
       time: formattedTime,
       amount,
       transactionId,
       authorizationCode,
+      isAesthetic: isAestheticProvider,
+      googleMapsUrl: (appointment as any).provider_branches?.google_maps_url ?? null,
+      latitude: (appointment as any).provider_branches?.latitude ?? null,
+      longitude: (appointment as any).provider_branches?.longitude ?? null,
     });
 
     await sendEmail({
       to: appointment.patients.users.email,
-      subject: `Comprobante de Pago - Cita con Dr(a). ${doctorName}`,
+      subject: `Comprobante de Pago - Cita con ${isAestheticProvider ? doctorName : `Dr(a). ${doctorName}`}`,
       html: emailHtml,
     });
 
     console.log(`✉️ [PAYMENTS] Correo de confirmación de pago enviado a: ${appointment.patients.users.email}`);
+
+    // Email de nueva cita (ya pagada) al proveedor
+    const providerEmail = appointment.providers?.users?.email;
+    if (providerEmail) {
+      const { generateDoctorNewAppointmentEmail } = await import("../shared/email");
+      await sendEmail({
+        to: providerEmail,
+        subject: `Nueva cita agendada - ${doctorName}`,
+        html: generateDoctorNewAppointmentEmail({
+          doctorName,
+          clinicName,
+          patientName,
+          patientPhone: appointment.patients?.phone || undefined,
+          patientEmail: appointment.patients.users.email,
+          date: formattedDate,
+          time: formattedTime,
+          reason: appointment.reason || undefined,
+          clinicAddress: clinicAddress || "Dirección no especificada",
+          isAesthetic: isAestheticProvider,
+          amount,
+          isPaid: true,
+        }),
+      }).catch((err: any) => console.error("❌ [PAYMENTS] Error enviando email al proveedor:", err.message));
+    }
   } catch (err: any) {
     console.error("❌ [PAYMENTS] Error al enviar correo de confirmación de pago:", err.message);
   }

@@ -15,7 +15,6 @@ import {
   isProviderApproved,
 } from "../clinics/clinic-context";
 import {
-  CLINICS_PROVIDER_TYPE,
   ROLE_TO_ENUM,
   TYPE_TO_SLUG,
   normalizeProviderServiceType,
@@ -177,7 +176,7 @@ async function createProviderProfile(prisma: any, userId: string, body: any) {
       id: providerId,
       users: { connect: { id: userId } },
 
-      commercial_name: representativeName,
+      commercial_name: businessName,
       verification_status: enum_verification.PENDING,
       description: body.description || "Perfil profesional",
       logo_url: null,
@@ -251,6 +250,7 @@ async function createProviderProfile(prisma: any, userId: string, body: any) {
         name: businessName,
         address_text: fullAddress,
         description: body.description || null,
+        google_maps_url: body.googleMapsUrl || null,
 
         phone_contact: body.phone || body.whatsapp || null,
         email_contact: body.email,
@@ -299,6 +299,129 @@ async function createProviderProfile(prisma: any, userId: string, body: any) {
   );
 
   return providerId;
+}
+
+// HELPER: Actualiza el perfil de un proveedor que ya existe (reintento de
+// registro con el mismo correo). Antes esto solo tocaba `documents` cuando
+// había archivos nuevos — un proveedor sin documentos (farmacia, estética,
+// laboratorio, ambulancia, insumos) que reenviaba el formulario con datos
+// nuevos (nombre del establecimiento, dirección, etc.) no guardaba nada,
+// aunque la respuesta decía "solicitud enviada". Ahora siempre refleja los
+// datos recién enviados y vuelve a marcar la solicitud como PENDING.
+async function updateExistingProviderProfile(
+  prisma: any,
+  providerId: string,
+  body: any,
+  uploadedDocuments: any[],
+) {
+  let representativeName = body.name;
+  if (!representativeName && (body.firstName || body.lastName)) {
+    representativeName = [body.firstName, body.lastName]
+      .filter(Boolean)
+      .join(" ");
+  }
+  if (!representativeName) representativeName = "Usuario Proveedor";
+
+  let businessName = body.serviceName;
+  if (!businessName) businessName = representativeName;
+
+  const categorySlug = body.type ? TYPE_TO_SLUG[body.type] || "doctor" : "doctor";
+  const category = await prisma.service_categories.findFirst({
+    where: {
+      OR: [
+        { slug: categorySlug },
+        ...(categorySlug === "clinica" ? [{ slug: "clinic" }] : []),
+        ...(categorySlug === "clinic" ? [{ slug: "clinica" }] : []),
+      ],
+    },
+    select: { id: true },
+  });
+  const categoryId = category ? category.id : null;
+
+  let yearsExp = 0;
+  if (body.yearsOfExperience) {
+    const parsedExp = parseInt(body.yearsOfExperience.toString(), 10);
+    if (!isNaN(parsedExp)) yearsExp = parsedExp;
+  }
+
+  const uuidRegex =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  const isValidChainId = body.chainId && uuidRegex.test(body.chainId);
+  const isValidCityId = body.cityId && uuidRegex.test(body.cityId);
+
+  await prisma.providers.update({
+    where: { id: providerId },
+    data: {
+      commercial_name: businessName,
+      description: body.description || "Perfil profesional",
+      verification_status: enum_verification.PENDING,
+      rejection_reason: null,
+      ...(categoryId ? { category_id: categoryId } : {}),
+      ...(isValidChainId ? { chain_id: body.chainId } : {}),
+      years_of_experience: yearsExp,
+      ...(uploadedDocuments.length > 0 ? { documents: uploadedDocuments } : {}),
+      medical_center: body.medicalCenter || body.medical_center || null,
+    },
+  });
+
+  // Reemplazar especialidades si se proporcionaron de nuevo
+  if (
+    body.specialties &&
+    Array.isArray(body.specialties) &&
+    body.specialties.length > 0
+  ) {
+    await prisma.provider_specialties.deleteMany({
+      where: { provider_id: providerId },
+    });
+    await Promise.all(
+      body.specialties.map((specialtyId: string) =>
+        prisma.provider_specialties.create({
+          data: {
+            provider_id: providerId,
+            specialty_id: specialtyId,
+            fee: body.price ? parseFloat(body.price.toString()) : 0,
+          },
+        }),
+      ),
+    );
+  }
+
+  // Actualizar (o crear si faltara) la sucursal principal con los datos nuevos
+  const fullAddress = body.address || "Sin dirección registrada";
+  const mainBranch = await prisma.provider_branches.findFirst({
+    where: { provider_id: providerId, is_main: true },
+  });
+
+  const branchData = {
+    name: businessName,
+    address_text: fullAddress,
+    description: body.description || null,
+    google_maps_url: body.googleMapsUrl || null,
+    phone_contact: body.phone || body.whatsapp || null,
+    email_contact: body.email,
+    is_active: true,
+    ...(isValidCityId ? { city_id: body.cityId } : {}),
+  };
+
+  if (mainBranch) {
+    await prisma.provider_branches.update({
+      where: { id: mainBranch.id },
+      data: branchData,
+    });
+  } else {
+    await prisma.provider_branches.create({
+      data: {
+        id: randomUUID(),
+        provider_id: providerId,
+        is_main: true,
+        ...branchData,
+      },
+    });
+  }
+
+  console.log(
+    `✅ [HELPER] Perfil de proveedor "${providerId}" actualizado con los datos del reintento de registro.`,
+  );
 }
 
 // Helper para procesar invitación de clínica
@@ -649,15 +772,12 @@ export async function register(
           );
         }
 
-        if (uploadedDocuments.length > 0) {
-          await prisma.providers.update({
-            where: { id: existingProvider.id },
-            data: {
-              documents: uploadedDocuments,
-              verification_status: enum_verification.PENDING,
-            },
-          });
-        }
+        await updateExistingProviderProfile(
+          prisma,
+          existingProvider.id,
+          body,
+          uploadedDocuments,
+        );
 
         if (body.type === "clinic" || body.type === "clinica") {
           const existingClinic = await prisma.clinics.findFirst({
@@ -708,10 +828,8 @@ export async function register(
           {
             userId: existingUser.id,
             email: existingUser.email,
-            message:
-              uploadedDocuments.length > 0
-                ? "Solicitud reenviada exitosamente"
-                : "La solicitud ya fue enviada previamente",
+            providerId: existingProvider.id,
+            message: "Solicitud reenviada exitosamente",
           },
           200,
         );
@@ -963,121 +1081,96 @@ export async function login(
       let serviceType = null;
 
       if (user.role === enum_roles.provider) {
-        const clinic = await prisma.clinics.findFirst({
-          where: { user_id: user.id },
-          select: { id: true, name: true, logo_url: true },
-        });
+        // NOTA: antes esto le daba prioridad absoluta a una fila en la tabla
+        // legacy `clinics` (si existía, aunque fuera de una solicitud vieja
+        // ya abandonada) por encima del perfil real en `providers` — así que
+        // un usuario que después se registró y fue aprobado como otro tipo
+        // (ej. Centro Estético) seguía entrando siempre como "clinics".
+        // Ahora se resuelve siempre por la categoría real en `providers`,
+        // que es la única fuente de verdad del tipo de proveedor.
+        const typeToSlug: Record<string, string> = {
+          doctor: "doctor",
+          pharmacy: "pharmacy",
+          lab: "laboratory",
+          laboratory: "laboratory",
+          ambulance: "ambulance",
+          supplies: "supplies",
+          clinic: "clinica",
+          clinica: "clinica",
+        };
 
-        if (clinic) {
-          const clinicProvider = await prisma.providers.findFirst({
+        let provider: any = null;
+
+        if (body.type) {
+          const typeKey = body.type.toLowerCase();
+          const categorySlug = typeToSlug[typeKey] ?? typeKey;
+
+          provider = await prisma.providers.findFirst({
             where: {
               user_id: user.id,
-              service_categories: { slug: { in: ["clinic", "clinica"] } },
+              service_categories: {
+                slug: {
+                  in: [
+                    categorySlug,
+                    ...(categorySlug === "clinica" ? ["clinic"] : []),
+                    ...(categorySlug === "clinic" ? ["clinica"] : []),
+                  ]
+                }
+              },
             },
-            select: { verification_status: true },
+            include: {
+              service_categories: { select: { slug: true, name: true } },
+              pharmacy_chains: true,
+            },
+            orderBy: { id: "desc" },
           });
+        }
 
-          if (
-            clinicProvider &&
-            !isProviderApproved(clinicProvider.verification_status)
-          ) {
+        if (!provider) {
+          provider = await prisma.providers.findFirst({
+            where: {
+              user_id: user.id,
+            },
+            include: {
+              service_categories: { select: { slug: true, name: true } },
+              pharmacy_chains: true,
+            },
+            orderBy: { id: "desc" },
+          });
+        }
+
+        if (provider) {
+          if (!isProviderApproved(provider.verification_status)) {
             return unauthorizedResponse(
               "Tu cuenta está en proceso de verificación. Debes esperar a ser aprobado para ingresar.",
               "VERIFICATION_PENDING",
             );
           }
+          if (provider.verification_status === enum_verification.REJECTED) {
+            return unauthorizedResponse(
+              "Tu solicitud de registro fue rechazada. Contacta al administrador.",
+              "REGISTRATION_REJECTED",
+            );
+          }
+
+          const isChainMember =
+            !!provider.chain_id && !!provider.pharmacy_chains;
+          const chain = provider.pharmacy_chains;
 
           providerInfo = {
-            id: clinic.id,
-            commercialName: clinic.name,
-            logoUrl: clinic.logo_url,
-          };
-          serviceType = CLINICS_PROVIDER_TYPE;
-        } else {
-          const typeToSlug: Record<string, string> = {
-            doctor: "doctor",
-            pharmacy: "pharmacy",
-            lab: "laboratory",
-            laboratory: "laboratory",
-            ambulance: "ambulance",
-            supplies: "supplies",
-            clinic: "clinica",
-            clinica: "clinica",
+            id: provider.id,
+            commercialName:
+              isChainMember && chain ? chain.name : provider.commercial_name,
+            logoUrl:
+              isChainMember && chain
+                ? chain.logo_url || null
+                : provider.logo_url,
+            isChainMember: isChainMember,
+            chainName: isChainMember && chain ? chain.name : null,
+            chainLogo: isChainMember && chain ? chain.logo_url : null,
           };
 
-          let provider: any = null;
-
-          if (body.type) {
-            const typeKey = body.type.toLowerCase();
-            const categorySlug = typeToSlug[typeKey] ?? typeKey;
-
-            provider = await prisma.providers.findFirst({
-              where: {
-                user_id: user.id,
-                service_categories: {
-                  slug: {
-                    in: [
-                      categorySlug,
-                      ...(categorySlug === "clinica" ? ["clinic"] : []),
-                      ...(categorySlug === "clinic" ? ["clinica"] : []),
-                    ]
-                  }
-                },
-              },
-              include: {
-                service_categories: { select: { slug: true, name: true } },
-                pharmacy_chains: true,
-              },
-              orderBy: { id: "desc" },
-            });
-          }
-
-          if (!provider) {
-            provider = await prisma.providers.findFirst({
-              where: {
-                user_id: user.id,
-              },
-              include: {
-                service_categories: { select: { slug: true, name: true } },
-                pharmacy_chains: true,
-              },
-              orderBy: { id: "desc" },
-            });
-          }
-
-          if (provider) {
-            if (!isProviderApproved(provider.verification_status)) {
-              return unauthorizedResponse(
-                "Tu cuenta está en proceso de verificación. Debes esperar a ser aprobado para ingresar.",
-                "VERIFICATION_PENDING",
-              );
-            }
-            if (provider.verification_status === enum_verification.REJECTED) {
-              return unauthorizedResponse(
-                "Tu solicitud de registro fue rechazada. Contacta al administrador.",
-                "REGISTRATION_REJECTED",
-              );
-            }
-
-            const isChainMember =
-              !!provider.chain_id && !!provider.pharmacy_chains;
-            const chain = provider.pharmacy_chains;
-
-            providerInfo = {
-              id: provider.id,
-              commercialName:
-                isChainMember && chain ? chain.name : provider.commercial_name,
-              logoUrl:
-                isChainMember && chain
-                  ? chain.logo_url || null
-                  : provider.logo_url,
-              isChainMember: isChainMember,
-              chainName: isChainMember && chain ? chain.name : null,
-              chainLogo: isChainMember && chain ? chain.logo_url : null,
-            };
-
-            serviceType = provider.service_categories?.slug || null;
-          }
+          serviceType = provider.service_categories?.slug || null;
         }
       }
 
@@ -1241,47 +1334,35 @@ export async function refresh(
       let serviceType = null;
       let providerInfo = null;
       if (user.role === enum_roles.provider) {
-        const clinic = await prisma.clinics.findFirst({
-          where: { user_id: user.id },
-          select: { id: true, name: true, logo_url: true },
+        // Ver nota en login(): ya no se le da prioridad a la tabla legacy `clinics`.
+        const provider = await prisma.providers.findFirst({
+          where: {
+            user_id: user.id,
+            verification_status: { in: [enum_verification.APPROVED, enum_verification.PENDING] },
+          },
+          include: {
+            service_categories: { select: { slug: true } },
+            pharmacy_chains: true,
+          },
+          orderBy: { id: "desc" },
         });
-
-        if (clinic) {
+        if (provider) {
+          serviceType = provider.service_categories?.slug;
+          const isChainMember =
+            !!provider.chain_id && !!provider.pharmacy_chains;
+          const chain = provider.pharmacy_chains;
           providerInfo = {
-            id: clinic.id,
-            commercialName: clinic.name,
-            logoUrl: clinic.logo_url,
+            id: provider.id,
+            commercialName:
+              isChainMember && chain ? chain.name : provider.commercial_name,
+            logoUrl:
+              isChainMember && chain
+                ? chain.logo_url || null
+                : provider.logo_url,
+            isChainMember: isChainMember,
+            chainName: isChainMember && chain ? chain.name : null,
+            chainLogo: isChainMember && chain ? chain.logo_url : null,
           };
-          serviceType = CLINICS_PROVIDER_TYPE;
-        } else {
-          const provider = await prisma.providers.findFirst({
-            where: {
-              user_id: user.id,
-              verification_status: { in: [enum_verification.APPROVED, enum_verification.PENDING] },
-            },
-            include: {
-              service_categories: { select: { slug: true } },
-              pharmacy_chains: true,
-            },
-          });
-          if (provider) {
-            serviceType = provider.service_categories?.slug;
-            const isChainMember =
-              !!provider.chain_id && !!provider.pharmacy_chains;
-            const chain = provider.pharmacy_chains;
-            providerInfo = {
-              id: provider.id,
-              commercialName:
-                isChainMember && chain ? chain.name : provider.commercial_name,
-              logoUrl:
-                isChainMember && chain
-                  ? chain.logo_url || null
-                  : provider.logo_url,
-              isChainMember: isChainMember,
-              chainName: isChainMember && chain ? chain.name : null,
-              chainLogo: isChainMember && chain ? chain.logo_url : null,
-            };
-          }
         }
       }
       const normalizedServiceType = normalizeProviderServiceType(serviceType);
@@ -1365,62 +1446,48 @@ export async function me(
   };
 
   if (user.role === enum_roles.provider) {
-    const clinic = await prisma.clinics.findFirst({
-      where: { user_id: user.id },
-      select: { id: true, name: true, logo_url: true },
+    // Ver nota en login(): ya no se le da prioridad a la tabla legacy `clinics`.
+    // Buscar provider incluyendo null como PENDING
+    const provider = await prisma.providers.findFirst({
+      where: {
+        user_id: user.id,
+        OR: [
+          { verification_status: { in: [enum_verification.APPROVED, enum_verification.PENDING] } },
+          { verification_status: null }, // Tratar null como PENDING
+        ],
+      },
+      include: {
+        service_categories: { select: { slug: true, name: true } },
+        pharmacy_chains: true,
+      },
+      orderBy: { id: "desc" },
     });
 
-    if (clinic) {
-      responseData.serviceType = CLINICS_PROVIDER_TYPE;
-      responseData.tipo = CLINICS_PROVIDER_TYPE;
-      responseData.name = clinic.name;
-      responseData.provider = {
-        id: clinic.id,
-        commercialName: clinic.name,
-        logoUrl: clinic.logo_url,
-      };
-    } else {
-      // Buscar provider incluyendo null como PENDING
-      const provider = await prisma.providers.findFirst({
-        where: {
-          user_id: user.id,
-          OR: [
-            { verification_status: { in: [enum_verification.APPROVED, enum_verification.PENDING] } },
-            { verification_status: null }, // Tratar null como PENDING
-          ],
-        },
-        include: {
-          service_categories: { select: { slug: true, name: true } },
-          pharmacy_chains: true,
-        },
-      });
+    if (provider) {
+      const normalizedServiceType = normalizeProviderServiceType(
+        provider.service_categories?.slug || null,
+      );
 
-      if (provider) {
-        const normalizedServiceType = normalizeProviderServiceType(
-          provider.service_categories?.slug || null,
-        );
+      const isChainMember = !!provider.chain_id && !!provider.pharmacy_chains;
+      const chain = provider.pharmacy_chains;
+      const displayName =
+        isChainMember && chain ? chain.name : provider.commercial_name;
+      const displayLogo =
+        isChainMember && chain ? chain.logo_url || null : provider.logo_url;
 
-        const isChainMember = !!provider.chain_id && !!provider.pharmacy_chains;
-        const chain = provider.pharmacy_chains;
-        const displayName =
-          isChainMember && chain ? chain.name : provider.commercial_name;
-        const displayLogo =
-          isChainMember && chain ? chain.logo_url || null : provider.logo_url;
-
-        if (normalizedServiceType) {
-          responseData.serviceType = normalizedServiceType;
-          responseData.tipo = normalizedServiceType;
-        }
-        responseData.name = displayName;
-        responseData.provider = {
-          id: provider.id,
-          commercialName: displayName,
-          logoUrl: displayLogo,
-          isChainMember: isChainMember,
-          chainName: isChainMember && chain ? chain.name : null,
-          chainLogo: isChainMember && chain ? chain.logo_url : null,
-        };
+      if (normalizedServiceType) {
+        responseData.serviceType = normalizedServiceType;
+        responseData.tipo = normalizedServiceType;
       }
+      responseData.name = displayName;
+      responseData.provider = {
+        id: provider.id,
+        commercialName: displayName,
+        logoUrl: displayLogo,
+        isChainMember: isChainMember,
+        chainName: isChainMember && chain ? chain.name : null,
+        chainLogo: isChainMember && chain ? chain.logo_url : null,
+      };
     }
   }
 

@@ -57,6 +57,18 @@ export const TYPE_TO_SLUG: Record<string, string> = {
   centro_estetico: "aesthetic",
 };
 
+// ── Service category slug → etiqueta legible en español (para emails/notificaciones) ──
+export const SLUG_TO_LABEL_ES: Record<string, string> = {
+  doctor: "Médico",
+  pharmacy: "Farmacia",
+  laboratory: "Laboratorio",
+  ambulance: "Ambulancia",
+  supplies: "Insumos Médicos",
+  clinica: "Clínica",
+  clinic: "Clínica",
+  aesthetic: "Centro Estético",
+};
+
 /** Canonical provider type returned in auth (login/me) for clinic admins. */
 export const CLINICS_PROVIDER_TYPE = "clinics" as const;
 
