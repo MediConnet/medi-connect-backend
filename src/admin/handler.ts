@@ -6,12 +6,14 @@ import { logger } from '../shared/logger';
 import { getPrismaClient } from '../shared/prisma';
 import { errorResponse, internalErrorResponse, notFoundResponse, paginatedResponse, successResponse } from '../shared/response';
 import { parseBody } from '../shared/validators';
+import { SLUG_TO_LABEL_ES } from '../shared/constants';
 import { createPharmacyChain, deletePharmacyChain, getPharmacyChains, updatePharmacyChain } from './pharmacy-chains.controller';
 import { getAdminAds, createAdminAd, updateAdminAd, deleteAdminAd, toggleAdminAd } from './ads.controller';
-import { 
-  getDoctorPayments, 
-  getClinicPayments, 
-  markDoctorPaymentsPaid, 
+import {
+  getDoctorPayments,
+  getAestheticPayments,
+  getClinicPayments,
+  markDoctorPaymentsPaid,
   markClinicPaymentPaid, 
   getPaymentHistory,
   getTransactionHistory,
@@ -195,6 +197,23 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       console.log('✅ [ADMIN] GET /api/admin/payments/doctors - Obteniendo pagos a médicos');
       const result = await getDoctorPayments(event);
       console.log(`✅ [ADMIN] GET /api/admin/payments/doctors - Completado con status ${result.statusCode}`);
+      return result;
+    }
+
+    // GET /api/admin/payments/aesthetic
+    if (method === 'GET' && path === '/api/admin/payments/aesthetic') {
+      console.log('✅ [ADMIN] GET /api/admin/payments/aesthetic - Obteniendo pagos a centros estéticos');
+      const result = await getAestheticPayments(event);
+      console.log(`✅ [ADMIN] GET /api/admin/payments/aesthetic - Completado con status ${result.statusCode}`);
+      return result;
+    }
+
+    // POST /api/admin/payments/aesthetic/:providerId/mark-paid
+    // Reutiliza markDoctorPaymentsPaid: es genérico, solo usa paymentIds del body.
+    if (method === 'POST' && path.match(/^\/api\/admin\/payments\/aesthetic\/[^/]+\/mark-paid$/)) {
+      console.log('✅ [ADMIN] POST /api/admin/payments/aesthetic/:providerId/mark-paid - Marcando pagos como pagados');
+      const result = await markDoctorPaymentsPaid(event);
+      console.log(`✅ [ADMIN] POST /api/admin/payments/aesthetic/:providerId/mark-paid - Completado con status ${result.statusCode}`);
       return result;
     }
 
@@ -516,6 +535,7 @@ async function getDashboardStats(event: APIGatewayProxyEventV2): Promise<APIGate
     totalAmbulances,
     totalSupplies,
     totalClinicas,
+    totalAesthetic,
   ] = await Promise.all([
     prisma.users.count(),
     prisma.cities.count(),
@@ -578,10 +598,18 @@ async function getDashboardStats(event: APIGatewayProxyEventV2): Promise<APIGate
         verification_status: 'APPROVED',
       },
     }),
+    prisma.providers.count({
+      where: {
+        service_categories: {
+          slug: 'aesthetic',
+        },
+        verification_status: 'APPROVED',
+      },
+    }),
   ]);
 
   // Calcular total de servicios
-  const totalServices = totalDoctors + totalPharmacies + totalLaboratories + totalAmbulances + totalSupplies + totalClinicas;
+  const totalServices = totalDoctors + totalPharmacies + totalLaboratories + totalAmbulances + totalSupplies + totalClinicas + totalAesthetic;
 
   // Por ahora, los trends son "0%" ya que no tenemos datos históricos
   // En el futuro se puede calcular comparando con el mes anterior
@@ -617,6 +645,7 @@ async function getDashboardStats(event: APIGatewayProxyEventV2): Promise<APIGate
       ambulances: totalAmbulances,
       supplies: totalSupplies,
       clinicas: totalClinicas,
+      aesthetic: totalAesthetic,
     },
     recentActivity: await compileRecentActivity(prisma, 5),
   };
@@ -1587,6 +1616,10 @@ async function approveRequest(event: APIGatewayProxyEventV2): Promise<APIGateway
       type = "cita";
       title = "¡Nueva clínica disponible! 🏥";
       body = `La clínica ${providerName} se ha unido a DOCALINK. Ya puedes agendar citas en sus consultorios.`;
+    } else if (categorySlug === "aesthetic") {
+      type = "cita";
+      title = "¡Nuevo centro estético disponible! 💆";
+      body = `El centro estético ${providerName} se ha unido a DOCALINK. Ya puedes conocer sus tratamientos y agendar una cita.`;
     }
 
     console.log(`🔔 [APPROVE_REQUEST] Enviando broadcast de nuevo proveedor a todos los pacientes: ${providerName}`);
@@ -1616,10 +1649,11 @@ async function approveRequest(event: APIGatewayProxyEventV2): Promise<APIGateway
       userEmail.split("@")[0] ||
       "Usuario";
 
+    const categorySlugForEmail = provider.service_categories?.slug;
     const userRole =
-      provider.service_categories?.slug ||
-      provider.service_categories?.name?.toLowerCase() ||
-      "provider";
+      (categorySlugForEmail && SLUG_TO_LABEL_ES[categorySlugForEmail]) ||
+      provider.service_categories?.name ||
+      "Proveedor";
 
     const emailHtml = generateRequestAcceptedEmail({
       userName,

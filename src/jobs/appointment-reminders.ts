@@ -41,7 +41,7 @@ export async function sendAppointmentReminders(): Promise<void> {
           },
         },
         providers: {
-          select: { commercial_name: true },
+          select: { commercial_name: true, service_categories: { select: { slug: true } } },
         },
         provider_branches: {
           select: { address_text: true },
@@ -83,6 +83,7 @@ export async function sendAppointmentReminders(): Promise<void> {
         // Nombre y dirección del lugar de atención
         const clinicName = appointment.clinics?.name || doctorName || 'Docalink';
         const clinicAddress = appointment.clinics?.address || (appointment as any).provider_branches?.address_text || undefined;
+        const isAestheticProvider = (appointment as any).providers?.service_categories?.slug === "aesthetic";
         
         // Verificar que el paciente tenga email
         if (!appointment.patients?.users?.email) {
@@ -104,6 +105,7 @@ export async function sendAppointmentReminders(): Promise<void> {
             date: formatDate(appointment.scheduled_for),
             time: formatTime(appointment.scheduled_for),
             reason: appointment.reason ?? undefined,
+            is_aesthetic: isAestheticProvider,
           },
           clinicAddress,
           'Recordatorio: Tu cita es mañana',

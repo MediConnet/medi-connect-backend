@@ -561,10 +561,16 @@ functions:
           path: /api/admin/payments/doctors
           method: GET
       - httpApi:
+          path: /api/admin/payments/aesthetic
+          method: GET
+      - httpApi:
           path: /api/admin/payments/clinics
           method: GET
       - httpApi:
           path: /api/admin/payments/doctors/{doctorId}/mark-paid
+          method: POST
+      - httpApi:
+          path: /api/admin/payments/aesthetic/{providerId}/mark-paid
           method: POST
       - httpApi:
           path: /api/admin/payments/clinics/{clinicPaymentId}/mark-paid

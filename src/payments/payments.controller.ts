@@ -11,6 +11,7 @@ import {
 } from "../shared/response";
 import { nuveiService } from "./nuvei.service";
 import { PAYOUT_TYPE_CLINIC, PAYOUT_TYPE_DOCTOR } from "../shared/constants";
+import { resolveCommissionPercent } from "../shared/commission";
 
 /**
  * Genera un ID de transacción corto y único (Máx 15 chars)
@@ -40,9 +41,15 @@ export async function sendPaymentConfirmationEmailHelper(
             users: true,
           },
         },
-        providers: true,
+        providers: {
+          include: {
+            service_categories: { select: { slug: true } },
+            users: { select: { email: true } },
+          },
+        },
         specialties: true,
         clinics: true,
+        provider_branches: true,
       },
     });
 
@@ -52,10 +59,12 @@ export async function sendPaymentConfirmationEmailHelper(
     }
 
     const patientName = appointment.patients?.full_name || "Paciente";
-    
+
     const doctorName = appointment.providers?.commercial_name || "Médico";
     const doctorSpecialty = appointment.specialties?.name || "Medicina General";
-    const clinicName = appointment.clinics?.name || "DocaLink";
+    const clinicName = appointment.providers?.commercial_name || appointment.clinics?.name || "DocaLink";
+    const clinicAddress = (appointment as any).provider_branches?.address_text || undefined;
+    const isAestheticProvider = appointment.providers?.service_categories?.slug === "aesthetic";
     
     const formattedDate = appointment.scheduled_for ? appointment.scheduled_for.toLocaleDateString("es-ES", {
       day: "numeric",
@@ -76,20 +85,49 @@ export async function sendPaymentConfirmationEmailHelper(
       doctorName,
       doctorSpecialty,
       clinicName,
+      clinicAddress,
       date: formattedDate,
       time: formattedTime,
       amount,
       transactionId,
       authorizationCode,
+      isAesthetic: isAestheticProvider,
+      googleMapsUrl: (appointment as any).provider_branches?.google_maps_url ?? null,
+      latitude: (appointment as any).provider_branches?.latitude ?? null,
+      longitude: (appointment as any).provider_branches?.longitude ?? null,
     });
 
     await sendEmail({
       to: appointment.patients.users.email,
-      subject: `Comprobante de Pago - Cita con Dr(a). ${doctorName}`,
+      subject: `Comprobante de Pago - Cita con ${isAestheticProvider ? doctorName : `Dr(a). ${doctorName}`}`,
       html: emailHtml,
     });
 
     console.log(`✉️ [PAYMENTS] Correo de confirmación de pago enviado a: ${appointment.patients.users.email}`);
+
+    // Email de nueva cita (ya pagada) al proveedor
+    const providerEmail = appointment.providers?.users?.email;
+    if (providerEmail) {
+      const { generateDoctorNewAppointmentEmail } = await import("../shared/email");
+      await sendEmail({
+        to: providerEmail,
+        subject: `Nueva cita agendada - ${doctorName}`,
+        html: generateDoctorNewAppointmentEmail({
+          doctorName,
+          clinicName,
+          patientName,
+          patientPhone: appointment.patients?.phone || undefined,
+          patientEmail: appointment.patients.users.email,
+          date: formattedDate,
+          time: formattedTime,
+          reason: appointment.reason || undefined,
+          clinicAddress: clinicAddress || "Dirección no especificada",
+          isAesthetic: isAestheticProvider,
+          amount,
+          isPaid: true,
+        }),
+      }).catch((err: any) => console.error("❌ [PAYMENTS] Error enviando email al proveedor:", err.message));
+    }
   } catch (err: any) {
     console.error("❌ [PAYMENTS] Error al enviar correo de confirmación de pago:", err.message);
   }
@@ -136,7 +174,11 @@ export async function processNuveiPayment(
             users: true
           }
         },
-        providers: true,
+        providers: {
+          include: {
+            service_categories: { select: { slug: true } },
+          },
+        },
         provider_branches: true,
       },
     });
@@ -204,9 +246,7 @@ export async function processNuveiPayment(
       });
     }
 
-    const commissionPercent = appointment.clinic_id
-      ? Number(settings.commission_clinic)
-      : Number(settings.commission_doctor);
+    const commissionPercent = resolveCommissionPercent(appointment, settings);
 
     const platformFee = Number((costDecimal * (commissionPercent / 100)).toFixed(2));
     const providerAmount = Number((costDecimal - platformFee).toFixed(2));
@@ -646,7 +686,8 @@ export async function initNuveiCheckout(
         },
         providers: {
           include: {
-            provider_branches: true
+            provider_branches: true,
+            service_categories: { select: { slug: true } },
           }
         },
       },
@@ -690,9 +731,7 @@ export async function initNuveiCheckout(
       });
     }
 
-    const commissionPercent = appointment.clinic_id
-      ? Number(settings.commission_clinic)
-      : Number(settings.commission_doctor);
+    const commissionPercent = resolveCommissionPercent(appointment, settings);
 
     const platformFee = Number((costDecimal * (commissionPercent / 100)).toFixed(2));
     const providerAmount = Number((costDecimal - platformFee).toFixed(2));
@@ -804,7 +843,11 @@ export async function retryNuveiPayment(
       where: { id: body.appointmentId },
       include: {
         patients: { include: { users: true } },
-        providers: true,
+        providers: {
+          include: {
+            service_categories: { select: { slug: true } },
+          },
+        },
         provider_branches: true,
       },
     });
@@ -868,9 +911,7 @@ export async function retryNuveiPayment(
       return errorResponse(`El costo de la consulta ($${costDecimal}) no es válido.`, 400);
     }
 
-    const commissionPercent = originalAppointment.clinic_id
-      ? Number(settings.commission_clinic)
-      : Number(settings.commission_doctor);
+    const commissionPercent = resolveCommissionPercent(originalAppointment, settings);
 
     const platformFee = Number((costDecimal * (commissionPercent / 100)).toFixed(2));
     const providerAmount = Number((costDecimal - platformFee).toFixed(2));

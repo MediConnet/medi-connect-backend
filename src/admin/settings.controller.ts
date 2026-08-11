@@ -15,6 +15,7 @@ const updateSettingsSchema = z.object({
   commissionPharmacy: z.number().min(0).max(100).optional(),
   commissionSupplies: z.number().min(0).max(100).optional(),
   commissionAmbulance: z.number().min(0).max(100).optional(),
+  commissionAesthetic: z.number().min(0).max(100).optional(),
   notifyNewRequests: z.boolean().optional(),
   notifyEmailSummary: z.boolean().optional(),
   autoApproveServices: z.boolean().optional(),
@@ -66,6 +67,7 @@ export async function getSettings(event: APIGatewayProxyEventV2): Promise<APIGat
       commissionPharmacy: Number(settings.commission_pharmacy),
       commissionSupplies: Number(settings.commission_supplies),
       commissionAmbulance: Number(settings.commission_ambulance),
+      commissionAesthetic: Number(settings.commission_aesthetic),
       notifyNewRequests: settings.notify_new_requests,
       notifyEmailSummary: settings.notify_email_summary,
       autoApproveServices: settings.auto_approve_services,
@@ -124,6 +126,7 @@ export async function updateSettings(event: APIGatewayProxyEventV2): Promise<API
     if (data.commissionPharmacy !== undefined) updateData.commission_pharmacy = data.commissionPharmacy;
     if (data.commissionSupplies !== undefined) updateData.commission_supplies = data.commissionSupplies;
     if (data.commissionAmbulance !== undefined) updateData.commission_ambulance = data.commissionAmbulance;
+    if (data.commissionAesthetic !== undefined) updateData.commission_aesthetic = data.commissionAesthetic;
     if (data.notifyNewRequests !== undefined) updateData.notify_new_requests = data.notifyNewRequests;
     if (data.notifyEmailSummary !== undefined) updateData.notify_email_summary = data.notifyEmailSummary;
     if (data.autoApproveServices !== undefined) updateData.auto_approve_services = data.autoApproveServices;
@@ -155,6 +158,7 @@ export async function updateSettings(event: APIGatewayProxyEventV2): Promise<API
       commissionPharmacy: Number(settings.commission_pharmacy),
       commissionSupplies: Number(settings.commission_supplies),
       commissionAmbulance: Number(settings.commission_ambulance),
+      commissionAesthetic: Number(settings.commission_aesthetic),
       notifyNewRequests: settings.notify_new_requests,
       notifyEmailSummary: settings.notify_email_summary,
       autoApproveServices: settings.auto_approve_services,

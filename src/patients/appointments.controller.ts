@@ -60,7 +60,7 @@ export async function createAppointment(
     const doctor = await prisma.providers.findUnique({
       where: { id: body.doctorId },
       include: {
-        users: { select: { is_active: true } },
+        users: { select: { is_active: true, email: true } },
         service_categories: { select: { slug: true } },
         provider_branches: {
           where: { is_main: true, is_active: true },
@@ -76,13 +76,18 @@ export async function createAppointment(
       return errorResponse("Doctor or provider not found or inactive", 404);
     }
 
+    // Solo los proveedores de categoría "doctor" requieren una especialidad médica.
+    // Para el resto (estética, farmacia, laboratorio, etc.) no tiene sentido forzar
+    // una especialidad médica aleatoria como comodín — la cita queda sin specialty_id.
+    const isMedicalDoctor = doctor.service_categories?.slug === "doctor";
+
     let finalSpecialtyId = body.specialtyId || doctor.provider_specialties[0]?.specialty_id || null;
-    if (!finalSpecialtyId) {
+    if (!finalSpecialtyId && isMedicalDoctor) {
       const anySpec = await prisma.specialties.findFirst();
       finalSpecialtyId = anySpec?.id || null;
     }
 
-    if (!finalSpecialtyId) {
+    if (!finalSpecialtyId && isMedicalDoctor) {
       return errorResponse("No se encontró una especialidad para asignar a la cita", 400);
     }
 
@@ -277,7 +282,9 @@ export async function createAppointment(
       const { generatePatientNewAppointmentEmail } = await import("../shared/email");
       const providerName = (appointment as any).providers?.commercial_name || "Médico";
       const specialtyName = (appointment as any).specialties?.name || "Especialidad";
-      const branchAddress = (appointment as any).provider_branches?.address_text || "Dirección no especificada";
+      const branch = (appointment as any).provider_branches;
+      const branchAddress = branch?.address_text || "Dirección no especificada";
+      const isAestheticProvider = (appointment as any).providers?.service_categories?.slug === "aesthetic";
       sendEmail({
         to: patient.users.email,
         subject: "Tu cita ha sido confirmada - DOCALINK",
@@ -290,8 +297,36 @@ export async function createAppointment(
           date: body.date,
           time: body.time,
           reason: body.reason,
+          isAesthetic: isAestheticProvider,
+          amount: appointmentCost,
+          googleMapsUrl: branch?.google_maps_url ?? null,
+          latitude: branch?.latitude ?? null,
+          longitude: branch?.longitude ?? null,
         }),
       }).catch((err: any) => console.error("❌ [APPOINTMENTS] Error enviando email confirmación:", err.message));
+
+      // Email de nueva cita al proveedor (médico/centro estético) - asíncrono, no bloquea
+      if (doctor.users?.email) {
+        const { generateDoctorNewAppointmentEmail } = await import("../shared/email");
+        sendEmail({
+          to: doctor.users.email,
+          subject: `Nueva cita agendada - ${providerName}`,
+          html: generateDoctorNewAppointmentEmail({
+            doctorName: providerName,
+            clinicName: providerName,
+            patientName: patient.full_name || "Paciente",
+            patientPhone: body.phone || undefined,
+            patientEmail: patient.users?.email || undefined,
+            date: body.date,
+            time: body.time,
+            reason: body.reason,
+            clinicAddress: branchAddress,
+            isAesthetic: isAestheticProvider,
+            amount: appointmentCost,
+            isPaid: false,
+          }),
+        }).catch((err: any) => console.error("❌ [APPOINTMENTS] Error enviando email al proveedor:", err.message));
+      }
 
       // Notificación push/in-app
       const formattedDate = appointment.scheduled_for ? appointment.scheduled_for.toLocaleDateString("es-ES", {
@@ -309,7 +344,7 @@ export async function createAppointment(
         patientId: patient.id,
         type: "cita",
         title: "Cita Agendada",
-        body: `Tu cita con Dr(a). ${providerName} ha sido registrada para el ${formattedDate} a las ${formattedTime}.`,
+        body: `Tu cita con ${isAestheticProvider ? providerName : `Dr(a). ${providerName}`} ha sido registrada para el ${formattedDate} a las ${formattedTime}.`,
         data: {
           targetScreen: "Citas",
           appointmentId: appointment.id,
@@ -734,7 +769,7 @@ export async function cancelAppointment(
       where: { id: appointmentId },
       include: {
         patients: { include: { users: { select: { email: true } } } },
-        providers: { select: { commercial_name: true } },
+        providers: { select: { commercial_name: true, service_categories: { select: { slug: true } } } },
         clinics: { select: { name: true } },
       },
     });
@@ -847,6 +882,7 @@ export async function cancelAppointment(
           time: timeStr,
           doctorName: (appointment as any).providers?.commercial_name || "Médico",
           clinicName: (appointment as any).providers?.commercial_name || "Docalink",
+          isAesthetic: (appointment as any).providers?.service_categories?.slug === "aesthetic",
         }),
       }).catch((err: any) => console.error("❌ [APPOINTMENTS] Error enviando email cancelación:", err.message));
     }

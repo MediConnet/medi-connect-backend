@@ -5,6 +5,7 @@ import { AuthContext, requireRole } from '../shared/auth';
 import { getPrismaClient } from '../shared/prisma';
 import { errorResponse, internalErrorResponse, paginatedResponse, successResponse } from '../shared/response';
 import { uploadImageToCloudinary, isBase64Image } from '../shared/cloudinary';
+import { SLUG_TO_LABEL_ES } from '../shared/constants';
 
 async function autoExpireAds() {
   try {
@@ -35,12 +36,13 @@ interface CreateAdBody {
 
 // --- CONFIGURACIÓN DE TEMA ---
 const SERVICE_THEME: Record<string, { bg: string, accent: string }> = {
-  doctor:      { bg: '#E0F2F1', accent: '#009688' }, 
-  pharmacy:    { bg: '#E3F2FD', accent: '#1E88E5' }, 
-  laboratory:  { bg: '#F3E5F5', accent: '#8E24AA' }, 
-  ambulance:   { bg: '#FBE9E7', accent: '#D84315' }, 
-  supplies:    { bg: '#FFF3E0', accent: '#F57C00' }, 
-  clinic:      { bg: '#E0F7FA', accent: '#006064' }, 
+  doctor:      { bg: '#E0F2F1', accent: '#009688' },
+  pharmacy:    { bg: '#E3F2FD', accent: '#1E88E5' },
+  laboratory:  { bg: '#F3E5F5', accent: '#8E24AA' },
+  ambulance:   { bg: '#FBE9E7', accent: '#D84315' },
+  supplies:    { bg: '#FFF3E0', accent: '#F57C00' },
+  clinic:      { bg: '#E0F7FA', accent: '#006064' },
+  aesthetic:   { bg: '#FCE4EC', accent: '#D81B60' },
   default:     { bg: '#FFFFFF', accent: '#009688' }
 };
 
@@ -52,13 +54,15 @@ const getTargetScreenBySlug = (slug?: string): string => {
     case 'doctor':
       return 'DoctorDetail';
     case 'pharmacy':
-      return 'FarmaciaDetail'; 
+      return 'FarmaciaDetail';
     case 'laboratory':
       return 'LaboratorioDetail';
     case 'ambulance':
       return 'AmbulanciaDetail';
     case 'supplies':
       return 'InsumoDetail';
+    case 'aesthetic':
+      return 'EsteticaDetail';
     case 'clinic':
     case 'clinica':
       return 'Home'; // Fallback si no hay ClinicDetail
@@ -81,7 +85,9 @@ const getNavigationParams = (screen: string, id: string) => {
     case 'AmbulanciaDetail':
       return { ambulanciaId: id };
     case 'InsumoDetail':
-      return { tiendaId: id }; 
+      return { tiendaId: id };
+    case 'EsteticaDetail':
+      return { esteticaId: id };
     default:
       return { providerId: id };
   }
@@ -243,7 +249,8 @@ export async function getPublicAds(event: APIGatewayProxyEventV2): Promise<APIGa
           providers: {
             select: {
               logo_url: true,
-              commercial_name: true 
+              commercial_name: true,
+              service_categories: { select: { slug: true } },
             }
           }
         },
@@ -258,6 +265,7 @@ export async function getPublicAds(event: APIGatewayProxyEventV2): Promise<APIGa
         const screenName = ad.target_screen || 'Home';
         const providerId = ad.target_id || '';
         const navParams = getNavigationParams(screenName, providerId);
+        const serviceSlug = ad.providers?.service_categories?.slug;
 
         return {
             id: ad.id,
@@ -266,19 +274,20 @@ export async function getPublicAds(event: APIGatewayProxyEventV2): Promise<APIGa
             subtitle: ad.subtitle,
             image: ad.image_url,
             actionText: ad.action_text,
-            color: ad.bg_color_hex, 
+            color: ad.bg_color_hex,
             accent: ad.accent_color_hex,
             startDate: ad.start_date ? new Date(ad.start_date).toISOString().split('T')[0] : null,
             endDate: ad.end_date ? new Date(ad.end_date).toISOString().split('T')[0] : null,
             isAdminAd: !ad.providers,
-            
+
             navigation: {
                 screen: screenName,
-                params: navParams 
+                params: navParams
             },
-            
+
             providerName: ad.providers?.commercial_name,
-            providerLogo: ad.providers?.logo_url
+            providerLogo: ad.providers?.logo_url,
+            serviceLabel: serviceSlug ? (SLUG_TO_LABEL_ES[serviceSlug] || serviceSlug) : undefined,
         };
     });
 

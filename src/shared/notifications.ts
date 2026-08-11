@@ -15,6 +15,7 @@ export interface AppointmentNotificationData {
   date: string;
   time: string;
   reason?: string;
+  is_aesthetic?: boolean;
 }
 
 /**
@@ -72,7 +73,9 @@ export async function sendEmailToDoctor(
   clinicName: string,
   appointment: AppointmentNotificationData,
   clinicAddress?: string,
-  subject?: string
+  subject?: string,
+  patientContact?: { phone?: string; email?: string },
+  payment?: { amount?: number; isPaid?: boolean }
 ): Promise<void> {
   try {
     const emailSubject = subject || `Nueva cita agendada - ${clinicName}`;
@@ -80,10 +83,15 @@ export async function sendEmailToDoctor(
       doctorName,
       clinicName,
       patientName: appointment.patient_name || 'Paciente',
+      patientPhone: patientContact?.phone,
+      patientEmail: patientContact?.email,
       date: appointment.date,
       time: appointment.time,
       reason: appointment.reason,
       clinicAddress: clinicAddress || 'Dirección no especificada',
+      isAesthetic: appointment.is_aesthetic,
+      amount: payment?.amount,
+      isPaid: payment?.isPaid,
     });
 
     await sendEmail({
@@ -149,6 +157,7 @@ export async function sendEmailToPatient(
         clinicAddress: clinicAddress || 'Dirección no especificada',
         date: appointment.date,
         time: appointment.time,
+        isAesthetic: appointment.is_aesthetic,
       });
     } else if (subject.includes('cancelada')) {
       emailHtml = generatePatientCancellationEmail({
@@ -157,6 +166,7 @@ export async function sendEmailToPatient(
         time: appointment.time,
         doctorName: appointment.doctor_name || 'Médico',
         clinicName,
+        isAesthetic: appointment.is_aesthetic,
       });
     } else {
       emailHtml = generatePatientNewAppointmentEmail({
@@ -168,6 +178,7 @@ export async function sendEmailToPatient(
         date: appointment.date,
         time: appointment.time,
         reason: appointment.reason,
+        isAesthetic: appointment.is_aesthetic,
       });
     }
 

@@ -50,17 +50,19 @@ export function startScheduler(): void {
     }
   });
 
-  // Cada día a las 8:00 AM (hora Ecuador, UTC-5 = 13:00 UTC)
-  cron.schedule('0 13 * * *', async () => {
+  // Cada día a las 8:00 AM hora Ecuador (timezone explícito: ya no depende de que
+  // el servidor corra en UTC — antes se calculaba a mano '0 13 * * *' asumiéndolo,
+  // y si el servidor no está en UTC esto se dispara a la hora equivocada)
+  cron.schedule('0 8 * * *', async () => {
     try {
       console.log('📅 [SCHEDULER] Ejecutando recordatorios de citas 24h...');
       await sendAppointmentReminders();
     } catch (error) {
       console.error('❌ [SCHEDULER] Error en sendAppointmentReminders:', error);
     }
-  });
+  }, { timezone: 'America/Guayaquil' });
 
-  // Cada día a las 3:00 AM UTC: actualizar servicios destacados
+  // Cada día a las 3:00 AM UTC: actualizar servicios destacados (timezone explícito)
   cron.schedule('0 3 * * *', async () => {
     try {
       console.log('🏆 [SCHEDULER] Ejecutando actualización de destacados...');
@@ -68,7 +70,7 @@ export function startScheduler(): void {
     } catch (error) {
       console.error('❌ [SCHEDULER] Error en updateFeaturedBranches:', error);
     }
-  });
+  }, { timezone: 'UTC' });
 
   console.log('✅ [SCHEDULER] Cron jobs activos:');
   console.log('   - checkReminders: cada minuto');
