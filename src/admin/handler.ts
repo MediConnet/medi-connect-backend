@@ -667,7 +667,11 @@ async function getRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayPro
   }
 
   const queryParams = event.queryStringParameters || {};
-  const status = queryParams.status; // 'PENDING', 'APPROVED', 'REJECTED'
+  const status = queryParams.status; // 'PENDING', 'APPROVED', 'REJECTED', 'ALL'
+  const search = queryParams.search?.trim();
+  const serviceType = queryParams.serviceType || '';
+  const dateFrom = queryParams.dateFrom || '';
+  const dateTo = queryParams.dateTo || '';
   const page = parseInt(queryParams.page || '1', 10);
   const limit = parseInt(queryParams.limit || '20', 10);
   const offset = (page - 1) * limit;
@@ -686,11 +690,11 @@ async function getRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayPro
           ? "ALL"
           : "PENDING";
 
-  console.log(`🔍 [GET_REQUESTS] Buscando providers con status: ${verificationStatus}`);
+  console.log(`🔍 [GET_REQUESTS] Buscando providers con status: ${verificationStatus}, search="${search || ''}", serviceType="${serviceType}", dateFrom="${dateFrom}", dateTo="${dateTo}"`);
 
-  const whereClause =
+  const statusFilter =
     verificationStatus === "ALL"
-      ? {}
+      ? null
       : verificationStatus === "PENDING"
         ? {
             OR: [
@@ -702,9 +706,67 @@ async function getRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayPro
             verification_status: verificationStatus,
           };
 
+  // Filtros adicionales (búsqueda, tipo de servicio, rango de fechas) — comunes
+  // con /api/admin/history, se combinan con el filtro de estado vía AND.
+  const extraFilters: any[] = [];
+
+  if (search) {
+    extraFilters.push({
+      OR: [
+        { commercial_name: { contains: search, mode: 'insensitive' } },
+        { users: { email: { contains: search, mode: 'insensitive' } } },
+        { provider_branches: {
+          some: {
+            OR: [
+              { address_text: { contains: search, mode: 'insensitive' } },
+              { cities: { name: { contains: search, mode: 'insensitive' } } },
+            ],
+          },
+        } },
+      ],
+    });
+  }
+
+  if (serviceType) {
+    extraFilters.push(
+      serviceType === 'clinica'
+        ? { service_categories: { slug: { in: ['clinic', 'clinica'] } } }
+        : { service_categories: { slug: serviceType } }
+    );
+  }
+
+  if (dateFrom || dateTo) {
+    const dateFilter: any = {};
+    if (dateFrom) dateFilter.gte = new Date(dateFrom);
+    if (dateTo) dateFilter.lte = new Date(dateTo + 'T23:59:59.999Z');
+    extraFilters.push({ users: { created_at: dateFilter } });
+  }
+
+  const whereClause: any = {
+    ...(statusFilter ? statusFilter : {}),
+    ...(extraFilters.length > 0 ? { AND: extraFilters } : {}),
+  };
+
   // Obtener total para paginación
   const total = await prisma.providers.count({ where: whereClause });
   console.log(`📊 [GET_REQUESTS] Total providers con status ${verificationStatus}: ${total}`);
+
+  // Conteos por estado (respetando búsqueda/tipo/fecha, pero no el filtro de estado)
+  // para las tarjetas de resumen — siempre reflejan el total real de cada estado.
+  const statsBaseWhere: any = extraFilters.length > 0 ? { AND: extraFilters } : {};
+  const [pendingCount, approvedCount, rejectedCount] = await Promise.all([
+    prisma.providers.count({
+      where: { ...statsBaseWhere, OR: [{ verification_status: "PENDING" }, { verification_status: null }] },
+    }),
+    prisma.providers.count({ where: { ...statsBaseWhere, verification_status: "APPROVED" } }),
+    prisma.providers.count({ where: { ...statsBaseWhere, verification_status: "REJECTED" } }),
+  ]);
+  const stats = {
+    pending: pendingCount,
+    approved: approvedCount,
+    rejected: rejectedCount,
+    total: pendingCount + approvedCount + rejectedCount,
+  };
 
   const providers = await prisma.providers.findMany({
     where: whereClause,
@@ -803,7 +865,15 @@ async function getRequests(event: APIGatewayProxyEventV2): Promise<APIGatewayPro
     console.log(`🔍 [GET_REQUESTS] IDs de providers encontrados:`, providers.map((p: typeof providers[0]) => ({ id: p.id, name: p.commercial_name, status: p.verification_status })));
   
   // Agregar headers de no-caché para evitar caché del navegador
-  const response = paginatedResponse(requests, total, page, limit, 200, event);
+  const response = successResponse(
+    {
+      data: requests,
+      pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
+      stats,
+    },
+    200,
+    event,
+  );
   if (response.headers) {
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate';
     response.headers['Pragma'] = 'no-cache';
