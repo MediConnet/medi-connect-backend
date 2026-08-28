@@ -11,6 +11,7 @@ import {
   getClientAuthToken,
   initNuveiCheckout,
   retryNuveiPayment,
+  getCheckoutPage,
 } from "./payments.controller";
 
 export async function handler(
@@ -33,6 +34,13 @@ export async function handler(
     // Genera el Auth-Token cliente para la tokenización directa desde la App
     if (path === "/api/payments/client-auth" && method === "GET") {
       return await getClientAuthToken(event);
+    }
+
+    // GET /api/payments/checkout-page/{reference}
+    // Sirve el HTML del checkout de Paymentez para el WebView móvil.
+    // Al ser una URL real, elimina los problemas de null-origin en iOS WKWebView.
+    if (path.startsWith("/api/payments/checkout-page/") && method === "GET") {
+      return await getCheckoutPage(event);
     }
 
     // POST /api/payments/init-checkout
