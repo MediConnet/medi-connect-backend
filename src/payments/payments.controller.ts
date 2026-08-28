@@ -806,6 +806,123 @@ export async function initNuveiCheckout(
 }
 
 /**
+ * Sirve la página HTML del checkout de Paymentez para el WebView móvil.
+ * Al ser una URL real (no HTML inyectado), el documento tiene un origin real
+ * y los postMessages del iframe de Paymentez llegan correctamente en iOS WKWebView.
+ *
+ * GET /api/payments/checkout-page/{reference}?env=stg|prod
+ */
+export async function getCheckoutPage(
+  event: APIGatewayProxyEventV2,
+): Promise<APIGatewayProxyResult> {
+  const path = event.requestContext.http.path;
+  const reference = path.split("/api/payments/checkout-page/")[1] || "";
+  const env = (event.queryStringParameters?.env as string) || "stg";
+
+  if (!reference) {
+    return {
+      statusCode: 400,
+      headers: { "Content-Type": "text/plain" },
+      body: "Missing reference",
+    };
+  }
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta http-equiv="Content-Security-Policy" content="default-src * 'self' 'unsafe-inline' 'unsafe-eval' data: blob:;">
+  <title>Pago Seguro - Nuvei</title>
+  <script>
+    var originalLog = console.log;
+    var originalError = console.error;
+    console.log = function() {
+      originalLog.apply(console, arguments);
+      try { window.ReactNativeWebView.postMessage(JSON.stringify({ event: 'log', message: Array.prototype.join.call(arguments, ' ') })); } catch(e) {}
+    };
+    console.error = function() {
+      originalError.apply(console, arguments);
+      try { window.ReactNativeWebView.postMessage(JSON.stringify({ event: 'log', message: 'ERROR: ' + Array.prototype.join.call(arguments, ' ') })); } catch(e) {}
+    };
+    window.onerror = function(msg, src, line) {
+      try { window.ReactNativeWebView.postMessage(JSON.stringify({ event: 'log', message: 'EXCEPTION: ' + msg + ' L' + line })); } catch(e) {}
+      return false;
+    };
+    window.addEventListener('message', function(event) {
+      try {
+        console.log('MSG from ' + event.origin + ': ' + JSON.stringify(event.data));
+        var data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+        if (data && data.transaction) {
+          window.ReactNativeWebView.postMessage(JSON.stringify({ event: 'response', data: data }));
+        }
+      } catch(e) {}
+    });
+    window.open = function(url, target, features) {
+      console.log('window.open intercepted: ' + url);
+      var overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:99999;background:#fff;';
+      var iframe = document.createElement('iframe');
+      iframe.src = url;
+      iframe.style.cssText = 'width:100%;height:100%;border:none;';
+      overlay.appendChild(iframe);
+      document.body.appendChild(overlay);
+      window.ReactNativeWebView.postMessage(JSON.stringify({ event: 'open' }));
+      return { closed: false, close: function() { try { document.body.removeChild(overlay); } catch(e) {} this.closed = true; } };
+    };
+  </script>
+  <script src="https://code.jquery.com/jquery-3.5.0.min.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.paymentez.com/ccapi/sdk/payment_checkout_3.0.0.min.js" crossorigin="anonymous"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body, html { width: 100%; height: 100%; background: #fff; }
+    #loading { position: fixed; top:0;left:0;width:100%;height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; background:#fff; z-index:10; }
+    .spinner { border:4px solid rgba(0,0,0,.1); width:36px; height:36px; border-radius:50%; border-left-color:#06b6d4; animation:spin 1s linear infinite; margin-bottom:12px; }
+    @keyframes spin { 0%{transform:rotate(0deg);} 100%{transform:rotate(360deg);} }
+    .loading-text { color:#666; font-size:14px; font-family:-apple-system,sans-serif; }
+    iframe { border:none !important; }
+  </style>
+</head>
+<body>
+  <div id="loading"><div class="spinner"></div><div class="loading-text">Cargando pasarela de pago...</div></div>
+  <script>
+    function hideLoading() { var el=document.getElementById('loading'); if(el) el.style.display='none'; }
+    function initCheckout() {
+      if (typeof PaymentCheckout === 'undefined' || typeof $ === 'undefined') { setTimeout(initCheckout, 300); return; }
+      try {
+        console.log('SDK ready');
+        hideLoading();
+        var pc = new PaymentCheckout.modal({
+          env_mode: '${env}',
+          onOpen: function() { console.log('onOpen'); hideLoading(); window.ReactNativeWebView.postMessage(JSON.stringify({ event: 'open' })); },
+          onClose: function() { console.log('onClose'); window.ReactNativeWebView.postMessage(JSON.stringify({ event: 'close' })); },
+          onResponse: function(r) { console.log('onResponse'); window.ReactNativeWebView.postMessage(JSON.stringify({ event: 'response', data: r })); }
+        });
+        pc.open({ reference: '${reference}' });
+        console.log('open() called');
+      } catch(err) {
+        console.error('InitError: ' + (err.message || String(err)));
+        window.ReactNativeWebView.postMessage(JSON.stringify({ event: 'error', message: err.message || 'Error checkout' }));
+      }
+    }
+    if (document.readyState === 'complete' || document.readyState === 'interactive') { setTimeout(initCheckout, 150); }
+    else { document.addEventListener('DOMContentLoaded', function() { setTimeout(initCheckout, 150); }); }
+  </script>
+</body>
+</html>`;
+
+  return {
+    statusCode: 200,
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Access-Control-Allow-Origin": "*",
+      "Cache-Control": "no-store",
+    },
+    body: html,
+  };
+}
+
+/**
  * Reintento de pago sobre una cita cancelada por fallo de pago previo.
  * Valida atómicamente que el slot sigue disponible antes de cobrar.
  * POST /api/payments/retry
