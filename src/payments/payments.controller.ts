@@ -9,7 +9,7 @@ import {
   notFoundResponse,
   successResponse,
 } from "../shared/response";
-import { nuveiService } from "./nuvei.service";
+import { getNuveiEnvMode, nuveiService } from "./nuvei.service";
 import { PAYOUT_TYPE_CLINIC, PAYOUT_TYPE_DOCTOR } from "../shared/constants";
 import { resolveCommissionPercent } from "../shared/commission";
 
@@ -797,6 +797,7 @@ export async function initNuveiCheckout(
 
     return successResponse({
       reference: checkoutReference,
+      envMode: getNuveiEnvMode(),
     });
 
   } catch (error: any) {
@@ -810,22 +811,26 @@ export async function initNuveiCheckout(
  * Al ser una URL real (no HTML inyectado), el documento tiene un origin real
  * y los postMessages del iframe de Paymentez llegan correctamente en iOS WKWebView.
  *
- * GET /api/payments/checkout-page/{reference}?env=stg|prod
+ * GET /api/payments/checkout-page/{reference}
  */
 export async function getCheckoutPage(
   event: APIGatewayProxyEventV2,
 ): Promise<APIGatewayProxyResult> {
   const path = event.requestContext.http.path;
-  const reference = path.split("/api/payments/checkout-page/")[1] || "";
-  const env = (event.queryStringParameters?.env as string) || "stg";
+  const rawReference = decodeURIComponent(path.split("/api/payments/checkout-page/")[1] || "");
+  const reference = rawReference.split("?")[0].trim();
+  const envMode = getNuveiEnvMode();
 
-  if (!reference) {
+  if (!reference || !/^[A-Za-z0-9._-]+$/.test(reference)) {
     return {
       statusCode: 400,
       headers: { "Content-Type": "text/plain" },
-      body: "Missing reference",
+      body: "Missing or invalid reference",
     };
   }
+
+  const safeReference = JSON.stringify(reference);
+  const safeEnvMode = JSON.stringify(envMode);
 
   const html = `<!DOCTYPE html>
 <html>
@@ -871,8 +876,9 @@ export async function getCheckoutPage(
       return { closed: false, close: function() { try { document.body.removeChild(overlay); } catch(e) {} this.closed = true; } };
     };
   </script>
-  <script src="https://code.jquery.com/jquery-3.5.0.min.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.paymentez.com/ccapi/sdk/payment_checkout_3.0.0.min.js" crossorigin="anonymous"></script>
+  <!-- Sin crossorigin: el CDN de Paymentez no envia Access-Control-Allow-Origin y el SDK queda bloqueado -->
+  <script src="https://code.jquery.com/jquery-3.5.0.min.js"></script>
+  <script src="https://cdn.paymentez.com/ccapi/sdk/payment_checkout_3.0.0.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body, html { width: 100%; height: 100%; background: #fff; }
@@ -887,22 +893,36 @@ export async function getCheckoutPage(
   <div id="loading"><div class="spinner"></div><div class="loading-text">Cargando pasarela de pago...</div></div>
   <script>
     function hideLoading() { var el=document.getElementById('loading'); if(el) el.style.display='none'; }
+    function reportError(message) {
+      hideLoading();
+      try { window.ReactNativeWebView.postMessage(JSON.stringify({ event: 'error', message: message })); } catch(e) {}
+    }
+    var sdkAttempts = 0;
+    var maxSdkAttempts = 40;
     function initCheckout() {
-      if (typeof PaymentCheckout === 'undefined' || typeof $ === 'undefined') { setTimeout(initCheckout, 300); return; }
+      if (typeof PaymentCheckout === 'undefined' || typeof $ === 'undefined') {
+        sdkAttempts++;
+        if (sdkAttempts >= maxSdkAttempts) {
+          reportError('No se pudo cargar el SDK de pagos. Verifica tu conexion e intenta de nuevo.');
+          return;
+        }
+        setTimeout(initCheckout, 300);
+        return;
+      }
       try {
         console.log('SDK ready');
         hideLoading();
         var pc = new PaymentCheckout.modal({
-          env_mode: '${env}',
+          env_mode: ${safeEnvMode},
           onOpen: function() { console.log('onOpen'); hideLoading(); window.ReactNativeWebView.postMessage(JSON.stringify({ event: 'open' })); },
           onClose: function() { console.log('onClose'); window.ReactNativeWebView.postMessage(JSON.stringify({ event: 'close' })); },
           onResponse: function(r) { console.log('onResponse'); window.ReactNativeWebView.postMessage(JSON.stringify({ event: 'response', data: r })); }
         });
-        pc.open({ reference: '${reference}' });
+        pc.open({ reference: ${safeReference} });
         console.log('open() called');
       } catch(err) {
         console.error('InitError: ' + (err.message || String(err)));
-        window.ReactNativeWebView.postMessage(JSON.stringify({ event: 'error', message: err.message || 'Error checkout' }));
+        reportError(err.message || 'Error checkout');
       }
     }
     if (document.readyState === 'complete' || document.readyState === 'interactive') { setTimeout(initCheckout, 150); }
