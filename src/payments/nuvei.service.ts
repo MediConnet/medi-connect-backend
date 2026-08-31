@@ -3,6 +3,17 @@ import crypto from "crypto";
 
 const NUVEI_BASE_URL = process.env.NUVEI_BASE_URL || "https://ccapi-stg.paymentez.com";
 
+export type NuveiEnvMode = "prod" | "stg";
+
+/** Deriva el ambiente del checkout a partir de la URL de la API de Nuvei configurada en el servidor. */
+export function getNuveiEnvMode(): NuveiEnvMode {
+  const baseUrl = (process.env.NUVEI_BASE_URL || "https://ccapi-stg.paymentez.com").toLowerCase();
+  if (baseUrl.includes("-stg.") || baseUrl.includes("stg.paymentez")) {
+    return "stg";
+  }
+  return "prod";
+}
+
 export interface NuveiDebitRequest {
   cardToken: string;
   userId: string;
