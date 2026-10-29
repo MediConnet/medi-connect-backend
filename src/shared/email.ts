@@ -73,7 +73,30 @@ export async function sendEmail(options: EmailOptions): Promise<boolean> {
       text: options.text || options.html.replace(/<[^>]*>/g, ''), // Texto plano sin HTML
     });
 
-    console.log(`✅ [EMAIL] Email enviado a ${options.to} usando Resend. ID: ${response.data?.id || 'N/A'}`);
+    // El SDK de Resend NO lanza excepción cuando la API rechaza el envío:
+    // devuelve { data: null, error }. Sin esta comprobación un 401 o un
+    // dominio sin verificar se registraba como envío exitoso.
+    if (response.error) {
+      const { message, name, statusCode } = response.error as any;
+      console.error(
+        `❌ [EMAIL] Resend rechazó el envío a ${options.to}: ${message} (${name}${statusCode ? ` ${statusCode}` : ''})`,
+      );
+      logger.error('Resend rejected email', new Error(message), {
+        to: options.to,
+        subject: options.subject,
+        from: fromEmail,
+        errorName: name,
+        statusCode,
+      });
+      return false;
+    }
+
+    if (!response.data?.id) {
+      console.error(`❌ [EMAIL] Resend no devolvió id de mensaje para ${options.to}`);
+      return false;
+    }
+
+    console.log(`✅ [EMAIL] Email enviado a ${options.to} usando Resend. ID: ${response.data.id}`);
     return true;
   } catch (error: any) {
     console.error(`❌ [EMAIL] Error al enviar email a ${options.to}:`, error.message);

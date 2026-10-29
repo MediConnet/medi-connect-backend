@@ -798,6 +798,8 @@ export async function initNuveiCheckout(
     return successResponse({
       reference: checkoutReference,
       envMode: getNuveiEnvMode(),
+      // URL oficial de Nuvei (por si se necesita abrir en navegador); no usar link/v3 inventado
+      checkoutUrl: nuveiResult?.checkout_url || null,
     });
 
   } catch (error: any) {

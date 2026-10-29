@@ -1588,7 +1588,7 @@ async function approveRequest(event: APIGatewayProxyEventV2): Promise<APIGateway
   const provider = await prisma.providers.findUnique({
     where: { id: requestId },
     include: { 
-      users: true, 
+      users: { include: { clinics: true } }, 
       service_categories: true,
       provider_specialties: {
         include: {
@@ -1596,6 +1596,7 @@ async function approveRequest(event: APIGatewayProxyEventV2): Promise<APIGateway
         },
       },
       pharmacy_chains: true,
+      provider_branches: { include: { cities: true } },
     },
   });
 
@@ -1651,13 +1652,25 @@ async function approveRequest(event: APIGatewayProxyEventV2): Promise<APIGateway
   try {
     const { patientNotificationService } = await import("../shared/patient-notification.service");
     
-    const providerName = provider.commercial_name || "Un nuevo proveedor";
+    const categorySlug = provider.service_categories?.slug;
+    const mainBranch =
+      provider.provider_branches?.find((b: any) => b.is_main) ||
+      provider.provider_branches?.[0];
+    const chainName = provider.pharmacy_chains?.name;
+
+    // El paciente debe ver el nombre del establecimiento, no el del
+    // representante legal. Las farmacias de cadena se registran sin nombre
+    // propio, así que su nombre es el de la cadena.
+    const providerName =
+      (categorySlug === "pharmacy" ? chainName : undefined) ||
+      provider.commercial_name ||
+      mainBranch?.name ||
+      "Un nuevo proveedor";
+
     let type: any = "general";
     let title = "¡Nuevo proveedor disponible! 🎉";
     let body = `${providerName} se ha unido a DOCALINK. Ya puedes consultar sus servicios y agendar con ellos.`;
-    
-    const categorySlug = provider.service_categories?.slug;
-    
+
     if (categorySlug === "doctor") {
       type = "cita";
       const specialtiesList = provider.provider_specialties?.map(ps => ps.specialties?.name).filter(Boolean) || [];
@@ -1666,10 +1679,15 @@ async function approveRequest(event: APIGatewayProxyEventV2): Promise<APIGateway
       body = `El Dr(a). ${providerName}${specialtiesText} se ha unido a DOCALINK. Ya puedes agendar una cita con él.`;
     } else if (categorySlug === "pharmacy") {
       type = "farmacia";
-      const chainName = provider.pharmacy_chains?.name;
-      const chainText = chainName ? ` de la cadena ${chainName}` : "";
+      const chainText =
+        chainName && chainName !== providerName
+          ? ` de la cadena ${chainName}`
+          : "";
+      const cityText = mainBranch?.cities?.name
+        ? ` en ${mainBranch.cities.name}`
+        : "";
       title = "¡Nueva farmacia disponible! 💊";
-      body = `La farmacia ${providerName}${chainText} se ha unido a DOCALINK. Ya puedes consultar su ubicación y servicios de entrega.`;
+      body = `La farmacia ${providerName}${chainText} abrió un nuevo punto${cityText} en DOCALINK. Ya puedes consultar su ubicación y servicios de entrega.`;
     } else if (categorySlug === "laboratory") {
       type = "laboratorio";
       title = "¡Nuevo laboratorio disponible! 🔬";
@@ -1692,14 +1710,66 @@ async function approveRequest(event: APIGatewayProxyEventV2): Promise<APIGateway
       body = `El centro estético ${providerName} se ha unido a DOCALINK. Ya puedes conocer sus tratamientos y agendar una cita.`;
     }
 
+    // Destino explícito del tap. Sin esto la app enruta por tipo/palabras
+    // clave y una notificación de nuevo servicio termina abriendo "Mis citas".
+    // Ojo: el detalle de farmacia se abre con el id de la SUCURSAL y el de
+    // clínica con el id de la clínica, no con el del provider.
+    let clinicId = (provider.users as any)?.clinics?.id as string | undefined;
+    // La clínica puede haberse creado recién al aprobar la solicitud.
+    if (!clinicId && provider.users?.id && (categorySlug === "clinic" || categorySlug === "clinica")) {
+      const clinic = await prisma.clinics.findUnique({
+        where: { user_id: provider.users.id },
+        select: { id: true },
+      });
+      clinicId = clinic?.id;
+    }
+    let targetScreen: string | undefined;
+    let targetId: string | undefined;
+
+    switch (categorySlug) {
+      case "doctor":
+        targetScreen = "DoctorDetail";
+        targetId = provider.id;
+        break;
+      case "pharmacy":
+        targetScreen = "FarmaciaDetail";
+        targetId = mainBranch?.id;
+        break;
+      case "laboratory":
+        targetScreen = "LaboratorioDetail";
+        targetId = provider.id;
+        break;
+      case "ambulance":
+        targetScreen = "AmbulanciaDetail";
+        targetId = provider.id;
+        break;
+      case "supplies":
+        targetScreen = "InsumoDetail";
+        targetId = provider.id;
+        break;
+      case "clinic":
+      case "clinica":
+        targetScreen = "ClinicaDetail";
+        targetId = clinicId;
+        break;
+      case "aesthetic":
+        targetScreen = "EsteticaDetail";
+        targetId = provider.id;
+        break;
+    }
+
     console.log(`🔔 [APPROVE_REQUEST] Enviando broadcast de nuevo proveedor a todos los pacientes: ${providerName}`);
     await patientNotificationService.broadcast({
       type,
       title,
       body,
       data: {
+        event: "new_provider",
         providerId: provider.id,
         category: categorySlug,
+        ...(mainBranch?.id ? { branchId: mainBranch.id } : {}),
+        ...(clinicId ? { clinicId } : {}),
+        ...(targetScreen && targetId ? { targetScreen, targetId } : {}),
       }
     });
   } catch (notifError: any) {
