@@ -103,6 +103,32 @@ function mapRoleToEnum(role: string): enum_roles {
   return (enum_roles as any)[mapped] || enum_roles.patient;
 }
 
+// HELPER: Resuelve el nombre del establecimiento.
+// El formulario de registro omite `serviceName` cuando la farmacia pertenece a
+// una cadena, por lo que sin este fallback el nombre comercial terminaba siendo
+// el del representante legal y se mostraba como nombre de la farmacia en
+// listados y notificaciones.
+async function resolveBusinessName(
+  prisma: any,
+  body: any,
+  representativeName: string,
+): Promise<string> {
+  if (body.serviceName) return body.serviceName;
+
+  const uuidRegex =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+  if (body.chainId && uuidRegex.test(body.chainId)) {
+    const chain = await prisma.pharmacy_chains.findUnique({
+      where: { id: body.chainId },
+      select: { name: true },
+    });
+    if (chain?.name) return chain.name;
+  }
+
+  return representativeName;
+}
+
 // HELPER: Crea el perfil de proveedor
 async function createProviderProfile(prisma: any, userId: string, body: any) {
   const providerId = randomUUID();
@@ -115,8 +141,11 @@ async function createProviderProfile(prisma: any, userId: string, body: any) {
   }
   if (!representativeName) representativeName = "Usuario Proveedor";
 
-  let businessName = body.serviceName;
-  if (!businessName) businessName = representativeName;
+  const businessName = await resolveBusinessName(
+    prisma,
+    body,
+    representativeName,
+  );
 
   const categorySlug = body.type ? TYPE_TO_SLUG[body.type] || "doctor" : "doctor";
 
@@ -322,8 +351,11 @@ async function updateExistingProviderProfile(
   }
   if (!representativeName) representativeName = "Usuario Proveedor";
 
-  let businessName = body.serviceName;
-  if (!businessName) businessName = representativeName;
+  const businessName = await resolveBusinessName(
+    prisma,
+    body,
+    representativeName,
+  );
 
   const categorySlug = body.type ? TYPE_TO_SLUG[body.type] || "doctor" : "doctor";
   const category = await prisma.service_categories.findFirst({
