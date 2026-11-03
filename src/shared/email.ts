@@ -1012,6 +1012,62 @@ export function generateWelcomeEmail(data: {
   });
 }
 
+/**
+ * Bienvenida para proveedores que acaban de registrar un servicio desde la web.
+ * A diferencia de generateWelcomeEmail (paciente, la cuenta ya esta lista), aqui
+ * la cuenta queda pendiente: el correo da la bienvenida y avisa que la solicitud
+ * fue enviada y esta en revision. La aprobacion se notifica aparte con
+ * generateRequestAcceptedEmail.
+ */
+export function generateProviderRequestSubmittedEmail(data: {
+  userName: string;
+  userRole: string;
+}): string {
+  const content = `
+    <!-- Hero Section con fondo celeste -->
+    <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #e0f2fe; padding: 15px 40px;">
+      <tr>
+        <td width="60%" align="left">
+          <h2 class="title" style="color: #004aad; margin: 0 0 5px 0;">¡Bienvenido a DocaLink! 🎉</h2>
+          <p class="subtitle" style="color: #004aad; opacity: 0.8; font-size: 14px; margin: 0;">Tu solicitud ya fue enviada.</p>
+        </td>
+        <td width="40%" align="right">
+          <div class="illustration">
+            <img src="${getImageBase64('cuenta-creada.png')}" width="140" alt="Bienvenido" />
+          </div>
+        </td>
+      </tr>
+    </table>
+
+    <div style="padding: 40px;">
+      <p>Hola <strong>${data.userName}</strong> 👋,</p>
+      <p>¡Gracias por sumarte a <strong>DocaLink</strong>! Tu cuenta como <strong>${data.userRole}</strong> ha sido creada y <strong>tu solicitud de registro ya fue enviada</strong> a nuestro equipo.</p>
+
+      <table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin: 25px 0;">
+        <tr>
+          <td style="background-color: #f0f7ff; border-left: 4px solid #004aad; padding: 18px 20px;">
+            <p style="margin: 0 0 8px 0; color: #004aad; font-weight: 700; font-size: 15px;">Tu solicitud está en revisión</p>
+            <p style="margin: 0; font-size: 14px; color: #475569;">Nuestro equipo administrativo validará la información y los documentos que registraste. Te avisaremos por este mismo correo en cuanto sea aprobada, y desde ese momento tu servicio será visible para los pacientes.</p>
+          </td>
+        </tr>
+      </table>
+
+      <p>Mientras tanto no necesitas hacer nada más. Si detectamos que falta algún dato, te lo pediremos por correo.</p>
+
+      <div align="center" style="margin: 35px 0;">
+        <a href="https://docalink.com" style="display: inline-block; background-color: #004aad; color: #ffffff !important; padding: 16px 35px; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 16px;">Ir a DocaLink</a>
+      </div>
+    </div>
+  `;
+
+  return generateEmailTemplateBase({
+    title: 'Solicitud enviada',
+    headerColor: '#004aad',
+    footerColor: '#004aad',
+    content,
+  });
+}
+
 export function generateRequestAcceptedEmail(data: {
   userName: string;
   userRole: string;

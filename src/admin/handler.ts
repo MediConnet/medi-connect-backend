@@ -1806,7 +1806,10 @@ async function approveRequest(event: APIGatewayProxyEventV2): Promise<APIGateway
 
     sendEmail({
       to: userEmail,
-      subject: "¡Bienvenido a DOCALINK! 🎉",
+      // Asunto propio: el de bienvenida/solicitud enviada ya se mando al
+      // registrarse, repetirlo aqui hacia que el proveedor recibiera dos veces
+      // el mismo asunto en momentos distintos.
+      subject: "¡Tu solicitud fue aprobada! Bienvenido a DOCALINK 🎉",
       html: emailHtml,
     })
       .then((emailSent) => {

@@ -16,6 +16,7 @@ import {
 } from "../clinics/clinic-context";
 import {
   ROLE_TO_ENUM,
+  SLUG_TO_LABEL_ES,
   TYPE_TO_SLUG,
   normalizeProviderServiceType,
 } from "../shared/constants";
@@ -127,6 +128,96 @@ async function resolveBusinessName(
   }
 
   return representativeName;
+}
+
+/**
+ * Correo de bienvenida para el paciente que se registra desde la app.
+ *
+ * Se dispara sin esperar (fire-and-forget) para no retrasar la respuesta del
+ * registro. Importante: sendEmail NO lanza cuando el proveedor rechaza el
+ * envio, devuelve false; por eso hay que mirar el booleano o el fallo pasa
+ * inadvertido.
+ */
+async function sendPatientWelcomeEmail(
+  to: string,
+  userName: string,
+): Promise<void> {
+  try {
+    const { sendEmail } = await import("../shared/email-adapter");
+    const { generateWelcomeEmail } = await import("../shared/email");
+
+    const sent = await sendEmail({
+      to,
+      subject: "¡Bienvenido a DOCALINK! 🎉",
+      html: generateWelcomeEmail({ userName, userRole: "paciente" }),
+    });
+
+    if (sent) {
+      console.log(`✅ [REGISTER] Email de bienvenida enviado a ${to}`);
+    } else {
+      console.error(
+        `❌ [REGISTER] FALLO: no se pudo enviar el email de bienvenida a ${to}`,
+      );
+    }
+  } catch (err: any) {
+    console.error(
+      `❌ [REGISTER] Error enviando email de bienvenida a ${to}:`,
+      err?.message,
+    );
+  }
+}
+
+/**
+ * Correo de bienvenida para el proveedor que registra un servicio desde la web.
+ *
+ * Es distinto al del paciente: la cuenta del proveedor queda pendiente, asi que
+ * este correo da la bienvenida y avisa que la solicitud fue enviada y esta en
+ * revision. La aprobacion se notifica despues desde el panel de admin con
+ * generateRequestAcceptedEmail.
+ */
+async function sendProviderRequestSubmittedEmail(
+  to: string,
+  body: any,
+): Promise<void> {
+  try {
+    const { sendEmail } = await import("../shared/email-adapter");
+    const { generateProviderRequestSubmittedEmail } = await import(
+      "../shared/email"
+    );
+
+    const categorySlug = body.type
+      ? TYPE_TO_SLUG[body.type] || "doctor"
+      : "doctor";
+    const userRole = SLUG_TO_LABEL_ES[categorySlug] || "Proveedor";
+
+    // Se saluda con el nombre del establecimiento, no con el del representante.
+    const userName =
+      body.serviceName ||
+      body.name ||
+      [body.firstName, body.lastName].filter(Boolean).join(" ") ||
+      to.split("@")[0];
+
+    const sent = await sendEmail({
+      to,
+      subject: "¡Bienvenido a DOCALINK! Tu solicitud fue enviada 🎉",
+      html: generateProviderRequestSubmittedEmail({ userName, userRole }),
+    });
+
+    if (sent) {
+      console.log(
+        `✅ [REGISTER] Email de bienvenida/solicitud enviada a ${to} (${userRole})`,
+      );
+    } else {
+      console.error(
+        `❌ [REGISTER] FALLO: no se pudo enviar el email de solicitud enviada a ${to}`,
+      );
+    }
+  } catch (err: any) {
+    console.error(
+      `❌ [REGISTER] Error enviando email de solicitud enviada a ${to}:`,
+      err?.message,
+    );
+  }
 }
 
 // HELPER: Crea el perfil de proveedor
@@ -793,6 +884,9 @@ export async function register(
               existingUserName,
             );
           }
+          // Bienvenida + aviso de solicitud enviada (queda pendiente de aprobación)
+          void sendProviderRequestSubmittedEmail(existingUser.email, body);
+
           return successResponse(
             {
               userId: existingUser.id,
@@ -899,20 +993,17 @@ export async function register(
           },
         });
 
-        // Enviar email de bienvenida al paciente (asíncrono)
-        const { sendEmail } = await import("../shared/email-adapter");
-        const { generateWelcomeEmail } = await import("../shared/email");
-        sendEmail({
-          to: user.email,
-          subject: "¡Bienvenido a DOCALINK! 🎉",
-          html: generateWelcomeEmail({ userName: fullName, userRole: "patient" }),
-        }).catch((err: any) => console.error("❌ [REGISTER] Error enviando email bienvenida paciente:", err.message));
+        // Bienvenida al paciente (no bloquea la respuesta del registro)
+        void sendPatientWelcomeEmail(user.email, fullName);
 
       } else if (userRole === enum_roles.provider) {
         await createProviderProfile(prisma, user.id, {
           ...body,
           documents: uploadedDocuments,
         });
+
+        // Bienvenida + aviso de solicitud enviada (queda pendiente de aprobación)
+        void sendProviderRequestSubmittedEmail(user.email, body);
 
         const invitationToken =
           body.invitationToken ||
@@ -980,20 +1071,17 @@ export async function register(
         },
       });
 
-      // Enviar email de bienvenida al paciente (asíncrono)
-      const { sendEmail } = await import("../shared/email-adapter");
-      const { generateWelcomeEmail } = await import("../shared/email");
-      sendEmail({
-        to: user.email,
-        subject: "¡Bienvenido a DOCALINK! 🎉",
-        html: generateWelcomeEmail({ userName: fullName, userRole: "patient" }),
-      }).catch((err: any) => console.error("❌ [REGISTER] Error enviando email bienvenida paciente:", err.message));
+      // Bienvenida al paciente (no bloquea la respuesta del registro)
+      void sendPatientWelcomeEmail(user.email, fullName);
 
     } else if (userRole === enum_roles.provider) {
       await createProviderProfile(prisma, user.id, {
         ...body,
         documents: uploadedDocuments,
       });
+
+      // Bienvenida + aviso de solicitud enviada (queda pendiente de aprobación)
+      void sendProviderRequestSubmittedEmail(user.email, body);
 
       const invitationToken =
         body.invitationToken ||
@@ -2042,6 +2130,9 @@ export async function socialLogin(
       console.log(
         `✅ [SOCIAL-LOGIN] Nuevo usuario ${provider} creado: ${user.id}`,
       );
+
+      // Bienvenida al paciente que entra por primera vez con Google/Apple
+      void sendPatientWelcomeEmail(user.email, socialName);
 
     } else {
       const updateData: any = {};
