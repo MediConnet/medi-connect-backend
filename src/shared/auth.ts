@@ -16,6 +16,207 @@ export interface JWTClaims {
   [key: string]: any;
 }
 
+const JWT_SECRET_POR_DEFECTO = 'local-dev-secret-key';
+
+/** Tipo de token. Va dentro del payload para que uno no sirva por el otro. */
+export type TokenType = 'access' | 'refresh';
+
+function getJwtSecret(): string {
+  const secreto = process.env.JWT_SECRET;
+  if (!secreto) {
+    console.warn(
+      'ATENCION [AUTH] JWT_SECRET no esta configurado: se usa el secreto por defecto del codigo, que es publico. Configuralo en el entorno.',
+    );
+    return JWT_SECRET_POR_DEFECTO;
+  }
+  return secreto;
+}
+
+/**
+ * Secreto de los refresh tokens. Si no esta configurado se usa el de acceso:
+ * los dos tipos siguen sin confundirse porque el payload lleva `typ`, pero
+ * conviene separarlos para que filtrar uno no comprometa al otro.
+ */
+function getRefreshSecret(): string {
+  const secreto = process.env.JWT_REFRESH_SECRET;
+  if (!secreto) {
+    console.warn(
+      'ATENCION [AUTH] JWT_REFRESH_SECRET no esta configurado: los refresh tokens se firman con JWT_SECRET.',
+    );
+    return getJwtSecret();
+  }
+  return secreto;
+}
+
+function secretoDe(tipo: TokenType): string {
+  return tipo === 'refresh' ? getRefreshSecret() : getJwtSecret();
+}
+
+/**
+ * Convierte "60m", "30d", "15m", "900s", "2h" a segundos.
+ * Un valor vacio o que no se entienda cae al valor por defecto.
+ */
+export function parseDuracion(valor: string | undefined, porDefecto: number): number {
+  if (!valor) return porDefecto;
+
+  const m = valor.trim().match(/^(\d+)\s*([smhd])?$/i);
+  if (!m) {
+    console.warn(`ATENCION [AUTH] Duracion no reconocida: "${valor}". Se usan ${porDefecto}s.`);
+    return porDefecto;
+  }
+
+  const cantidad = parseInt(m[1], 10);
+  const unidad = (m[2] || 's').toLowerCase();
+  const factores: Record<string, number> = { s: 1, m: 60, h: 3600, d: 86400 };
+  return cantidad * factores[unidad];
+}
+
+/** Vida del access token. 60 minutos por defecto. */
+export const accessTokenTTL = (): number =>
+  parseDuracion(process.env.JWT_ACCESS_TOKEN_EXPIRATION, 60 * 60);
+
+/** Vida del refresh token. 30 dias por defecto. */
+export const refreshTokenTTL = (): number =>
+  parseDuracion(process.env.JWT_REFRESH_TOKEN_EXPIRATION, 30 * 24 * 60 * 60);
+
+const base64UrlDesdeTexto = (str: string): string =>
+  Buffer.from(str).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+
+export interface TokenPayload {
+  userId: string;
+  email: string;
+  role: string | null;
+}
+
+/** Firma un token del tipo indicado. */
+export function signToken(payload: TokenPayload, tipo: TokenType): string {
+  const encodedHeader = base64UrlDesdeTexto(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+  const now = Math.floor(Date.now() / 1000);
+  const ttl = tipo === 'refresh' ? refreshTokenTTL() : accessTokenTTL();
+
+  const encodedPayload = base64UrlDesdeTexto(
+    JSON.stringify({
+      sub: payload.userId,
+      userId: payload.userId,
+      email: payload.email,
+      role: payload.role,
+      typ: tipo,
+      iat: now,
+      exp: now + ttl,
+    }),
+  );
+
+  const firma = crypto
+    .createHmac('sha256', secretoDe(tipo))
+    .update(`${encodedHeader}.${encodedPayload}`)
+    .digest('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=/g, '');
+
+  return `${encodedHeader}.${encodedPayload}.${firma}`;
+}
+
+/** Par de tokens que se entrega al iniciar sesion o al refrescar. */
+export function issueTokenPair(payload: TokenPayload) {
+  return {
+    accessToken: signToken(payload, 'access'),
+    refreshToken: signToken(payload, 'refresh'),
+    expiresIn: accessTokenTTL(),
+    refreshExpiresIn: refreshTokenTTL(),
+  };
+}
+
+const base64UrlDesdeBuffer = (b: Buffer): string =>
+  b.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+
+/**
+ * Verifica la FIRMA y la expiracion de uno de nuestros JWT.
+ *
+ * Antes esto no existia: getJWTClaims hacia base64-decode del payload y
+ * confiaba en el. Como la firma no se comprobaba, cualquiera podia fabricar un
+ * token con el sub/role que quisiera y entrar como cualquier usuario, admin
+ * incluido. Los tokens siempre se firmaron (HMAC-SHA256); lo que faltaba era
+ * comprobarlos al recibirlos.
+ *
+ * Mismo formato que generan generateLocalJWT (auth.controller) y generateJWT
+ * (mas abajo en este archivo).
+ */
+export function verifyJWT(
+  token: string,
+  tipoEsperado: TokenType = 'access',
+): JWTClaims | null {
+  const partes = token.split('.');
+  if (partes.length !== 3) {
+    console.log('[AUTH] El token no tiene formato JWT (3 partes)');
+    return null;
+  }
+
+  const [encodedHeader, encodedPayload, firmaRecibida] = partes;
+
+  const firmaEsperada = base64UrlDesdeBuffer(
+    crypto
+      .createHmac('sha256', secretoDe(tipoEsperado))
+      .update(`${encodedHeader}.${encodedPayload}`)
+      .digest(),
+  );
+
+  const a = Buffer.from(firmaRecibida);
+  const b = Buffer.from(firmaEsperada);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    console.log('[AUTH] Firma del token invalida');
+    return null;
+  }
+
+  let claims: JWTClaims;
+  try {
+    const base64 = encodedPayload.replace(/-/g, '+').replace(/_/g, '/');
+    const padding = base64.length % 4;
+    const conPadding = padding ? base64 + '='.repeat(4 - padding) : base64;
+    claims = JSON.parse(Buffer.from(conPadding, 'base64').toString('utf-8'));
+  } catch (error: any) {
+    console.log('[AUTH] No se pudo leer el contenido del token:', error.message);
+    return null;
+  }
+
+  if (!claims || !claims.sub) {
+    console.log('[AUTH] El token no trae sub');
+    return null;
+  }
+
+  if (typeof claims.exp === 'number' && Date.now() / 1000 > claims.exp) {
+    console.log('[AUTH] Token expirado');
+    return null;
+  }
+
+  // Un refresh token no sirve para pedir datos, ni un access token para
+  // refrescar. Sin esta comprobacion, el refresh token (que vive 30 dias)
+  // valdria como credencial de acceso y la vida corta del access no serviria
+  // de nada.
+  if (claims.typ !== tipoEsperado) {
+    console.log(
+      `[AUTH] Se esperaba un token de tipo ${tipoEsperado} y llego uno de tipo ${claims.typ || '(sin tipo)'}`,
+    );
+    return null;
+  }
+
+  return claims;
+}
+
+/**
+ * Autenticacion por header X-User-Email / token-como-email, sin credenciales.
+ *
+ * Es una comodidad de desarrollo y hay que pedirla explicitamente. Antes se
+ * activaba sola cuando faltaba COGNITO_USER_POOL_ID, que es justamente lo que
+ * pasa en el despliegue de Render: bastaba mandar un header con el correo de
+ * alguien para actuar como esa persona en produccion.
+ */
+function headerAuthHabilitado(): boolean {
+  const esProduccion =
+    process.env.NODE_ENV === 'production' || process.env.STAGE === 'prod';
+  return !esProduccion && process.env.ALLOW_DEV_HEADER_AUTH === 'true';
+}
+
 /**
  * Extrae el JWT del header Authorization
  */
@@ -56,75 +257,12 @@ export function getJWTClaims(event: APIGatewayProxyEventV2): JWTClaims | null {
     return claims as JWTClaims;
   }
 
-  // Fallback para desarrollo local: validar JWT manualmente o token simple
-  const isLocalDev = process.env.STAGE === 'dev' || process.env.NODE_ENV === 'development' || !process.env.COGNITO_USER_POOL_ID;
-  
-  if (isLocalDev) {
-    const token = extractJWT(event);
-    if (token) {
-      try {
-        // Intentar decodificar como token simple (base64 JSON)
-        try {
-          const decoded = JSON.parse(Buffer.from(token, 'base64').toString());
-          if (decoded.sub && decoded.email) {
-            console.log('✅ [AUTH] Token simple decodificado. Email:', decoded.email);
-            return decoded as JWTClaims;
-          }
-        } catch (e) {
-          console.log('🔧 [AUTH] No es token simple base64, intentando JWT...');
-        }
+  // Sin authorizer de API Gateway (el despliegue en Render es Express), el
+  // token lo validamos aqui: firma y expiracion, siempre, en cualquier entorno.
+  const token = extractJWT(event);
+  if (!token) return null;
 
-        // Decodificar JWT estándar (solo para desarrollo local)
-        const parts = token.split('.');
-        
-        if (parts.length === 3) {
-          try {
-            const base64Url = parts[1];
-            const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-            
-            // Agregar padding si es necesario
-            const padding = base64.length % 4;
-            const paddedBase64 = padding ? base64 + '='.repeat(4 - padding) : base64;
-            
-            const jsonPayload = Buffer.from(paddedBase64, 'base64').toString('utf-8');
-            const decoded = JSON.parse(jsonPayload);
-            return decoded as JWTClaims;
-          } catch (jwtError: any) {
-            console.error('❌ [AUTH] Error decodificando JWT con método directo:', jwtError.message);
-            // Intentar método alternativo (más compatible)
-            try {
-              const base64Url = parts[1];
-              const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-              const padding = base64.length % 4;
-              const paddedBase64 = padding ? base64 + '='.repeat(4 - padding) : base64;
-              
-              const jsonPayload = decodeURIComponent(
-                Buffer.from(paddedBase64, 'base64').toString().split('').map(c => {
-                  return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-                }).join('')
-              );
-              const decoded = JSON.parse(jsonPayload);
-              console.log('✅ [AUTH] JWT decodificado con método alternativo. Email:', decoded.email || decoded.sub);
-              return decoded as JWTClaims;
-            } catch (altError: any) {
-              console.error('❌ [AUTH] Error con método alternativo:', altError.message);
-            }
-          }
-        } else {
-          console.error('❌ [AUTH] Token no tiene formato JWT (3 partes). Partes encontradas:', parts.length);
-          return null;
-        }
-      } catch (error: any) {
-        console.error('❌ [AUTH] Error general decodificando token:', error.message);
-        console.error('❌ [AUTH] Stack:', error.stack?.substring(0, 200));
-        return null;
-      }
-    } else {
-      console.log('❌ [AUTH] No se pudo extraer token del header');
-    }
-  }
-
-  return null;
+  return verifyJWT(token);
 }
 
 /**
@@ -134,10 +272,10 @@ export async function getAuthContext(
   event: APIGatewayProxyEventV2
 ): Promise<AuthContext | null> {
   const claims = getJWTClaims(event);
-  const isLocalDev = process.env.STAGE === 'dev' || process.env.NODE_ENV === 'development' || !process.env.COGNITO_USER_POOL_ID;
   
   // Si no hay claims, intentar autenticación directa en desarrollo local
-  if (!claims && isLocalDev) {
+  // Atajos sin credenciales: solo si se piden explicitamente, nunca en produccion.
+  if (!claims && headerAuthHabilitado()) {
     console.log('🔧 [AUTH] Modo desarrollo local - Intentando autenticación directa');
     
     // Opción 1: Buscar por header X-User-Email (para testing)
@@ -306,35 +444,10 @@ export async function requireRole(
 /**
  * Genera un JWT token para desarrollo local
  */
-export function generateJWT(payload: { userId: string; email: string; role: string | null }): string {
-  const header = { alg: 'HS256', typ: 'JWT' };
-
-  const base64UrlEncode = (str: string): string => {
-    return Buffer.from(str).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-  };
-
-  const encodedHeader = base64UrlEncode(JSON.stringify(header));
-  const now = Math.floor(Date.now() / 1000);
-  
-  const jwtPayload = {
-    sub: payload.userId,
-    userId: payload.userId,
-    email: payload.email,
-    role: payload.role,
-    iat: now,
-    exp: now + 60 * 60 * 24 * 30, // 30 días (consistente con generateLocalJWT)
-  };
-  
-  const encodedPayload = base64UrlEncode(JSON.stringify(jwtPayload));
-  const secret = process.env.JWT_SECRET || 'local-dev-secret-key';
-  
-  const signature = crypto
-    .createHmac('sha256', secret)
-    .update(`${encodedHeader}.${encodedPayload}`)
-    .digest('base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=/g, '');
-  
-  return `${encodedHeader}.${encodedPayload}.${signature}`;
+/**
+ * Compatibilidad: emite un access token. Se mantiene porque lo usan los
+ * controladores de invitaciones.
+ */
+export function generateJWT(payload: TokenPayload): string {
+  return signToken(payload, 'access');
 }

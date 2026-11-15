@@ -281,6 +281,20 @@ export async function updateProfile(event: APIGatewayProxyEventV2): Promise<APIG
         logo_url: uploadedProfilePictureUrl !== undefined ? uploadedProfilePictureUrl : undefined,
       };
       
+      // Duracion de cita. Solo 30 o 60, que es lo que ofrece el panel; define
+      // la separacion entre turnos en la agenda. Antes el valor llegaba y se
+      // descartaba en silencio, asi que el selector no guardaba nada.
+      if (body.consultationDuration !== undefined) {
+        const duracion = Number(body.consultationDuration);
+        if (duracion === 30 || duracion === 60) {
+          providerUpdateData.appointment_duration_minutes = duracion;
+        } else {
+          console.warn(
+            `[DOCTORS] Duracion de cita no permitida: ${body.consultationDuration}. Se ignora.`,
+          );
+        }
+      }
+
       // Limpieza de undefined
       Object.keys(providerUpdateData).forEach(key => providerUpdateData[key] === undefined && delete providerUpdateData[key]);
 

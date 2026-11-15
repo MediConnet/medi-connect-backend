@@ -231,22 +231,34 @@ export async function createAppointment(
       );
     }
 
+    // El descuento NO se toma del cuerpo de la peticion. Lo que manda la app
+    // solo indica que el paciente viene desde un anuncio; el porcentaje real se
+    // busca en provider_ads (aprobado, activo y vigente). Antes se aplicaba el
+    // numero del cliente tal cual, asi que cualquiera podia mandar
+    // discount: 100 y agendar en $0.
     if (body.discount) {
-      let discountPercentage = 0;
-      if (typeof body.discount === "number") {
-        discountPercentage = body.discount;
-      } else if (typeof body.discount === "string") {
-        const match = body.discount.match(/(\d+)/);
-        if (match) {
-          discountPercentage = parseFloat(match[1]);
-        }
-      }
+      const { resolveActiveAdDiscount } = await import("../shared/ad-discount");
+      const discountPercentage = await resolveActiveAdDiscount(
+        prisma,
+        body.doctorId,
+      );
 
-      if (discountPercentage > 0 && discountPercentage <= 100) {
+      if (discountPercentage > 0) {
         const discountAmount = (appointmentCost * discountPercentage) / 100;
         appointmentCost = Number((appointmentCost - discountAmount).toFixed(2));
         console.log(
-          `🏷️ [DEBUG] Aplicando descuento de anuncio: ${discountPercentage}% (-$${discountAmount}). Nuevo costo: $${appointmentCost}`,
+          `🏷️ [DEBUG] Descuento de anuncio verificado: ${discountPercentage}% (-$${discountAmount}). Nuevo costo: $${appointmentCost}`,
+        );
+      } else {
+        // Cobrar el precio completo en silencio seria cobrarle al paciente algo
+        // distinto de lo que vio: la pantalla le mostro el precio con descuento.
+        // Mejor avisar y que vuelva a entrar con el precio actualizado.
+        console.warn(
+          `⚠️ [APPOINTMENTS] Se pidio descuento (${body.discount}) para el proveedor ${body.doctorId}, pero no hay ningun anuncio vigente que lo respalde.`,
+        );
+        return errorResponse(
+          "La promoción ya no está vigente. Vuelve a abrir el servicio para ver el precio actualizado.",
+          409,
         );
       }
     }
@@ -256,6 +268,25 @@ export async function createAppointment(
     // Validar pasado
     if (scheduledFor < new Date()) {
       return errorResponse("Appointment date cannot be in the past", 400);
+    }
+
+    // Segunda capa: la app ya solo ofrece turnos validos, pero el servidor no
+    // puede fiarse de eso. Sin esta comprobacion, una peticion armada a mano
+    // podia agendar fuera de la jornada, en el almuerzo o en una hora que el
+    // proveedor bloqueo.
+    const { validarHorarioDelProveedor } = await import(
+      "../doctors/availability.controller"
+    );
+    const motivoRechazo = await validarHorarioDelProveedor(
+      prisma,
+      body.doctorId,
+      scheduledFor,
+    );
+    if (motivoRechazo) {
+      console.warn(
+        `[APPOINTMENTS] Horario rechazado para ${body.doctorId} @ ${scheduledFor.toISOString()}: ${motivoRechazo}`,
+      );
+      return errorResponse(motivoRechazo, 400);
     }
 
     const conflict = await prisma.appointments.findFirst({

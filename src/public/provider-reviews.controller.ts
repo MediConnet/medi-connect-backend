@@ -222,17 +222,47 @@ export async function createProviderReview(
 
     console.log("✅ [PUBLIC REVIEWS] Sucursal encontrada:", branch.id);
 
-    // Crear reseña
-    const review = await prisma.reviews.create({
-      data: {
-        id: randomUUID(),
-        patient_id: patient.id,
-        branch_id: branch.id,
-        rating: body.rating,
-        comment: body.comment || null,
-        appointment_id: body.appointment_id || null,
-      },
-      include: {
+    // La cita que se cita en la resena tiene que ser del propio paciente. Venia
+    // del cuerpo de la peticion sin comprobar nada, asi que se podia colgar una
+    // resena de la cita de otra persona.
+    let appointmentId: string | null = null;
+    if (body.appointment_id) {
+      const cita = await prisma.appointments.findFirst({
+        where: {
+          id: body.appointment_id,
+          patient_id: patient.id,
+          branch_id: branch.id,
+        },
+        select: { id: true },
+      });
+      if (!cita) {
+        console.warn(
+          `[PUBLIC REVIEWS] appointment_id ${body.appointment_id} no corresponde al paciente ${patient.id} en la sucursal ${branch.id}; se ignora.`,
+        );
+      } else {
+        appointmentId = cita.id;
+      }
+    }
+
+    // Una resena por paciente y sucursal. Si ya opino, se actualiza la suya en
+    // vez de crear otra: sin esto, una misma persona podia publicar resenas
+    // ilimitadas sobre el mismo local y mover el promedio a voluntad.
+    const resenaPrevia = await prisma.reviews.findFirst({
+      where: { patient_id: patient.id, branch_id: branch.id },
+      select: { id: true },
+    });
+
+    const datosResena = {
+      rating: body.rating,
+      comment: body.comment || null,
+      appointment_id: appointmentId,
+    };
+
+    const review = resenaPrevia
+      ? await prisma.reviews.update({
+          where: { id: resenaPrevia.id },
+          data: datosResena,
+          include: {
         patients: {
           select: {
             id: true,
@@ -250,8 +280,26 @@ export async function createProviderReview(
             name: true,
           },
         },
-      },
-    });
+          },
+        })
+      : await prisma.reviews.create({
+          data: {
+            id: randomUUID(),
+            patient_id: patient.id,
+            branch_id: branch.id,
+            ...datosResena,
+          },
+          include: {
+            patients: {
+              select: {
+                id: true,
+                full_name: true,
+                users: { select: { profile_picture_url: true } },
+              },
+            },
+            provider_branches: { select: { id: true, name: true } },
+          },
+        });
 
     const allReviews = await prisma.reviews.findMany({
       where: { branch_id: branch.id },

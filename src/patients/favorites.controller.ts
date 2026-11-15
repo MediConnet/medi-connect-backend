@@ -92,6 +92,10 @@ export async function getFavorites(event: APIGatewayProxyEventV2): Promise<APIGa
             name: fav.provider_branches.providers.commercial_name,
             logoUrl: fav.provider_branches.providers.logo_url,
             category: fav.provider_branches.providers.service_categories?.name || null,
+            // El slug es el identificador estable de la categoria; `category`
+            // es texto para mostrar y puede editarse en la base. La app usa el
+            // slug para saber a que pantalla de detalle lleva cada favorito.
+            categorySlug: fav.provider_branches.providers.service_categories?.slug || null,
           } : null,
           city: fav.provider_branches.cities?.name || null,
         } : null,

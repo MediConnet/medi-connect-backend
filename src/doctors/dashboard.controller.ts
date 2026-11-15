@@ -362,6 +362,8 @@ export async function getDashboard(event: APIGatewayProxyEventV2): Promise<APIGa
       consultation_fee: 0,
       years_of_experience: provider.years_of_experience ?? 0,
       profile_views: provider.profile_views || 0,
+      // El panel la lee como `consultationDuration` para pintar el selector.
+      consultationDuration: provider.appointment_duration_minutes ?? 30,
       specialty: null, // Placeholder
       category: provider.service_categories,
       address_text: mainBranch?.address_text || "",

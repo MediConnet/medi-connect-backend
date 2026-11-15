@@ -6,6 +6,22 @@ import { getPrismaClient } from '../shared/prisma';
 import { errorResponse, internalErrorResponse, paginatedResponse, successResponse } from '../shared/response';
 import { uploadImageToCloudinary, isBase64Image } from '../shared/cloudinary';
 import { SLUG_TO_LABEL_ES } from '../shared/constants';
+import { resolveAdNavigation } from '../shared/ad-navigation';
+import { parseDiscountPercent } from '../shared/ad-discount';
+
+/**
+ * El descuento de un anuncio se guarda como numero pelado: el proveedor
+ * escribe solo la cifra y el "%" lo pone la interfaz. Asi no hay forma de que
+ * un titulo como "2x1" o "hasta 50" se interprete como un porcentaje que
+ * despues se descuenta de verdad al cobrar la cita.
+ */
+function normalizeDiscountTitle(raw: unknown): { ok: true; value: string } | { ok: false } {
+  const porcentaje = parseDiscountPercent(
+    typeof raw === 'number' ? raw : String(raw ?? '').trim(),
+  );
+  if (!(porcentaje > 0) || porcentaje > 100) return { ok: false };
+  return { ok: true, value: String(porcentaje) };
+}
 
 async function autoExpireAds() {
   try {
@@ -154,6 +170,14 @@ export async function createAdRequest(event: APIGatewayProxyEventV2): Promise<AP
       return errorResponse('Faltan campos obligatorios.', 400);
     }
 
+    const descuento = normalizeDiscountTitle(discount_title);
+    if (!descuento.ok) {
+      return errorResponse(
+        'El descuento debe ser un numero entre 1 y 100. Escribe solo la cifra, el simbolo % se agrega automaticamente.',
+        400,
+      );
+    }
+
     // --- SUBIR IMAGEN A CLOUDINARY si es base64 ---
     let finalImageUrl: string | null = image_url || null;
     if (image_url && isBase64Image(image_url)) {
@@ -176,7 +200,7 @@ export async function createAdRequest(event: APIGatewayProxyEventV2): Promise<AP
         id: randomUUID(),
         provider_id: provider.id,
         badge_text,
-        title: String(discount_title),
+        title: descuento.value,
         subtitle: description,
         action_text: button_text,
         image_url: finalImageUrl,
@@ -248,6 +272,7 @@ export async function getPublicAds(event: APIGatewayProxyEventV2): Promise<APIGa
           end_date: true,
           providers: {
             select: {
+              id: true,
               logo_url: true,
               commercial_name: true,
               service_categories: { select: { slug: true } },
@@ -261,11 +286,15 @@ export async function getPublicAds(event: APIGatewayProxyEventV2): Promise<APIGa
     ]);
 
     // Mapeo para el Frontend (React Native)
-    const formattedAds = ads.map(ad => {
-        const screenName = ad.target_screen || 'Home';
-        const providerId = ad.target_id || '';
-        const navParams = getNavigationParams(screenName, providerId);
+    const formattedAds = await Promise.all(ads.map(async ad => {
         const serviceSlug = ad.providers?.service_categories?.slug;
+        // El destino se calcula aqui, no se lee de target_screen/target_id:
+        // ver el porque en shared/ad-navigation.ts
+        const navigation = await resolveAdNavigation(
+          prisma,
+          ad.providers?.id,
+          serviceSlug,
+        );
 
         return {
             id: ad.id,
@@ -280,16 +309,13 @@ export async function getPublicAds(event: APIGatewayProxyEventV2): Promise<APIGa
             endDate: ad.end_date ? new Date(ad.end_date).toISOString().split('T')[0] : null,
             isAdminAd: !ad.providers,
 
-            navigation: {
-                screen: screenName,
-                params: navParams
-            },
+            navigation,
 
             providerName: ad.providers?.commercial_name,
             providerLogo: ad.providers?.logo_url,
             serviceLabel: serviceSlug ? (SLUG_TO_LABEL_ES[serviceSlug] || serviceSlug) : undefined,
         };
-    });
+    }));
 
     return paginatedResponse(formattedAds, total, page, limit);
 
@@ -434,6 +460,18 @@ export async function updateMyAd(event: APIGatewayProxyEventV2): Promise<APIGate
     const body = JSON.parse(event.body || '{}');
     const { badge_text, discount_title, description, button_text, image_url, start_date, end_date } = body;
 
+    let descuentoEditado: string | undefined;
+    if (discount_title !== undefined) {
+      const normalizado = normalizeDiscountTitle(discount_title);
+      if (!normalizado.ok) {
+        return errorResponse(
+          'El descuento debe ser un numero entre 1 y 100. Escribe solo la cifra, el simbolo % se agrega automaticamente.',
+          400,
+        );
+      }
+      descuentoEditado = normalizado.value;
+    }
+
     let finalImageUrl = existing.image_url;
     if (image_url && isBase64Image(image_url)) {
       finalImageUrl = await uploadImageToCloudinary(image_url, 'ads');
@@ -445,7 +483,7 @@ export async function updateMyAd(event: APIGatewayProxyEventV2): Promise<APIGate
       where: { id },
       data: {
         ...(badge_text !== undefined && { badge_text }),
-        ...(discount_title !== undefined && { title: discount_title !== null ? String(discount_title) : null }),
+        ...(descuentoEditado !== undefined && { title: descuentoEditado }),
         ...(description !== undefined && { subtitle: description }),
         ...(button_text !== undefined && { action_text: button_text }),
         ...(finalImageUrl !== existing.image_url && { image_url: finalImageUrl }),

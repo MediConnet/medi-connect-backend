@@ -1511,14 +1511,32 @@ async function approveAdRequest(event: APIGatewayProxyEventV2): Promise<APIGatew
     // El cuerpo será el título (ej. "20% descuento") o la descripción
     const pushBody = updatedAd.title || updatedAd.subtitle || 'Revisa las últimas promociones en la app.';
     
+    // El destino se resuelve con la categoria y las sucursales actuales del
+    // proveedor, igual que en /api/public/ads: target_screen y target_id se
+    // guardaron al crear el anuncio y pueden estar obsoletos o apuntar al
+    // recurso equivocado (ver shared/ad-navigation.ts).
+    const { resolveAdNavigation } = await import('../shared/ad-navigation');
+    const proveedorAnuncio = updatedAd.provider_id
+      ? await prisma.providers.findUnique({
+          where: { id: updatedAd.provider_id },
+          select: { service_categories: { select: { slug: true } } },
+        })
+      : null;
+    const destino = await resolveAdNavigation(
+      prisma,
+      updatedAd.provider_id,
+      proveedorAnuncio?.service_categories?.slug,
+    );
+    const destinoId = Object.values(destino.params)[0];
+
     await patientNotificationService.broadcast({
       type: 'general',
       title: pushTitle,
       body: pushBody,
       data: {
         adId: updatedAd.id,
-        screen: updatedAd.target_screen || 'Home',
-        ...(updatedAd.target_id && { targetId: updatedAd.target_id }),
+        screen: destino.screen,
+        ...(destinoId && { targetId: destinoId }),
       },
     });
     console.log(`📲 [APPROVE_AD_REQUEST] Push broadcast enviado con éxito para anuncio: ${updatedAd.id}`);

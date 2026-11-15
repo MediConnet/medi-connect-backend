@@ -46,6 +46,13 @@ export async function expirePendingPayments(): Promise<void> {
         console.log(`🧹 [EXPIRE] ${expiredPayments.count} pago(s) PENDING marcados como EXPIRED.`);
       }
     }
+    // Limpiar sesiones ya vencidas: la tabla solo crecia, nunca se purgaba.
+    const sesionesBorradas = await prisma.sessions.deleteMany({
+      where: { expires_at: { lt: new Date() } },
+    });
+    if (sesionesBorradas.count > 0) {
+      console.log(`🧹 [EXPIRE] ${sesionesBorradas.count} sesion(es) vencidas eliminadas.`);
+    }
   } catch (error: any) {
     console.error("❌ [EXPIRE] Error en job de expiración de pagos pendientes:", error.message);
     logger.error("Error in expirePendingPayments job", error);

@@ -349,6 +349,9 @@ model providers {
   rejection_reason      String?
   medical_center        String?                 @db.VarChar(255)
   profile_views         Int?                    @default(0)
+  /// Minutos que dura cada cita de este proveedor. Define la separacion entre
+  /// turnos en la agenda. El panel solo permite 30 o 60.
+  appointment_duration_minutes Int?               @default(30)
   appointments          appointments[]
   consultation_prices   consultation_prices[]
   medical_history       medical_history[]

@@ -170,6 +170,9 @@ export const updateDoctorProfileSchema = z.object({
   profile_picture_url: z.string().optional().nullable(), // base64 o URL — avatar del doctor
   preview_images: z.array(z.string()).optional(), // Array de base64 o URLs — galería de imágenes
   workSchedule: z.array(scheduleItemSchema).optional(),
+  // Minutos entre turnos en la agenda. El panel solo ofrece 30 o 60; el
+  // controlador descarta cualquier otro valor.
+  consultationDuration: z.union([z.literal(30), z.literal(60)]).optional(),
   bankAccount: doctorProfileBankAccountSchema.optional().nullable(),
   medicalCenter: z.string().optional(),
 });

@@ -39,6 +39,15 @@ export function startScheduler(): void {
     } catch (error) {
       console.error('❌ [SCHEDULER] Error en expirePendingPayments:', error);
     }
+
+    // Purga los contadores de intentos de login ya vencidos, para que el mapa
+    // en memoria no crezca sin control.
+    try {
+      const { limpiarIntentosVencidos } = await import('../shared/security');
+      limpiarIntentosVencidos();
+    } catch (error) {
+      console.error('❌ [SCHEDULER] Error limpiando intentos de login:', error);
+    }
   });
 
   // Cada hora: recarga de seguridad de la caché de recordatorios

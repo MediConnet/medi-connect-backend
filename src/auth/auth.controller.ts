@@ -10,7 +10,7 @@ import * as crypto from "crypto";
 import { randomUUID } from "crypto";
 import { OAuth2Client } from "google-auth-library";
 import { enum_roles, enum_verification } from "../generated/prisma/client";
-import { requireAuth } from "../shared/auth";
+import { issueTokenPair, requireAuth, verifyJWT } from "../shared/auth";
 import {
   isProviderApproved,
 } from "../clinics/clinic-context";
@@ -33,7 +33,13 @@ import {
   successResponse,
   unauthorizedResponse,
 } from "../shared/response";
-import { validatePayloadSize } from "../shared/security";
+import {
+  comprobarIntentosLogin,
+  limpiarIntentosLogin,
+  obtenerIpCliente,
+  registrarIntentoFallido,
+  validatePayloadSize,
+} from "../shared/security";
 import { storeFilesLocally, uploadFilesToCloudinary } from "../shared/uploads";
 import {
   changePasswordSchema,
@@ -63,40 +69,23 @@ const getDeviceInfo = (event: APIGatewayProxyEventV2): string => {
   );
 };
 
-function generateLocalJWT(payload: {
+/**
+ * Emite el par access + refresh para un usuario.
+ *
+ * La duracion de cada uno sale del entorno (JWT_ACCESS_TOKEN_EXPIRATION y
+ * JWT_REFRESH_TOKEN_EXPIRATION) y cada tipo se firma con su propio secreto.
+ * Antes se emitia un unico token de 30 dias que hacia de los dos.
+ */
+function emitirTokens(payload: {
   sub: string;
   email: string;
   role: string | null;
-  expiresInSeconds?: number;
-}): string {
-  const header = { alg: "HS256", typ: "JWT" };
-  const base64UrlEncode = (str: string): string =>
-    Buffer.from(str)
-      .toString("base64")
-      .replace(/\+/g, "-")
-      .replace(/\//g, "_")
-      .replace(/=/g, "");
-  const encodedHeader = base64UrlEncode(JSON.stringify(header));
-  const now = Math.floor(Date.now() / 1000);
-  const expiresIn = payload.expiresInSeconds ?? 60 * 60 * 24 * 30; // 30 días por defecto
-  const jwtPayload = {
-    sub: payload.sub,
+}) {
+  return issueTokenPair({
     userId: payload.sub,
     email: payload.email,
     role: payload.role,
-    iat: now,
-    exp: now + expiresIn,
-  };
-  const encodedPayload = base64UrlEncode(JSON.stringify(jwtPayload));
-  const secret = process.env.JWT_SECRET || "local-dev-secret-key";
-  const signature = crypto
-    .createHmac("sha256", secret)
-    .update(`${encodedHeader}.${encodedPayload}`)
-    .digest("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=/g, "");
-  return `${encodedHeader}.${encodedPayload}.${signature}`;
+  });
 }
 
 function mapRoleToEnum(role: string): enum_roles {
@@ -1134,6 +1123,21 @@ export async function login(
   try {
     console.log("🔐 [LOGIN] Procesando inicio de sesión");
     const body = parseBody(event.body, loginSchema);
+
+    // Freno a la fuerza bruta: tras varios fallos seguidos se bloquea un rato.
+    // Mismo criterio que "olvide mi contrasena", pero contando por correo + IP.
+    const ipCliente = obtenerIpCliente(event);
+    const freno = comprobarIntentosLogin(body.email, ipCliente);
+    if (freno.bloqueado) {
+      const minutos = Math.ceil(freno.esperaSegundos / 60);
+      console.warn(
+        `⚠️ [LOGIN] Demasiados intentos fallidos para ${body.email} desde ${ipCliente}. Faltan ${freno.esperaSegundos}s.`,
+      );
+      return errorResponse(
+        `Demasiados intentos fallidos. Vuelve a intentarlo en ${minutos} ${minutos === 1 ? "minuto" : "minutos"}.`,
+        429,
+      );
+    }
     const isLocalDev =
       process.env.STAGE === "dev" ||
       process.env.NODE_ENV === "development" ||
@@ -1166,6 +1170,7 @@ export async function login(
           );
         }
         console.log(`[AUDIT LOGIN] Sin invitación pendiente para ${normalizedLoginEmail} — retornando USER_NOT_FOUND`);
+        registrarIntentoFallido(body.email, ipCliente);
         return unauthorizedResponse(
           "No existe una cuenta registrada con este correo electrónico.",
           "USER_NOT_FOUND",
@@ -1179,15 +1184,20 @@ export async function login(
 
       if (!user.is_active && !isDevelopment)
         return unauthorizedResponse("La cuenta de usuario está inactiva", "USER_INACTIVE");
-      if (!user.password_hash)
+      if (!user.password_hash) {
+        registrarIntentoFallido(body.email, ipCliente);
         return unauthorizedResponse("Credenciales inválidas");
+      }
 
       const passwordMatch = await bcrypt.compare(
         body.password,
         user.password_hash,
       );
 
-      if (!passwordMatch) return unauthorizedResponse("Credenciales inválidas", "WRONG_PASSWORD");
+      if (!passwordMatch) {
+        registrarIntentoFallido(body.email, ipCliente);
+        return unauthorizedResponse("Credenciales inválidas", "WRONG_PASSWORD");
+      }
 
       let patientInfo = null;
       if (user.role === enum_roles.patient) {
@@ -1294,7 +1304,10 @@ export async function login(
         }
       }
 
-      const jwtToken = generateLocalJWT({
+      // Credenciales correctas: el contador de fallos se borra.
+      limpiarIntentosLogin(body.email, ipCliente);
+
+      const tokens = emitirTokens({
         sub: user.id,
         email: user.email,
         role: user.role,
@@ -1302,13 +1315,14 @@ export async function login(
 
       try {
         const expiresAt = new Date();
-        expiresAt.setHours(expiresAt.getHours() + 1);
+        // La sesion caduca cuando caduca el access token que se emitio.
+        expiresAt.setSeconds(expiresAt.getSeconds() + tokens.expiresIn);
 
         await prisma.sessions.create({
           data: {
             id: randomUUID(),
             user_id: user.id,
-            token: jwtToken,
+            token: tokens.accessToken,
             device_info: getDeviceInfo(event),
             expires_at: expiresAt,
           },
@@ -1340,11 +1354,14 @@ export async function login(
       }
 
       const responseData: any = {
-        token: jwtToken,
-        accessToken: jwtToken,
-        refreshToken: jwtToken,
-        idToken: jwtToken,
-        expiresIn: 3600,
+        // `token` e `idToken` quedan por compatibilidad con clientes que leen
+        // esos nombres; los que valen son accessToken y refreshToken.
+        token: tokens.accessToken,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        idToken: tokens.accessToken,
+        expiresIn: tokens.expiresIn,
+        refreshExpiresIn: tokens.refreshExpiresIn,
         user: {
           id: user.id,
           userId: user.id,
@@ -1426,14 +1443,16 @@ export async function refresh(
       !USER_POOL_ID;
 
     if (isLocalDev) {
-      const parts = refreshToken.split(".");
-      if (parts.length !== 3)
-        return unauthorizedResponse("Formato de token inválido");
-
-      const base64Url = parts[1];
-      const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
-      const jsonPayload = Buffer.from(base64, "base64").toString("utf-8");
-      const decoded = JSON.parse(jsonPayload);
+      // Se verifica la FIRMA, no solo el contenido. Antes se hacia
+      // base64-decode del payload y se emitia un token nuevo para el usuario
+      // que dijera: bastaba fabricar un "refresh token" con el id de otra
+      // persona para recibir una sesion valida como esa persona.
+      // Tiene que ser un refresh token de verdad: un access token no sirve
+      // para renovar, y asi su vida corta significa algo.
+      const decoded = verifyJWT(refreshToken, "refresh");
+      if (!decoded) {
+        return unauthorizedResponse("Token invalido o expirado");
+      }
 
       const prisma = getPrismaClient();
       const user = await prisma.users.findFirst({
@@ -1442,10 +1461,14 @@ export async function refresh(
 
       if (!user) return unauthorizedResponse("Usuario no encontrado");
 
+      if (!user.is_active) {
+        return unauthorizedResponse("La cuenta esta desactivada");
+      }
+
       const normalizedRole = user.role
         ? String(user.role).toLowerCase()
         : "patient";
-      const newToken = generateLocalJWT({
+      const tokens = emitirTokens({
         sub: user.id,
         email: user.email,
         role: user.role,
@@ -1488,9 +1511,12 @@ export async function refresh(
       const normalizedServiceType = normalizeProviderServiceType(serviceType);
 
       const responseData: any = {
-        token: newToken,
-        accessToken: newToken,
-        refreshToken: newToken,
+        token: tokens.accessToken,
+        accessToken: tokens.accessToken,
+        // El refresh tambien se rota: cada renovacion entrega un par nuevo.
+        refreshToken: tokens.refreshToken,
+        expiresIn: tokens.expiresIn,
+        refreshExpiresIn: tokens.refreshExpiresIn,
         user: {
           id: user.id,
           userId: user.id,
@@ -2177,28 +2203,30 @@ export async function socialLogin(
     const firstName = nameParts[0] || "";
     const lastName = nameParts.slice(1).join(" ") || "";
 
-    const jwtToken = generateLocalJWT({
+    const tokens = emitirTokens({
       sub: user.id,
       email: user.email,
       role: user.role,
     });
 
-    // Token válido por 30 días para usuarios sociales
     const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 30);
+    expiresAt.setSeconds(expiresAt.getSeconds() + tokens.expiresIn);
     await prisma.sessions.create({
       data: {
         id: randomUUID(),
         user_id: user.id,
-        token: jwtToken,
+        token: tokens.accessToken,
         device_info: getDeviceInfo(event),
         expires_at: expiresAt,
       },
     });
 
     return successResponse({
-      token: jwtToken,
-      accessToken: jwtToken,
+      token: tokens.accessToken,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      expiresIn: tokens.expiresIn,
+      refreshExpiresIn: tokens.refreshExpiresIn,
       user: {
         id: user.id,
         email: user.email,
