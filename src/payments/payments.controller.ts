@@ -558,16 +558,43 @@ export async function handleNuveiWebhook(
       (statusDetail === 3 || Number(statusDetail) === 3);
 
     if (isApproved) {
+      // Una cita solo se confirma si en este momento seguia esperando el pago.
+      //
+      // El webhook puede llegar tarde: para entonces la cita pudo haberse
+      // cancelado porque el paciente cerro la pasarela, porque la verificacion
+      // del cliente agoto sus reintentos (3 intentos / 12 s) o porque el job de
+      // limpieza la expiro a los 15 min. En esos casos el horario ya se libero y
+      // pudo darse a otro paciente, asi que revivir la cita aqui creaba una cita
+      // doble y mandaba la alerta de una cita que el paciente habia cancelado.
+      const cita = payment.appointment_id
+        ? await prisma.appointments.findUnique({
+            where: { id: payment.appointment_id },
+            select: { status: true, is_paid: true },
+          })
+        : null;
+
+      const esperabaPago = ["PENDING_PAYMENT", "PROCESSING"].includes(
+        cita?.status || "",
+      );
+      const yaConfirmada = cita?.status === "CONFIRMED" && cita?.is_paid === true;
+
+      // Sin cita asociada no hay nada que revivir; ya confirmada es un webhook
+      // repetido y se deja como esta.
+      const sePuedeConfirmar = !payment.appointment_id || esperabaPago;
+      const cobroHuerfano = !!payment.appointment_id && !esperabaPago && !yaConfirmada;
+
       await prisma.payments.update({
         where: { id: payment.id },
         data: {
-          status: "PAID",
+          // El dinero se cobro igual, pero si la cita ya no existe el pago no es
+          // un ingreso: queda en la cola de reembolsos del panel de admin.
+          status: cobroHuerfano ? "REFUND_REQUESTED" : "PAID",
           paid_at: new Date(),
-          external_transaction_id: transactionId, // Guardar el ID de transacción real de Nuvei
+          external_transaction_id: transactionId, // ID de transacción real de Nuvei
         },
       });
 
-      if (payment.appointment_id) {
+      if (payment.appointment_id && sePuedeConfirmar) {
         await prisma.appointments.update({
           where: { id: payment.appointment_id },
           data: {
@@ -583,9 +610,28 @@ export async function handleNuveiWebhook(
           transactionId || "N/A",
           transaction?.authorization_code || "AUT-N/A"
         ).catch(err => console.error("❌ [PAYMENTS] Error en envío de email de confirmación (webhook):", err));
-      }
 
-      console.log(`✅ [WEBHOOK] Pago ${transactionId} confirmado vía webhook.`);
+        console.log(`✅ [WEBHOOK] Pago ${transactionId} confirmado vía webhook.`);
+      } else if (cobroHuerfano) {
+        console.error(
+          `⚠️ [WEBHOOK] Pago ${transactionId} aprobado pero la cita ${payment.appointment_id} ya estaba en estado ${cita?.status}. NO se confirma la cita; el pago queda como REFUND_REQUESTED para que administración lo devuelva.`,
+        );
+        logger.error(
+          "Pago aprobado sobre una cita que ya no esperaba pago",
+          new Error("Cobro sin cita reservable"),
+          {
+            paymentId: payment.id,
+            appointmentId: payment.appointment_id,
+            appointmentStatus: cita?.status,
+            transactionId,
+            amount: Number(payment.amount_total) || 0,
+          },
+        );
+      } else {
+        console.log(
+          `ℹ️ [WEBHOOK] Pago ${transactionId} aprobado; la cita ${payment.appointment_id} ya estaba confirmada y pagada.`,
+        );
+      }
     } else {
       // Marcar pago como fallido y liberar el horario del doctor
       await prisma.payments.update({
@@ -593,11 +639,23 @@ export async function handleNuveiWebhook(
         data: { status: "FAILED" },
       });
       if (payment.appointment_id) {
-        await prisma.appointments.update({
-          where: { id: payment.appointment_id },
+        // Mismo cuidado que al confirmar: solo se cancela si la cita seguia
+        // esperando este pago. Si ya estaba confirmada y pagada (por ejemplo,
+        // por otro intento que si prospero), un webhook de rechazo que llega
+        // tarde no puede tumbarla.
+        const cancelada = await prisma.appointments.updateMany({
+          where: {
+            id: payment.appointment_id,
+            status: { in: ["PENDING_PAYMENT", "PROCESSING"] },
+          },
           data: { status: "CANCELLED" },
         });
-        console.log(`❌ [WEBHOOK] Pago ${transactionId} fallido/rechazado — cita ${payment.appointment_id} cancelada y slot liberado.`);
+
+        if (cancelada.count > 0) {
+          console.log(`❌ [WEBHOOK] Pago ${transactionId} fallido/rechazado — cita ${payment.appointment_id} cancelada y slot liberado.`);
+        } else {
+          console.log(`ℹ️ [WEBHOOK] Pago ${transactionId} fallido/rechazado; la cita ${payment.appointment_id} ya no esperaba pago, se deja como esta.`);
+        }
       } else {
         console.log(`❌ [WEBHOOK] Pago ${transactionId} fallido/rechazado.`);
       }
@@ -1069,8 +1127,12 @@ export async function retryNuveiPayment(
 
     // Crear NUEVA cita para el mismo slot en estado PROCESSING (lock inmediato)
     // La cita original cancelada queda en el historial para auditoría
+    // Igual que en el alta normal: el indice unico parcial es quien impide que
+    // dos reintentos simultaneos se queden con el mismo slot.
     const newAppointmentId = randomUUID();
-    const newAppointment = await prisma.appointments.create({
+    let newAppointment;
+    try {
+      newAppointment = await prisma.appointments.create({
       data: {
         id: newAppointmentId,
         patient_id: originalAppointment.patient_id,
@@ -1086,7 +1148,19 @@ export async function retryNuveiPayment(
         is_paid: false,
         cost: costDecimal,
       },
-    });
+      });
+    } catch (createError: any) {
+      if (createError?.code === "P2002") {
+        console.warn(
+          `⚠️ [RETRY] El slot ${scheduledFor.toISOString()} fue tomado por otra reserva mientras se reintentaba el pago.`,
+        );
+        return errorResponse(
+          "Lo sentimos, este horario ya no está disponible. Por favor selecciona otro.",
+          409,
+        );
+      }
+      throw createError;
+    }
 
     console.log(`🆕 [RETRY] Nueva cita creada: ${newAppointmentId} en PROCESSING para slot ${scheduledFor.toISOString()}`);
 

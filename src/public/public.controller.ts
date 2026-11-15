@@ -88,6 +88,9 @@ export async function getPublicProviders(event: APIGatewayProxyEventV2): Promise
         service_categories: true,
         provider_catalog: {
           where: { is_available: true },
+          // Orden estable: la app toma "el primero de la lista" como servicio
+          // por defecto, asi que no puede cambiar entre cargas.
+          orderBy: { created_at: "asc" },
         },
       },
       skip: offset,
@@ -187,6 +190,9 @@ export async function getPublicProviderById(event: APIGatewayProxyEventV2): Prom
         service_categories: true,
         provider_catalog: {
           where: { is_available: true },
+          // Orden estable: la app toma "el primero de la lista" como servicio
+          // por defecto, asi que no puede cambiar entre cargas.
+          orderBy: { created_at: "asc" },
         },
       },
     });
@@ -233,12 +239,17 @@ export async function getPublicProviderById(event: APIGatewayProxyEventV2): Prom
     const specPriceRecord = await prisma.provider_specialties.findFirst({
       where: { provider_id: providerId },
     });
+    // Mismo criterio y mismo orden que usa appointments.controller al cobrar una
+    // cita sin servicio elegido: lo que se muestra aqui tiene que ser lo que se
+    // cobra. Si el proveedor no configuro tarifa se devuelve 0 (antes se
+    // mostraba un 55 inventado que nadie iba a cobrar).
     const priceRecord = await prisma.consultation_prices.findFirst({
-      where: { provider_id: providerId },
+      where: { provider_id: providerId, is_active: true },
+      orderBy: { created_at: "asc" },
     });
     const consultationPrice = specPriceRecord?.fee != null && Number(specPriceRecord.fee) > 0
       ? Number(specPriceRecord.fee)
-      : (priceRecord?.price ? Number(priceRecord.price) : 55.0);
+      : (priceRecord?.price ? Number(priceRecord.price) : 0);
 
     const formatted = {
       id: provider.id,

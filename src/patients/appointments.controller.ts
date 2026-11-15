@@ -138,28 +138,96 @@ export async function createAppointment(
     }
 
     const specialtyRecord = doctor.provider_specialties[0];
-    let appointmentCost = body.price != null
-      ? Number(body.price)
-      : (specialtyRecord?.fee ? Number(specialtyRecord.fee) : 0);
+    let appointmentCost = specialtyRecord?.fee ? Number(specialtyRecord.fee) : 0;
 
-    // Si se envía consultationPriceId, usar el precio del servicio en lugar de la tarifa de especialidad
+    // Si se envía consultationPriceId, usar el precio de ese servicio en lugar
+    // de la tarifa de especialidad.
+    //
+    // El id puede apuntar a dos tablas distintas, porque el listado que ve el
+    // paciente en la app no siempre sale de la misma:
+    //   - consultation_prices: tipos de consulta de un médico.
+    //   - provider_catalog:    el "catálogo" de servicios/tratamientos que la app
+    //                          muestra para estéticas, farmacias, etc. (el detalle
+    //                          público del proveedor lo devuelve como `services`).
+    // Antes solo se buscaba en consultation_prices; con un id del catálogo la
+    // búsqueda fallaba en silencio y la cita se creaba con la tarifa de
+    // especialidad, así que al paciente se le cobraba un precio distinto al que
+    // vio en pantalla.
     if (body.consultationPriceId) {
-      const consultationPrice = await prisma.consultation_prices.findUnique({
-        where: { id: body.consultationPriceId },
+      // Las búsquedas van acotadas al proveedor de la cita: sin eso, un id de
+      // otro proveedor serviría para pagar un precio que no corresponde.
+      const consultationPrice = await prisma.consultation_prices.findFirst({
+        where: {
+          id: body.consultationPriceId,
+          provider_id: body.doctorId,
+          is_active: true,
+        },
       });
-      if (consultationPrice && consultationPrice.is_active) {
+
+      if (consultationPrice) {
         appointmentCost = Number(consultationPrice.price);
         console.log(
-          `💰 [DEBUG] Usando precio de servicio (consultationPriceId=${body.consultationPriceId}): ${appointmentCost}`,
+          `💰 [DEBUG] Usando precio de consultation_prices (id=${body.consultationPriceId}): ${appointmentCost}`,
         );
       } else {
-        console.warn(
-          `⚠️ [DEBUG] consultationPriceId=${body.consultationPriceId} no encontrado o inactivo, usando tarifa de especialidad: ${appointmentCost}`,
-        );
+        const catalogItem = await prisma.provider_catalog.findFirst({
+          where: {
+            id: body.consultationPriceId,
+            provider_id: body.doctorId,
+            // Mismo filtro que usa el listado publico: solo se puede agendar un
+            // servicio que el paciente realmente ve.
+            is_available: true,
+          },
+        });
+
+        if (catalogItem?.price != null) {
+          appointmentCost = Number(catalogItem.price);
+          console.log(
+            `💰 [DEBUG] Usando precio de provider_catalog (id=${body.consultationPriceId}, "${catalogItem.name}"): ${appointmentCost}`,
+          );
+        } else {
+          // No se cae de vuelta a la tarifa de especialidad: el paciente eligió un
+          // servicio con un precio concreto y cobrarle otro importe es cobrarle algo
+          // que nunca aceptó. Mejor fallar y que vuelva a elegir.
+          console.error(
+            `❌ [APPOINTMENTS] consultationPriceId=${body.consultationPriceId} no existe en consultation_prices ni en provider_catalog del proveedor ${body.doctorId}`,
+          );
+          return errorResponse(
+            "El servicio seleccionado ya no está disponible. Vuelve a elegirlo e inténtalo de nuevo.",
+            400,
+          );
+        }
       }
     } else {
+      // Sin servicio elegido se cobra la tarifa de consulta del proveedor. Esa
+      // tarifa siempre es una opcion valida: los servicios del catalogo se
+      // suman a ella, no la reemplazan.
+      //
+      // Se resuelve igual que en el detalle publico (public.controller.ts), que
+      // es lo que el paciente ve en pantalla: primero la tarifa de especialidad
+      // y, si no hay, el primer tipo de consulta activo.
+      if (!(appointmentCost > 0)) {
+        const tarifaConsulta = await prisma.consultation_prices.findFirst({
+          where: { provider_id: body.doctorId, is_active: true },
+          orderBy: { created_at: "asc" },
+        });
+        if (tarifaConsulta) {
+          appointmentCost = Number(tarifaConsulta.price);
+        }
+      }
+
+      if (!(appointmentCost > 0)) {
+        console.error(
+          `❌ [APPOINTMENTS] El proveedor ${body.doctorId} no tiene tarifa de consulta configurada`,
+        );
+        return errorResponse(
+          "Este proveedor todavía no tiene una tarifa de consulta configurada. Elige uno de sus servicios o inténtalo más tarde.",
+          400,
+        );
+      }
+
       console.log(
-        `💰 [DEBUG] Costo de cita capturado de la especialidad: ${appointmentCost}`,
+        `💰 [DEBUG] Sin servicio elegido: se usa la tarifa de consulta: ${appointmentCost}`,
       );
     }
 
@@ -225,7 +293,13 @@ export async function createAppointment(
 
     const initialStatus = isOnlinePayment ? "PENDING_PAYMENT" : "PENDING";
 
-    const appointment = await prisma.appointments.create({
+    // El create va envuelto porque la comprobacion de conflicto de arriba no es
+    // atomica: entre el findFirst y el insert cabe otra peticion. El indice
+    // unico parcial appointments_slot_activo_unico es quien lo garantiza, y
+    // aqui se traduce su error (P2002) al mismo 409 de siempre.
+    let appointment;
+    try {
+      appointment = await prisma.appointments.create({
       data: {
         id: randomUUID(),
         patient_id: patient.id,
@@ -251,7 +325,19 @@ export async function createAppointment(
         provider_branches: true,
         specialties: true,
       },
-    });
+      });
+    } catch (createError: any) {
+      if (createError?.code === "P2002") {
+        console.warn(
+          `⚠️ [RACE CONDITION] Dos reservas simultáneas para ${body.doctorId} @ ${scheduledFor.toISOString()}; la base rechazó la segunda.`,
+        );
+        return errorResponse(
+          "Lo sentimos, este horario ya no está disponible. Por favor selecciona otro.",
+          409,
+        );
+      }
+      throw createError;
+    }
 
     console.log(
       `✅ [PATIENTS] Cita creada. Estado: ${initialStatus} | Costo: ${appointmentCost} | Especialidad: ${body.specialtyId}`,

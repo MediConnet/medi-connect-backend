@@ -785,7 +785,9 @@ export const createAppointmentSchema = z.object({
     .uuid("Consultation price ID must be a valid UUID")
     .optional()
     .nullable(),
-  price: z.number().optional(),
+  // Sin `price`: el importe de la cita lo calcula el backend a partir del
+  // servicio elegido. Aceptarlo del cliente permitia que un paciente fijara
+  // su propio precio y pagara lo que quisiera.
   discount: z.union([z.number(), z.string()]).optional(),
 });
 
