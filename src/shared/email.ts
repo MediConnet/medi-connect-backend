@@ -52,7 +52,12 @@ function initializeEmailService(): Resend | null {
 export async function sendEmail(options: EmailOptions): Promise<boolean> {
   try {
     const client = initializeEmailService();
-    const fromEmail = options.from || process.env.RESEND_FROM_EMAIL || process.env.SMTP_FROM || 'noreply@mediconnect.com';
+    // El dominio por defecto tiene que ser uno verificado en Resend. Antes caia
+    // a noreply@mediconnect.com, que no es nuestro: si faltara
+    // RESEND_FROM_EMAIL, Resend habria rechazado todos los envios por dominio
+    // sin verificar. (SMTP_FROM era de Nodemailer, retirado al quedarnos con
+    // Resend.)
+    const fromEmail = options.from || process.env.RESEND_FROM_EMAIL || 'noreply@docalink.com';
 
     // Si no hay cliente configurado, solo log (modo desarrollo)
     if (!client) {

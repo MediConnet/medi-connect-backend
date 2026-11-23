@@ -296,7 +296,7 @@ export async function sendInvitation(event: APIGatewayProxyEventV2): Promise<API
     console.log(`📧 [ASSOCIATION] Enviando email a: ${normalizedEmail}`);
     const emailSent = await sendEmail({
       to: normalizedEmail,
-      subject: `Invitación para unirte a ${clinic.name} - MediConnect`,
+      subject: `Invitación para unirte a ${clinic.name} - DOCALINK`,
       html: emailHtml,
     });
 

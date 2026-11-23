@@ -1,38 +1,26 @@
 /**
- * Adaptador de Email - Permite usar Nodemailer, Mailjet, MailerLite o Resend de forma transparente
- * 
- * Este módulo actúa como un adaptador que permite cambiar entre proveedores
- * sin modificar el código que envía correos.
+ * Punto unico de envio de correo.
+ *
+ * El proyecto usa Resend. Este archivo existia como adaptador entre cuatro
+ * proveedores (Resend, Nodemailer/SMTP, Mailjet y MailerLite) que se elegian
+ * con la variable EMAIL_PROVIDER, pero ninguno de los otros tres se llego a
+ * usar: EMAIL_PROVIDER nunca se configuro, asi que siempre cayo en Resend.
+ *
+ * Se retiraron en noviembre de 2026 al consolidar en Resend. Motivos:
+ *  - Nodemailer arrastraba una vulnerabilidad de inyeccion de comandos SMTP
+ *    (GHSA, "envelope.size" sin sanear) cuyo arreglo exigia saltar tres
+ *    versiones mayores, por una rama de codigo que no se ejecutaba.
+ *  - Mantener tres caminos de envio sin probar es superficie que no se revisa.
+ *
+ * Se conserva esta capa (y no se llama directo a email.ts) para que el resto
+ * del codigo no tenga que cambiar sus imports, y para que volver a tener varios
+ * proveedores algun dia sea un cambio local a este archivo.
  */
 
 import { sendEmail as sendEmailResend } from './email';
-import { sendEmail as sendEmailMailjet, getMailjetStatus } from './mailjet';
-import { sendEmail as sendEmailNodemailer, getNodemailerStatus } from './nodemailer';
 import { logger } from './logger';
 
-/**
- * Tipo de proveedor de email
- */
-export type EmailProvider = 'nodemailer' | 'mailjet' | 'mailerlite' | 'resend' | 'auto';
-
-/**
- * Configuración del adaptador
- */
-interface EmailAdapterConfig {
-  provider: EmailProvider;
-  fallbackToResend: boolean; // Si Mailjet/MailerLite falla, usar Resend como fallback
-}
-
-// Configuración por defecto
-// Usar Resend por defecto
-const defaultConfig: EmailAdapterConfig = {
-  provider: (process.env.EMAIL_PROVIDER as EmailProvider) || 'resend',
-  fallbackToResend: process.env.EMAIL_FALLBACK_TO_RESEND === 'true', // Deshabilitado por defecto
-};
-
-/**
- * Opciones de email
- */
+/** Opciones de un correo. */
 interface EmailOptions {
   to: string;
   subject: string;
@@ -42,174 +30,39 @@ interface EmailOptions {
 }
 
 /**
- * Determina qué proveedor usar basado en la configuración
+ * Envia un correo. Devuelve true si salio, false si no.
+ *
+ * Importante: no lanza excepcion cuando el proveedor rechaza el envio. Hay que
+ * mirar el valor devuelto, o el fallo pasa inadvertido.
  */
-function determineProvider(config: EmailAdapterConfig): 'nodemailer' | 'mailjet' | 'mailerlite' | 'resend' {
-  // Si se especifica un proveedor, usarlo
-  if (config.provider === 'nodemailer' || config.provider === 'mailjet' || config.provider === 'mailerlite' || config.provider === 'resend') {
-    return config.provider;
-  }
-  
-  // Modo auto: usar Nodemailer si está configurado, sino MailerLite, sino Mailjet
-  if (config.provider === 'auto') {
-    const nodemailerStatus = getNodemailerStatus();
-    if (nodemailerStatus.configured) {
-      console.log('📧 [EMAIL-ADAPTER] Usando Nodemailer (configurado)');
-      return 'nodemailer';
-    }
-    
-    const { getMailerLiteStatus } = require('./mailerlite');
-    const mailerliteStatus = getMailerLiteStatus();
-    if (mailerliteStatus.configured) {
-      console.log('📧 [EMAIL-ADAPTER] Usando MailerLite (configurado)');
-      return 'mailerlite';
-    }
-    
-    const mailjetStatus = getMailjetStatus();
-    if (mailjetStatus.configured) {
-      console.log('📧 [EMAIL-ADAPTER] Usando Mailjet (configurado)');
-      return 'mailjet';
-    }
-    
-    console.log('📧 [EMAIL-ADAPTER] Usando Resend (por defecto)');
-    return 'resend';
-  }
-  
-  // Por defecto, usar Resend
-  return 'resend';
-}
-
-/**
- * Envía un email usando el proveedor configurado
- * 
- * @param options - Opciones del email
- * @param config - Configuración del adaptador (opcional)
- * @returns Promise<boolean> - true si el email se envió correctamente
- */
-export async function sendEmail(
-  options: EmailOptions,
-  config: EmailAdapterConfig = defaultConfig
-): Promise<boolean> {
-  const provider = determineProvider(config);
-  
+export async function sendEmail(options: EmailOptions): Promise<boolean> {
   try {
-    if (provider === 'mailerlite') {
-      // Usar MailerLite
-      const { sendEmail: sendEmailMailerLite } = await import('./mailerlite');
-      const result = await sendEmailMailerLite(options);
-      
-      if (result) {
-        console.log(`✅ [EMAIL-ADAPTER] Email enviado con MailerLite a ${options.to}`);
-        return true;
-      } else {
-        console.error(`❌ [EMAIL-ADAPTER] Error al enviar con MailerLite`);
-        
-        // Si hay fallback habilitado, intentar con Resend
-        if (config.fallbackToResend) {
-          console.log('🔄 [EMAIL-ADAPTER] Intentando con Resend como fallback...');
-          return await sendEmailResend(options);
-        }
-        
-        return false;
-      }
-    } else if (provider === 'nodemailer') {
-      // Usar Nodemailer (SMTP/Hostinger) - sin fallback
-      return await sendEmailNodemailer(options);
-    } else if (provider === 'mailjet') {
-      // Intentar enviar con Mailjet
-      const result = await sendEmailMailjet({
-        to: options.to,
-        subject: options.subject,
-        html: options.html,
-        text: options.text,
-      });
-      
-      if (result) {
-        console.log(`✅ [EMAIL-ADAPTER] Email enviado con Mailjet a ${options.to}`);
-        return true;
-      } else {
-        console.error(`❌ [EMAIL-ADAPTER] Error al enviar con Mailjet`);
-        
-        // Si hay fallback habilitado, intentar con Resend
-        if (config.fallbackToResend) {
-          console.log('🔄 [EMAIL-ADAPTER] Intentando con Resend como fallback...');
-          return await sendEmailResend(options);
-        }
-        
-        return false;
-      }
-    } else {
-      // Usar Resend
-      return await sendEmailResend(options);
-    }
+    return await sendEmailResend(options);
   } catch (error: any) {
-    console.error(`❌ [EMAIL-ADAPTER] Error al enviar email:`, error.message);
-    logger.error('Error sending email with adapter', error, { to: options.to, provider });
-    
-    // Si hay fallback habilitado y estábamos usando Mailjet o MailerLite, intentar con Resend
-    if ((provider === 'mailjet' || provider === 'mailerlite') && config.fallbackToResend) {
-      console.log('🔄 [EMAIL-ADAPTER] Intentando con Resend como fallback...');
-      try {
-        return await sendEmailResend(options);
-      } catch (fallbackError: any) {
-        console.error(`❌ [EMAIL-ADAPTER] Fallback también falló:`, fallbackError.message);
-        return false;
-      }
-    }
-    
+    console.error('❌ [EMAIL] Error al enviar email:', error.message);
+    logger.error('Error sending email', error, { to: options.to });
     return false;
   }
 }
 
 /**
- * Envía un email forzando el uso de Mailjet
- */
-export async function sendEmailWithMailjet(options: EmailOptions): Promise<boolean> {
-  return sendEmail(options, { provider: 'mailjet', fallbackToResend: false });
-}
-
-/**
- * Envía un email forzando el uso de MailerLite
- */
-export async function sendEmailWithMailerLite(options: EmailOptions): Promise<boolean> {
-  return sendEmail(options, { provider: 'mailerlite', fallbackToResend: false });
-}
-
-/**
- * Envía un email forzando el uso de Resend
+ * Se mantiene por compatibilidad con quien forzaba Resend explicitamente.
+ * Hoy es lo mismo que sendEmail.
  */
 export async function sendEmailWithResend(options: EmailOptions): Promise<boolean> {
-  return sendEmail(options, { provider: 'resend', fallbackToResend: false });
+  return sendEmail(options);
 }
 
-/**
- * Determina qué proveedor usar basado en la configuración
- */
-export function getCurrentProvider(): 'nodemailer' | 'mailjet' | 'mailerlite' | 'resend' {
-  return determineProvider(defaultConfig);
+/** Proveedor en uso. Util para diagnostico. */
+export function getCurrentProvider(): 'resend' {
+  return 'resend';
 }
 
-/**
- * Verifica si Mailjet está disponible
- */
-export function isMailjetAvailable(): boolean {
-  const status = getMailjetStatus();
-  return status.configured;
-}
-
-/**
- * Obtiene información sobre el estado del adaptador
- */
+/** Estado del envio de correo. Util para diagnostico. */
 export function getAdapterStatus() {
-  const mailjetAvailable = isMailjetAvailable();
-  const currentProvider = getCurrentProvider();
-  
   return {
-    currentProvider,
-    mailjetAvailable,
-    resendAvailable: true, // Resend siempre está disponible (modo dev si no hay API key)
-    fallbackEnabled: defaultConfig.fallbackToResend,
-    configuredProvider: defaultConfig.provider,
+    currentProvider: 'resend' as const,
+    resendAvailable: Boolean(process.env.RESEND_API_KEY),
   };
 }
 

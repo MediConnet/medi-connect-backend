@@ -4,6 +4,18 @@ import { errorResponse } from './response';
 /**
  * Valida el tamaño del payload
  */
+/**
+ * Corta peticiones con un cuerpo demasiado grande.
+ *
+ * Solo se usa en el registro, y es a proposito: en el despliegue real (Express
+ * sobre Render) el limite ya lo pone el body-parser en index.ts — 10 MB general,
+ * 32 KB en las rutas publicas que solo llevan texto. Esta funcion existe para el
+ * camino Lambda, donde no hay body-parser que lo haga, y para el registro, que
+ * acepta multipart con documentos y necesita su propio tope.
+ *
+ * O sea: no esta "a medias". Repartirla por todos los controladores duplicaria
+ * una comprobacion que la capa HTTP ya hace.
+ */
 export function validatePayloadSize(
   event: APIGatewayProxyEventV2,
   maxBytes: number = 100000,
@@ -173,6 +185,31 @@ export function limpiarIntentosLogin(email: string, ip: string): void {
   intentosFallidos.delete(claveCuenta(email, ip));
 }
 
+/**
+ * Borra el bloqueo de una cuenta desde cualquier IP.
+ *
+ * Se llama al completar la recuperacion de contrasena. Quien llego hasta ahi
+ * demostro que controla el correo —recibio el enlace— asi que no tiene sentido
+ * dejarlo esperando el bloqueo: lo normal es que el usuario se bloquee por
+ * olvidar su clave, la recupere, y quiera entrar enseguida con la nueva.
+ *
+ * No se toca el tope por IP: ese frena a quien prueba contra muchas cuentas, y
+ * recuperar una contrasena no deberia limpiarlo.
+ */
+export function limpiarBloqueoPorCorreo(email: string): number {
+  const prefijo = `login:${email.trim().toLowerCase()}:`;
+  let borrados = 0;
+
+  for (const clave of [...intentosFallidos.keys()]) {
+    if (clave.startsWith(prefijo)) {
+      intentosFallidos.delete(clave);
+      borrados++;
+    }
+  }
+
+  return borrados;
+}
+
 /** Saca la IP del cliente del evento, mirando primero las cabeceras de proxy. */
 export function obtenerIpCliente(event: any): string {
   const cabeceras = event?.headers || {};
@@ -181,8 +218,22 @@ export function obtenerIpCliente(event: any): string {
     cabeceras["X-Forwarded-For"] ||
     cabeceras["x-real-ip"];
   if (typeof reenviada === "string" && reenviada.trim()) {
-    // x-forwarded-for puede traer una lista: la primera es el cliente.
-    return reenviada.split(",")[0].trim();
+    // x-forwarded-for llega como lista: "cliente, proxy1, proxy2".
+    //
+    // Se toma la ULTIMA, no la primera. La cabecera la puede falsificar quien
+    // llama: si manda su propio x-forwarded-for, el proxy de Render le agrega
+    // la IP real al final, de modo que lo que el cliente invento queda a la
+    // izquierda. Quedarse con la primera habria permitido rotar IPs falsas y
+    // saltarse el limite por IP; la ultima es la que puso nuestro proxy.
+    //
+    // Esto asume exactamente un proxy de confianza delante (el de Render). Si
+    // algun dia se agrega otro, hay que descartar tantas entradas por la
+    // derecha como proxies de confianza haya.
+    const entradas = reenviada
+      .split(",")
+      .map((x) => x.trim())
+      .filter(Boolean);
+    if (entradas.length > 0) return entradas[entradas.length - 1];
   }
   return event?.requestContext?.http?.sourceIp || "desconocida";
 }

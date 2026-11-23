@@ -44,6 +44,21 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     return optionsResponse(event);
   }
 
+  // Guardia unica para todo /api/admin/*.
+  //
+  // Cada controlador comprobaba el rol por su cuenta, y los diez endpoints de
+  // admin/payments.controller.ts no lo hacian: quedaban abiertos sin
+  // credenciales la lista de desembolsos, el historial de transacciones, el
+  // "marcar como pagado" y la aprobacion de reembolsos. Con la comprobacion
+  // aqui, ninguna ruta de administracion puede quedarse sin proteger por olvido,
+  // ni las que se agreguen despues. Las comprobaciones de cada controlador se
+  // mantienen: no estorban y sirven si alguna funcion se reutiliza fuera de aqui.
+  const adminAuth = await requireRole(event, [enum_roles.admin]);
+  if ('statusCode' in adminAuth) {
+    logger.warn('Intento de acceso a /api/admin sin rol de administrador', { method, path });
+    return adminAuth;
+  }
+
   try {
     // GET /api/admin/settings
     if (method === 'GET' && path === '/api/admin/settings') {

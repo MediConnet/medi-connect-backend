@@ -38,6 +38,34 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     return optionsResponse(event);
   }
 
+  // ---------------------------------------------------------------------------
+  // TODO (flujo posterior): el modulo de clinicas esta retirado de la interfaz
+  // a la espera de retomarlo. Mientras tanto solo se exponen las rutas que
+  // algo vivo usa de verdad; el resto responde 404 aunque el codigo siga aqui.
+  //
+  // Por que: un modulo que no se usa tampoco se prueba. En la auditoria del
+  // 2026-11-15 aparecieron dos endpoints de pagos a clinicas abiertos sin
+  // credenciales justamente aqui. Reducir la superficie expuesta evita que algo
+  // asi quede accesible durante meses sin que nadie lo note.
+  //
+  // Para reactivar el modulo: borrar este bloque (la lista RUTAS_ACTIVAS y la
+  // comprobacion de abajo). El resto del handler quedo intacto.
+  //
+  // Lo que se deja abierto, y quien lo usa hoy:
+  //   /api/clinics/admin/payments...  -> PaymentsPage del panel de admin
+  //   /api/clinics/invite/...         -> ClinicInvitationPage (/clinic/invite/:token)
+  // ---------------------------------------------------------------------------
+  const RUTAS_ACTIVAS = ['/api/clinics/admin/payments', '/api/clinics/invite/'];
+  const rutaActiva = RUTAS_ACTIVAS.some((prefijo) => path.startsWith(prefijo));
+
+  if (!rutaActiva) {
+    console.warn(`[CLINICS] Ruta desactivada mientras el modulo esta retirado: ${method} ${path}`);
+    return errorResponse(
+      'Esta funcionalidad no está disponible por el momento.',
+      404,
+    );
+  }
+
   try {
     console.log(`🔍 [CLINICS HANDLER] Comparando path: "${path}"`);
     

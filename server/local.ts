@@ -170,7 +170,6 @@ import { handler as adsHandler } from "../src/ads/handler";
 import { handler as ambulancesHandler } from "../src/ambulances/handler";
 import { handler as authHandler } from "../src/auth/handler";
 import { handler as doctorsHandler } from "../src/doctors/handler";
-import { handler as gmailHandler } from "../src/gmail/handler";
 import { handler as homeHandler } from "../src/home/handler";
 import { handler as paymentsHandler } from "../src/payments/handler";
 import { handler as pharmaciesHandler } from "../src/pharmacies/handler";
@@ -179,36 +178,12 @@ import { handler as publicHandler } from "../src/public/handler";
 import { handler as suppliesHandler } from "../src/supplies/handler";
 import { handler as commentsHandler } from "../src/comments/handler";
 
-// Importar otros handlers si existen
-let laboratoriesHandler: any;
-
-try {
-  laboratoriesHandler = require("../src/laboratories/handler").handler;
-} catch (e) {
-  // Handler no existe o tiene errores
-}
-
-let patientsHandler: any;
-try {
-  patientsHandler = require("../src/patients/handler").handler;
-  if (!patientsHandler) {
-    console.error("❌ [PATIENTS] Handler exportado pero es undefined");
-  } else {
-    console.log("✅ [PATIENTS] Handler de pacientes cargado correctamente");
-  }
-} catch (e: any) {
-  console.error("❌ [PATIENTS] Error al cargar handler:", e.message);
-  console.error("❌ [PATIENTS] Stack:", e.stack);
-}
-
-let clinicsHandler: any;
-try {
-  clinicsHandler = require("../src/clinics/handler").handler;
-  console.log("✅ [CLINICS] Handler de clínicas cargado correctamente");
-} catch (e: any) {
-  console.error("❌ [CLINICS] Error al cargar handler de clínicas:", e.message);
-  console.error("❌ [CLINICS] Stack:", e.stack);
-}
+// Igual que en index.ts: estos se cargaban con require() dentro de try/catch,
+// de modo que un modulo roto dejaba el servidor en pie con sus rutas caidas.
+// Con import normal, si algo no carga el arranque falla y se ve.
+import { handler as laboratoriesHandler } from "../src/laboratories/handler";
+import { handler as patientsHandler } from "../src/patients/handler";
+import { handler as clinicsHandler } from "../src/clinics/handler";
 
 // Routes - Auth
 app.use("/api/auth", async (req, res) => {
@@ -271,22 +246,11 @@ app.use("/api/pharmacy-chains", async (req, res) => {
 });
 
 // Routes - Patients
-if (patientsHandler) {
-  app.use("/api/patients", async (req, res) => {
-    const path = req.originalUrl.split("?")[0];
-    console.log(`🔍 [PATIENTS ROUTE] ${req.method} ${path} - originalUrl: ${req.originalUrl}`);
-    await handleLambdaResponse(patientsHandler, req, res, path);
-  });
-} else {
-  console.error("❌ [PATIENTS] Handler de pacientes no disponible - Las rutas no se registrarán");
-  app.use("/api/patients", (req, res) => {
-    console.error(`❌ [PATIENTS] Petición recibida pero handler no disponible: ${req.method} ${req.originalUrl}`);
-    res.status(500).json({ 
-      success: false, 
-      message: "Patients handler not available. Check server logs." 
-    });
-  });
-}
+app.use("/api/patients", async (req, res) => {
+  const path = req.originalUrl.split("?")[0];
+  console.log(`🔍 [PATIENTS ROUTE] ${req.method} ${path} - originalUrl: ${req.originalUrl}`);
+  await handleLambdaResponse(patientsHandler, req, res, path);
+});
 
 // Routes - Pharmacies
 app.use("/api/pharmacies", async (req, res) => {
@@ -296,48 +260,24 @@ app.use("/api/pharmacies", async (req, res) => {
 });
 
 // Routes - Laboratories (si existe)
-if (laboratoriesHandler) {
-  app.use("/api/laboratories", async (req, res) => {
-    const path = req.originalUrl.split("?")[0];
-    await handleLambdaResponse(laboratoriesHandler, req, res, path);
-  });
-}
+app.use("/api/laboratories", async (req, res) => {
+  const path = req.originalUrl.split("?")[0];
+  await handleLambdaResponse(laboratoriesHandler, req, res, path);
+});
 
 // Routes - Ambulances
-if (ambulancesHandler) {
-  app.use("/api/ambulances", async (req, res) => {
-    const path = req.originalUrl.split("?")[0];
-    console.log(`🔍 [AMBULANCES ROUTE] ${req.method} ${path} - originalUrl: ${req.originalUrl}`);
-    await handleLambdaResponse(ambulancesHandler, req, res, path);
-  });
-} else {
-  console.error("❌ [AMBULANCES] Handler de ambulancias no disponible - Las rutas no se registrarán");
-  app.use("/api/ambulances", (req, res) => {
-    console.error(`❌ [AMBULANCES] Petición recibida pero handler no disponible: ${req.method} ${req.originalUrl}`);
-    res.status(500).json({ 
-      success: false, 
-      message: "Ambulances handler not available. Check server logs." 
-    });
-  });
-}
+app.use("/api/ambulances", async (req, res) => {
+  const path = req.originalUrl.split("?")[0];
+  console.log(`🔍 [AMBULANCES ROUTE] ${req.method} ${path} - originalUrl: ${req.originalUrl}`);
+  await handleLambdaResponse(ambulancesHandler, req, res, path);
+});
 
 // Routes - Clinics (si existe)
-if (clinicsHandler) {
-  app.use("/api/clinics", async (req, res) => {
-    const path = req.originalUrl.split("?")[0];
-    console.log(`🔍 [CLINICS] Ruta recibida: ${req.method} ${path}`);
-    await handleLambdaResponse(clinicsHandler, req, res, path);
-  });
-} else {
-  console.error("❌ [CLINICS] Handler de clínicas no disponible - Las rutas no se registrarán");
-  app.use("/api/clinics", (req, res) => {
-    console.error(`❌ [CLINICS] Petición recibida pero handler no disponible: ${req.method} ${req.originalUrl}`);
-    res.status(500).json({ 
-      success: false, 
-      message: "Clinics handler not available. Check server logs." 
-    });
-  });
-}
+app.use("/api/clinics", async (req, res) => {
+  const path = req.originalUrl.split("?")[0];
+  console.log(`🔍 [CLINICS] Ruta recibida: ${req.method} ${path}`);
+  await handleLambdaResponse(clinicsHandler, req, res, path);
+});
 
 // Routes - Comments
 app.use("/api/comments", async (req, res) => {

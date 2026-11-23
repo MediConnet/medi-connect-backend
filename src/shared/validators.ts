@@ -249,6 +249,38 @@ export const updatePatientProfileSchema = z.object({
     .or(z.literal("")),
 });
 // Generic body parser helper
+/**
+ * Error de datos mal formados enviados por el cliente.
+ *
+ * Antes parseBody lanzaba un Error pelado, indistinguible de un fallo del
+ * servidor: los controladores lo recogian en su catch y respondian 500. Para el
+ * usuario eso era "Error al procesar solicitud" ante un correo mal escrito, en
+ * lugar de decirle que revise el correo.
+ *
+ * Al ser una clase propia, un catch puede distinguirlo y responder 400.
+ */
+export class ValidationError extends Error {
+  public readonly detalles: unknown;
+
+  constructor(message: string, detalles?: unknown) {
+    super(message);
+    this.name = 'ValidationError';
+    this.detalles = detalles;
+  }
+}
+
+/** true si el error viene de datos mal formados del cliente, no del servidor. */
+export function esErrorDeValidacion(error: unknown): boolean {
+  if (error instanceof ValidationError) return true;
+  // Mensajes que parseBody lanza antes de llegar al esquema.
+  const msg = error instanceof Error ? error.message : '';
+  return (
+    msg === 'Request body is required' ||
+    msg === 'Invalid JSON in request body' ||
+    msg.startsWith('Validation error:')
+  );
+}
+
 export function parseBody<T extends z.ZodTypeAny>(
   body: string | null | undefined,
   schema: T,
@@ -274,7 +306,7 @@ export function parseBody<T extends z.ZodTypeAny>(
           return `${path}: ${e.message}`;
         })
         .join(", ");
-      throw new Error(`Validation error: ${formatted}`);
+      throw new ValidationError(`Validation error: ${formatted}`, error.errors);
     }
     throw error;
   }

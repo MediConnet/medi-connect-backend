@@ -445,6 +445,21 @@ export async function requireRole(
  * Genera un JWT token para desarrollo local
  */
 /**
+ * Huella del refresh token para guardarlo en la tabla `sessions`.
+ *
+ * Se guarda el hash y no el token, por el mismo motivo que en
+ * password_resets: quien lea la tabla no se lleva credenciales usables.
+ *
+ * Esta huella es lo que permite revocar de verdad. Los access tokens son sin
+ * estado y no se consultan contra la base en cada peticion —seria un viaje a
+ * base por request—, pero el refresh si: solo ocurre cada vez que caduca el
+ * access, y es el credencial de larga duracion que hay que poder anular.
+ */
+export function hashToken(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+/**
  * Compatibilidad: emite un access token. Se mantiene porque lo usan los
  * controladores de invitaciones.
  */

@@ -15,9 +15,7 @@
     "deploy": "npm run package && npm run upload && aws cloudformation deploy --template-file infrastructure/cloudformation/template.yaml --stack-name medi-connect-backend --capabilities CAPABILITY_IAM --parameter-overrides Stage=dev",
     "test": "ts-node test/main.ts",
     "test:gmail": "ts-node test/test-gmail.ts",
-    "test:mailjet": "ts-node test/test-mailjet.ts",
     "test:resend": "ts-node test/test-resend.ts",
-    "test:email": "ts-node test/test-real-email.ts",
     "test:admin-users": "ts-node test/test-admin-users.ts",
     "create:clinic": "ts-node test/create-test-clinic.ts",
     "link:clinics": "ts-node test/link-clinics-to-users.ts",
@@ -43,7 +41,7 @@
   "dependencies": {
     "@aws-sdk/client-cognito-identity-provider": "^3.490.0",
     "@prisma/adapter-pg": "7.3.0",
-    "@prisma/client": "7.3.0",
+    "@prisma/client": "7.10.1",
     "@types/aws-lambda": "^8.10.130",
     "@types/bcrypt": "6.0.0",
     "@types/busboy": "1.5.4",
@@ -51,7 +49,6 @@
     "@types/express": "5.0.6",
     "@types/node": "^22.0.0",
     "@types/node-cron": "3.0.11",
-    "@types/nodemailer": "7.0.9",
     "@types/pg": "8.16.0",
     "bcrypt": "6.0.0",
     "busboy": "1.6.0",
@@ -62,14 +59,11 @@
     "expo-server-sdk": "5.0.0",
     "express": "5.2.1",
     "google-auth-library": "10.6.2",
-    "googleapis": "171.2.0",
     "node-cron": "4.2.1",
-    "node-mailjet": "6.0.11",
-    "nodemailer": "7.0.13",
     "pg": "8.17.2",
     "postmark": "4.0.5",
-    "prisma": "7.3.0",
-    "resend": "6.9.1",
+    "prisma": "7.10.1",
+    "resend": "6.38.1",
     "socket.io": "^4.8.1",
     "zod": "^3.22.4"
   },
@@ -94,5 +88,8 @@
   "bugs": {
     "url": "https://github.com/MediConnet/medi-connect-backend/issues"
   },
-  "homepage": "https://github.com/MediConnet/medi-connect-backend#readme"
+  "homepage": "https://github.com/MediConnet/medi-connect-backend#readme",
+  "overrides": {
+    "fast-xml-parser": "^5.12.1"
+  }
 }

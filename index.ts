@@ -64,6 +64,23 @@ app.use(
   express.raw({ type: 'multipart/form-data', limit: '20mb' }),
 );
 
+// Endpoints sin autenticar que solo llevan unos pocos campos de texto.
+//
+// El limite general es de 10 MB porque hay rutas que reciben imagenes en
+// base64, pero aqui no hace falta nada de eso: un login son dos campos. Dejar
+// 10 MB en estas rutas le regala a cualquiera, sin cuenta, la posibilidad de
+// mandar cuerpos enormes contra el validador. Es la mitigacion barata para el
+// aviso de zod (agotamiento de memoria validando colecciones grandes) mientras
+// no se pueda hacer el salto a zod 4.
+const RUTAS_PUBLICAS_LIGERAS = [
+  '/api/auth/login',
+  '/api/auth/refresh',
+  '/api/auth/forgot-password',
+  '/api/auth/reset-password',
+  '/api/auth/social-login',
+];
+app.use(RUTAS_PUBLICAS_LIGERAS, express.json({ limit: '32kb' }));
+
 app.use(express.json({ limit: '10mb' })); // ⭐ Aumentar límite para subida de imágenes
 app.use(express.urlencoded({ extended: true, limit: '10mb' })); // ⭐ Aumentar límite para subida de imágenes
 
@@ -312,49 +329,17 @@ import { handler as homeHandler } from './src/home/handler';
 import { handler as paymentsHandler } from './src/payments/handler';
 import { handler as commentsHandler } from './src/comments/handler';
 
-// Importar otros handlers si existen
-let laboratoriesHandler: any;
-
-try {
-  laboratoriesHandler = require('./src/laboratories/handler').handler;
-} catch (e) {
-  // Handler no existe o tiene errores
-}
-
-let patientsHandler: any;
-try {
-  patientsHandler = require('./src/patients/handler').handler;
-  if (!patientsHandler) {
-    console.error('❌ [PATIENTS] Handler exportado pero es undefined');
-  } else {
-    console.log('✅ [PATIENTS] Handler de pacientes cargado correctamente');
-  }
-} catch (e: any) {
-  console.error('❌ [PATIENTS] Error al cargar handler:', e.message);
-  console.error('❌ [PATIENTS] Stack:', e.stack);
-}
-
-let clinicsHandler: any;
-try {
-  clinicsHandler = require('./src/clinics/handler').handler;
-  console.log('✅ [CLINICS] Handler de clínicas cargado correctamente');
-} catch (e: any) {
-  console.error('❌ [CLINICS] Error al cargar handler de clínicas:', e.message);
-  console.error('❌ [CLINICS] Stack:', e.stack);
-}
-
-let ambulancesHandler: any;
-try {
-  ambulancesHandler = require('./src/ambulances/handler').handler;
-  if (!ambulancesHandler) {
-    console.error('❌ [AMBULANCES] Handler exportado pero es undefined');
-  } else {
-    console.log('✅ [AMBULANCES] Handler de ambulancias cargado correctamente');
-  }
-} catch (e: any) {
-  console.error('❌ [AMBULANCES] Error al cargar handler:', e.message);
-  console.error('❌ [AMBULANCES] Stack:', e.stack);
-}
+// Estos cuatro se cargaban con require() dentro de try/catch y un log de
+// "cargado correctamente". El try/catch se tragaba el error: si alguno fallaba,
+// el servidor arrancaba igual, /api/health respondia 200, el despliegue se daba
+// por bueno y ese grupo de rutas devolvia 500 sin que nadie se enterara.
+//
+// Con import normal, un modulo que no carga impide el arranque. Un despliegue
+// que falla es ruidoso; uno que arranca a medias, no.
+import { handler as laboratoriesHandler } from './src/laboratories/handler';
+import { handler as patientsHandler } from './src/patients/handler';
+import { handler as clinicsHandler } from './src/clinics/handler';
+import { handler as ambulancesHandler } from './src/ambulances/handler';
 
 // Routes - Auth
 app.use('/api/auth', async (req: express.Request, res: express.Response) => {
@@ -418,22 +403,11 @@ app.use('/api/pharmacy-chains', async (req: express.Request, res: express.Respon
 });
 
 // Routes - Patients
-if (patientsHandler) {
-  app.use('/api/patients', async (req: express.Request, res: express.Response) => {
-    const path = req.originalUrl.split('?')[0];
-    console.log(`🔍 [PATIENTS ROUTE] ${req.method} ${path} - originalUrl: ${req.originalUrl}`);
-    await handleLambdaResponse(patientsHandler, req, res, path);
-  });
-} else {
-  console.error('❌ [PATIENTS] Handler de pacientes no disponible - Las rutas no se registrarán');
-  app.use('/api/patients', (req: express.Request, res: express.Response) => {
-    console.error(`❌ [PATIENTS] Petición recibida pero handler no disponible: ${req.method} ${req.originalUrl}`);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Patients handler not available. Check server logs.' 
-    });
-  });
-}
+app.use('/api/patients', async (req: express.Request, res: express.Response) => {
+  const path = req.originalUrl.split('?')[0];
+  console.log(`🔍 [PATIENTS ROUTE] ${req.method} ${path} - originalUrl: ${req.originalUrl}`);
+  await handleLambdaResponse(patientsHandler, req, res, path);
+});
 
 // Routes - Pharmacies
 app.use('/api/pharmacies', async (req: express.Request, res: express.Response) => {
@@ -442,60 +416,32 @@ app.use('/api/pharmacies', async (req: express.Request, res: express.Response) =
   await handleLambdaResponse(pharmaciesHandler, req, res, path);
 });
 
-// Routes - Laboratories (si existe)
-if (laboratoriesHandler) {
-  app.use('/api/laboratories', async (req: express.Request, res: express.Response) => {
-    const path = req.originalUrl.split('?')[0];
-    await handleLambdaResponse(laboratoriesHandler, req, res, path);
-  });
-}
+// Routes - Laboratories
+app.use('/api/laboratories', async (req: express.Request, res: express.Response) => {
+  const path = req.originalUrl.split('?')[0];
+  await handleLambdaResponse(laboratoriesHandler, req, res, path);
+});
 
 // Routes - Ambulances (usando handler específico para rutas privadas del panel)
-if (ambulancesHandler) {
-  app.use('/api/ambulances', async (req: express.Request, res: express.Response) => {
-    const path = req.originalUrl.split('?')[0];
-    console.log(`🔍 [AMBULANCES ROUTE] ${req.method} ${path} - originalUrl: ${req.originalUrl}`);
-    await handleLambdaResponse(ambulancesHandler, req, res, path);
-  });
-} else {
-  console.error('❌ [AMBULANCES] Handler de ambulancias no disponible - Las rutas no se registrarán');
-  app.use('/api/ambulances', (req: express.Request, res: express.Response) => {
-    console.error(`❌ [AMBULANCES] Petición recibida pero handler no disponible: ${req.method} ${req.originalUrl}`);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Ambulances handler not available. Check server logs.' 
-    });
-  });
-}
+app.use('/api/ambulances', async (req: express.Request, res: express.Response) => {
+  const path = req.originalUrl.split('?')[0];
+  console.log(`🔍 [AMBULANCES ROUTE] ${req.method} ${path} - originalUrl: ${req.originalUrl}`);
+  await handleLambdaResponse(ambulancesHandler, req, res, path);
+});
 
-// Routes - Clinics (si existe)
-if (clinicsHandler) {
-  app.use('/api/clinics', async (req: express.Request, res: express.Response) => {
-    const path = req.originalUrl.split('?')[0];
-    console.log(`🔍 [CLINICS] Ruta recibida: ${req.method} ${path}`);
-    console.log(`🔍 [CLINICS] Handler disponible:`, typeof clinicsHandler);
-    try {
-      await handleLambdaResponse(clinicsHandler, req, res, path);
-    } catch (error: any) {
-      console.error(`❌ [CLINICS] Error en handler:`, error.message);
-      console.error(`❌ [CLINICS] Stack:`, error.stack);
-      res.status(500).json({
-        success: false,
-        message: error.message || 'Internal server error',
-      });
-    }
-  });
-} else {
-  console.error('❌ [CLINICS] Handler de clínicas no disponible - Las rutas no se registrarán');
-  // Agregar un fallback para diagnosticar
-  app.use('/api/clinics', (req: express.Request, res: express.Response) => {
-    console.error(`❌ [CLINICS] Petición recibida pero handler no disponible: ${req.method} ${req.originalUrl}`);
+// Routes - Clinics
+app.use('/api/clinics', async (req: express.Request, res: express.Response) => {
+  const path = req.originalUrl.split('?')[0];
+  try {
+    await handleLambdaResponse(clinicsHandler, req, res, path);
+  } catch (error: any) {
+    console.error(`❌ [CLINICS] Error en handler:`, error.message);
     res.status(500).json({
       success: false,
-      message: 'Clinics handler not available. Check server logs.',
+      message: error.message || 'Internal server error',
     });
-  });
-}
+  }
+});
 
 // Routes - Payments
 app.use('/api/payments', async (req: express.Request, res: express.Response) => {

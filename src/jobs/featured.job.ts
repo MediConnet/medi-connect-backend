@@ -75,12 +75,17 @@ export async function updateFeaturedBranches(event?: any): Promise<void> {
 
         case "pharmacy":
         case "supplies":
-          // Criterio: Tiene delivery o es 24 horas
-          if (branch.has_delivery || branch.is_24h) {
+          // Criterio: es 24 horas.
+          //
+          // Antes tambien puntuaba por `has_delivery`, pero el reparto a
+          // domicilio no existe: el campo se puede marcar en el panel y no hay
+          // ningun servicio detras, asi que estaba ordenando los destacados con
+          // un criterio ficticio. Se oculto de la interfaz en noviembre de 2026
+          // (FEATURES.DELIVERY). Cuando se implemente, volver a sumarlo aqui.
+          if (branch.is_24h) {
             isFeatured = true;
-            reason = branch.is_24h ? "24_7_SERVICE" : "FAST_DELIVERY";
-            if (branch.has_delivery) score += 10;
-            if (branch.is_24h) score += 15;
+            reason = "24_7_SERVICE";
+            score += 15;
           }
           break;
 

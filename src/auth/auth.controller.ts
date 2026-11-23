@@ -10,7 +10,7 @@ import * as crypto from "crypto";
 import { randomUUID } from "crypto";
 import { OAuth2Client } from "google-auth-library";
 import { enum_roles, enum_verification } from "../generated/prisma/client";
-import { issueTokenPair, requireAuth, verifyJWT } from "../shared/auth";
+import { hashToken, issueTokenPair, requireAuth, verifyJWT } from "../shared/auth";
 import {
   isProviderApproved,
 } from "../clinics/clinic-context";
@@ -35,6 +35,7 @@ import {
 } from "../shared/response";
 import {
   comprobarIntentosLogin,
+  limpiarBloqueoPorCorreo,
   limpiarIntentosLogin,
   obtenerIpCliente,
   registrarIntentoFallido,
@@ -42,6 +43,7 @@ import {
 } from "../shared/security";
 import { storeFilesLocally, uploadFilesToCloudinary } from "../shared/uploads";
 import {
+  esErrorDeValidacion,
   changePasswordSchema,
   forgotPasswordSchema,
   loginSchema,
@@ -661,6 +663,31 @@ async function processClinicInvitation(
 
 // --- CONTROLLERS ---
 
+/**
+ * Traduce un error al responder.
+ *
+ * Si viene de datos mal formados por el cliente es un 400 con el detalle, no un
+ * 500 generico: un correo mal escrito en "olvide mi contrasena" respondia
+ * "Error al procesar solicitud" y el usuario no sabia que corregir.
+ */
+function respuestaDeError(
+  error: unknown,
+  mensajeGenerico: string,
+): APIGatewayProxyResult {
+  if (esErrorDeValidacion(error)) {
+    const detalle = error instanceof Error ? error.message : "";
+    console.warn(`[AUTH] Datos invalidos: ${detalle}`);
+    return errorResponse(
+      "Revisa los datos ingresados: alguno no tiene el formato correcto.",
+      400,
+      undefined,
+      undefined,
+      "INVALID_INPUT",
+    );
+  }
+  return internalErrorResponse(mensajeGenerico);
+}
+
 export async function register(
   event: APIGatewayProxyEventV2,
 ): Promise<APIGatewayProxyResult> {
@@ -1113,7 +1140,7 @@ export async function register(
       return errorResponse("El usuario ya existe", 409);
     if (error.code === "P2002")
       return errorResponse("El usuario ya existe", 409);
-    return internalErrorResponse("Error al registrar usuario: " + error.message);
+    return respuestaDeError(error, "Error al registrar usuario: " + error.message);
   }
 }
 
@@ -1133,9 +1160,15 @@ export async function login(
       console.warn(
         `⚠️ [LOGIN] Demasiados intentos fallidos para ${body.email} desde ${ipCliente}. Faltan ${freno.esperaSegundos}s.`,
       );
+      // El codigo permite que la app y el panel ofrezcan recuperar la
+      // contrasena en vez de solo mostrar el error: el caso tipico de
+      // bloquearse es haber olvidado la clave.
       return errorResponse(
-        `Demasiados intentos fallidos. Vuelve a intentarlo en ${minutos} ${minutos === 1 ? "minuto" : "minutos"}.`,
+        `Demasiados intentos fallidos. Vuelve a intentarlo en ${minutos} ${minutos === 1 ? "minuto" : "minutos"}, o recupera tu contraseña.`,
         429,
+        undefined,
+        event,
+        "TOO_MANY_ATTEMPTS",
       );
     }
     const isLocalDev =
@@ -1313,20 +1346,31 @@ export async function login(
         role: user.role,
       });
 
-      try {
-        const expiresAt = new Date();
-        // La sesion caduca cuando caduca el access token que se emitio.
-        expiresAt.setSeconds(expiresAt.getSeconds() + tokens.expiresIn);
+      // La sesion guarda la huella del REFRESH token, no el access.
+      //
+      // El refresh es el credencial de larga duracion y el unico que se
+      // comprueba contra la base (en /auth/refresh), asi que es el que permite
+      // revocar. Antes se guardaba el access token: revocar una sesion escribia
+      // revoked_at y nadie lo leia nunca, de modo que resetear la contrasena no
+      // echaba a nadie.
+      //
+      // Esto va fuera del try/catch a proposito: si no se puede crear la
+      // sesion, el refresh no funcionara, y es mejor fallar el login ahora que
+      // dejar al usuario con una sesion que se corta sola en una hora.
+      const expiresAt = new Date();
+      expiresAt.setSeconds(expiresAt.getSeconds() + tokens.refreshExpiresIn);
 
-        await prisma.sessions.create({
-          data: {
-            id: randomUUID(),
-            user_id: user.id,
-            token: tokens.accessToken,
-            device_info: getDeviceInfo(event),
-            expires_at: expiresAt,
-          },
-        });
+      await prisma.sessions.create({
+        data: {
+          id: randomUUID(),
+          user_id: user.id,
+          token: hashToken(tokens.refreshToken),
+          device_info: getDeviceInfo(event),
+          expires_at: expiresAt,
+        },
+      });
+
+      try {
 
         const thirtyDaysAgo = new Date();
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -1408,7 +1452,7 @@ export async function login(
     console.error("❌ [LOGIN] Error:", error.message);
     if (error.name === "NotAuthorizedException")
       return unauthorizedResponse("Credenciales inválidas");
-    return internalErrorResponse("Error al iniciar sesión");
+    return respuestaDeError(error, "Error al iniciar sesión");
   }
 }
 
@@ -1416,14 +1460,42 @@ export async function logout(
   event: APIGatewayProxyEventV2,
 ): Promise<APIGatewayProxyResult> {
   try {
-    const token = event.headers.authorization?.replace("Bearer ", "");
-    if (token) {
-      const prisma = getPrismaClient();
-      await prisma.sessions.updateMany({
-        where: { token: token },
+    const prisma = getPrismaClient();
+
+    // La sesion se identifica por el refresh token, que es lo que se guarda.
+    // Antes se buscaba por el access token y nunca coincidia con nada, asi que
+    // cerrar sesion no revocaba nada en el servidor.
+    let refreshToken: string | undefined;
+    try {
+      const body = typeof event.body === "string" ? JSON.parse(event.body) : event.body;
+      if (body?.refreshToken && typeof body.refreshToken === "string") {
+        refreshToken = body.refreshToken;
+      }
+    } catch {
+      // Cuerpo ausente o ilegible: se sigue con el camino de abajo.
+    }
+
+    if (refreshToken) {
+      const revocadas = await prisma.sessions.updateMany({
+        where: { token: hashToken(refreshToken), revoked_at: null },
         data: { revoked_at: new Date() },
       });
+      console.log(`[LOGOUT] ${revocadas.count} sesion(es) revocadas por refresh token`);
+    } else {
+      // Cliente antiguo que no manda el refresh: no se sabe cual de sus
+      // sesiones cerrar, asi que se cierran todas. Es lo que espera quien
+      // pulsa "cerrar sesion", y nunca deja una sesion viva por error.
+      const accessToken = event.headers.authorization?.replace("Bearer ", "");
+      const claims = accessToken ? verifyJWT(accessToken, "access") : null;
+      if (claims?.sub) {
+        const revocadas = await prisma.sessions.updateMany({
+          where: { user_id: String(claims.sub), revoked_at: null },
+          data: { revoked_at: new Date() },
+        });
+        console.log(`[LOGOUT] ${revocadas.count} sesion(es) revocadas por usuario`);
+      }
     }
+
     return successResponse({ message: "Sesión cerrada exitosamente" });
   } catch (error) {
     return successResponse({ message: "Sesión cerrada" });
@@ -1463,6 +1535,27 @@ export async function refresh(
 
       if (!user.is_active) {
         return unauthorizedResponse("La cuenta esta desactivada");
+      }
+
+      // La firma del token no basta: hay que comprobar que la sesion siga
+      // viva. Es lo que hace que revocar signifique algo — al resetear o
+      // cambiar la contrasena se marcan todas las sesiones como revocadas, y
+      // a partir de aqui dejan de poder renovarse.
+      const sesion = await prisma.sessions.findFirst({
+        where: {
+          user_id: user.id,
+          token: hashToken(refreshToken),
+          revoked_at: null,
+          expires_at: { gt: new Date() },
+        },
+        select: { id: true },
+      });
+
+      if (!sesion) {
+        console.warn(
+          `[REFRESH] Sesion no encontrada, revocada o vencida para ${user.email}`,
+        );
+        return unauthorizedResponse("La sesión ya no es válida. Inicia sesión de nuevo.");
       }
 
       const normalizedRole = user.role
@@ -1510,6 +1603,20 @@ export async function refresh(
       }
       const normalizedServiceType = normalizeProviderServiceType(serviceType);
 
+      // El refresh se rota, asi que la fila tiene que apuntar al nuevo. Si no,
+      // la siguiente renovacion no encontraria la sesion.
+      const nuevaCaducidad = new Date();
+      nuevaCaducidad.setSeconds(
+        nuevaCaducidad.getSeconds() + tokens.refreshExpiresIn,
+      );
+      await prisma.sessions.update({
+        where: { id: sesion.id },
+        data: {
+          token: hashToken(tokens.refreshToken),
+          expires_at: nuevaCaducidad,
+        },
+      });
+
       const responseData: any = {
         token: tokens.accessToken,
         accessToken: tokens.accessToken,
@@ -1551,8 +1658,8 @@ export async function refresh(
       expiresIn: response.AuthenticationResult?.ExpiresIn,
     });
   } catch (error: any) {
-    logger.error("Error in refresh", error);
-    return internalErrorResponse("Error al refrescar token");
+    if (!esErrorDeValidacion(error)) logger.error("Error in refresh", error);
+    return respuestaDeError(error, "Error al refrescar token");
   }
 }
 
@@ -1682,8 +1789,16 @@ export async function changePassword(
         data: { password_hash: newPasswordHash },
       });
 
+      // Cambiar la contrasena cierra las demas sesiones, igual que al
+      // resetearla. Si alguien entro con la contrasena vieja, cambiarla ahora
+      // lo echa de verdad: sus refresh tokens dejan de servir.
+      await prisma.sessions.updateMany({
+        where: { user_id: user.id, revoked_at: null },
+        data: { revoked_at: new Date() },
+      });
+
       console.log(
-        `✅ [CHANGE-PASSWORD] Contraseña cambiada localmente para usuario: ${user.id}`,
+        `✅ [CHANGE-PASSWORD] Contraseña cambiada localmente para usuario: ${user.id}. Sesiones revocadas.`,
       );
       return successResponse({ message: "Contraseña cambiada exitosamente" });
     }
@@ -1717,7 +1832,7 @@ export async function changePassword(
       );
     }
 
-    return internalErrorResponse("Error al cambiar contraseña");
+    return respuestaDeError(error, "Error al cambiar contraseña");
   }
 }
 
@@ -1859,10 +1974,8 @@ export async function forgotPassword(
     return successResponse(standardResponse);
   } catch (error: any) {
     console.error("❌ [FORGOT-PASSWORD] Error:", error.message);
-    logger.error("Error in forgotPassword", error);
-    return internalErrorResponse(
-      "Error al procesar solicitud. Por favor intenta nuevamente.",
-    );
+    if (!esErrorDeValidacion(error)) logger.error("Error in forgotPassword", error);
+    return respuestaDeError(error, "Error al procesar solicitud. Por favor intenta nuevamente.");
   }
 }
 
@@ -1942,6 +2055,16 @@ export async function resetPassword(
       `✅ [RESET-PASSWORD] Contraseña actualizada exitosamente para: ${user.email}`,
     );
 
+    // Quien recupero su contrasena demostro que controla el correo, asi que no
+    // tiene sentido dejarlo esperando el bloqueo por intentos fallidos: el caso
+    // normal es bloquearse por haberla olvidado, recuperarla y querer entrar ya.
+    const bloqueosBorrados = limpiarBloqueoPorCorreo(user.email);
+    if (bloqueosBorrados > 0) {
+      console.log(
+        `🔓 [RESET-PASSWORD] Bloqueo por intentos fallidos liberado para ${user.email}`,
+      );
+    }
+
     // Enviar email de confirmación (asíncrono)
     try {
       const { sendEmail } = await import("../shared/email-adapter");
@@ -1988,10 +2111,8 @@ export async function resetPassword(
     });
   } catch (error: any) {
     console.error("❌ [RESET-PASSWORD] Error:", error.message);
-    logger.error("Error in resetPassword", error);
-    return internalErrorResponse(
-      "Error al restablecer contraseña. Por favor intenta nuevamente.",
-    );
+    if (!esErrorDeValidacion(error)) logger.error("Error in resetPassword", error);
+    return respuestaDeError(error, "Error al restablecer contraseña. Por favor intenta nuevamente.");
   }
 }
 
@@ -2034,10 +2155,8 @@ export async function deactivateAccount(
       "❌ [DEACTIVATE-ACCOUNT] Error al desactivar cuenta:",
       error.message,
     );
-    logger.error("Error in deactivateAccount", error);
-    return internalErrorResponse(
-      "Hubo un problema al intentar eliminar tu cuenta.",
-    );
+    if (!esErrorDeValidacion(error)) logger.error("Error in deactivateAccount", error);
+    return respuestaDeError(error, "Hubo un problema al intentar eliminar tu cuenta.");
   }
 }
 
@@ -2210,12 +2329,12 @@ export async function socialLogin(
     });
 
     const expiresAt = new Date();
-    expiresAt.setSeconds(expiresAt.getSeconds() + tokens.expiresIn);
+    expiresAt.setSeconds(expiresAt.getSeconds() + tokens.refreshExpiresIn);
     await prisma.sessions.create({
       data: {
         id: randomUUID(),
         user_id: user.id,
-        token: tokens.accessToken,
+        token: hashToken(tokens.refreshToken),
         device_info: getDeviceInfo(event),
         expires_at: expiresAt,
       },
@@ -2239,6 +2358,6 @@ export async function socialLogin(
     });
   } catch (error: any) {
     console.error("❌ [SOCIAL-LOGIN] Error:", error.message);
-    return internalErrorResponse("Error en social login");
+    return respuestaDeError(error, "Error en social login");
   }
 }

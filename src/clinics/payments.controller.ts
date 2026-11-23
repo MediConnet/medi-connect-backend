@@ -3,7 +3,8 @@ import { randomUUID } from 'crypto';
 import { getPrismaClient } from '../shared/prisma';
 import { successResponse, errorResponse, internalErrorResponse, notFoundResponse, paginatedResponse } from '../shared/response';
 import { logger } from '../shared/logger';
-import { getAuthContext } from '../shared/auth';
+import { getAuthContext, requireRole } from '../shared/auth';
+import { enum_roles } from '../generated/prisma/client';
 import { PAYOUT_TYPE_CLINIC } from '../shared/constants';
 import { resolveClinicForAuthUser } from './clinic-context';
 
@@ -630,6 +631,11 @@ export async function getPaymentDistribution(event: APIGatewayProxyEventV2): Pro
  */
 export async function getAdminClinicPaymentsList(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   console.log('✅ [CLINICS] GET /api/clinics/admin/payments - Obteniendo pagos a clínicas');
+
+  // Lista los desembolsos a todas las clinicas con sus importes. Estaba abierto
+  // sin credenciales, asi que cualquiera podia leer la contabilidad entera.
+  const authResult = await requireRole(event, [enum_roles.admin]);
+  if ('statusCode' in authResult) return authResult;
   
   const prisma = getPrismaClient();
   const queryParams = event.queryStringParameters || {};
@@ -727,6 +733,12 @@ export async function getAdminClinicPaymentsList(event: APIGatewayProxyEventV2):
  */
 export async function markAdminClinicPaymentPaid(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResult> {
   console.log('✅ [CLINICS] POST /api/clinics/admin/payments/:clinicPaymentId/mark-paid');
+
+  // Este endpoint da por pagado un desembolso a una clinica y marca todos sus
+  // pagos como pagados. No comprobaba nada: cualquiera podia llamarlo sin
+  // credenciales y falsear el registro contable de la plataforma.
+  const authResult = await requireRole(event, [enum_roles.admin]);
+  if ('statusCode' in authResult) return authResult;
   
   const prisma = getPrismaClient();
 

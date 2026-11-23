@@ -8,6 +8,7 @@ dotenv.config();
 
 import {
   comprobarIntentosLogin,
+  limpiarBloqueoPorCorreo,
   limpiarIntentosLogin,
   obtenerIpCliente,
   registrarIntentoFallido,
@@ -70,8 +71,13 @@ probar(
 
 console.log("\n=== lectura de la IP del cliente ===");
 probar(
-  "usa x-forwarded-for cuando hay proxy",
-  obtenerIpCliente({ headers: { "x-forwarded-for": "201.1.1.1, 10.0.0.1" } }),
+  "toma la ULTIMA de x-forwarded-for (la que puso el proxy)",
+  obtenerIpCliente({ headers: { "x-forwarded-for": "1.2.3.4, 201.1.1.1" } }),
+  "201.1.1.1",
+);
+probar(
+  "una cabecera falsificada por el cliente no manda",
+  obtenerIpCliente({ headers: { "x-forwarded-for": "9.9.9.9, 201.1.1.1" } }),
   "201.1.1.1",
 );
 probar(
@@ -89,6 +95,19 @@ probar(
   comprobarIntentosLogin(OTRO, IP_A).bloqueado,
   true,
 );
+
+console.log("\n=== recuperar la contrasena libera el bloqueo ===");
+const BLOQUEADO = "bloqueado@docalink.com";
+const IP_X = "181.0.0.5";
+const IP_Y = "181.0.0.6";
+for (let i = 0; i < MAX; i++) registrarIntentoFallido(BLOQUEADO, IP_X);
+for (let i = 0; i < MAX; i++) registrarIntentoFallido(BLOQUEADO, IP_Y);
+probar("la cuenta queda bloqueada desde su IP", comprobarIntentosLogin(BLOQUEADO, IP_X).bloqueado, true);
+
+const liberados = limpiarBloqueoPorCorreo(BLOQUEADO);
+probar("se liberan los bloqueos de todas sus IPs", liberados >= 2, true);
+probar("ya puede intentar desde la IP original", comprobarIntentosLogin(BLOQUEADO, IP_X).bloqueado, false);
+probar("y desde la otra IP tambien", comprobarIntentosLogin(BLOQUEADO, IP_Y).bloqueado, false);
 
 const fallos = resultados.filter((r) => !r).length;
 console.log(`\n=== ${resultados.length - fallos}/${resultados.length} correctos ===`);
